@@ -8,10 +8,12 @@ const ROOM_D = 9; // north-south
 const ROOM_H = 3.0;
 
 // ---------- procedural grunge texture helpers ----------
-// No external image assets needed — we bake aged plaster (stains, cracks,
-// patchy plaster-loss) onto a canvas at runtime so walls stop looking like
-// flat poured-concrete slabs.
-function makePlasterCanvas({ base = "#6b4e33", size = 512, seed = 1 } = {}) {
+// No external image assets needed — everything is baked onto a canvas at
+// runtime: exposed old brick, missing mortar, cracks, stains and leftover
+// plaster patches, so walls read as "damaged old house" instead of a flat
+// poured-concrete slab.
+
+function makeBrickCanvas({ size = 512, seed = 1 } = {}) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext("2d");
@@ -22,77 +24,186 @@ function makePlasterCanvas({ base = "#6b4e33", size = 512, seed = 1 } = {}) {
     return s / 233280;
   };
 
-  ctx.fillStyle = base;
+  const brickW = 66;
+  const brickH = 30;
+  const mortar = 5;
+
+  // mortar base color
+  ctx.fillStyle = "#4a4239";
   ctx.fillRect(0, 0, size, size);
 
-  // fine plaster grain / noise
-  for (let i = 0; i < 6000; i++) {
-    const x = rand() * size, y = rand() * size;
-    const shade = rand() * 40 - 20;
-    ctx.fillStyle = `rgba(${shade > 0 ? 255 : 0},${shade > 0 ? 255 : 0},${shade > 0 ? 255 : 0},${Math.abs(shade) / 160})`;
-    ctx.fillRect(x, y, 1.5, 1.5);
+  const baseHues = ["#7a4a30", "#6e4128", "#87573a", "#5e3a24", "#9a6242"];
+
+  let row = 0;
+  for (let y = -brickH; y < size + brickH; y += brickH + mortar) {
+    const offset = row % 2 === 0 ? 0 : -(brickW / 2);
+    for (let x = offset; x < size + brickW; x += brickW + mortar) {
+      // occasionally skip a brick entirely — a broken/missing chunk
+      const missing = rand() < 0.04;
+      const brickColor = baseHues[Math.floor(rand() * baseHues.length)];
+      if (!missing) {
+        ctx.fillStyle = brickColor;
+        ctx.fillRect(x, y, brickW - mortar, brickH - mortar);
+
+        // per-brick shading noise so they don't look copy-pasted
+        for (let i = 0; i < 10; i++) {
+          const nx = x + rand() * (brickW - mortar);
+          const ny = y + rand() * (brickH - mortar);
+          const shade = rand() * 30 - 15;
+          ctx.fillStyle = `rgba(${shade > 0 ? 255 : 0},${shade > 0 ? 255 : 0},${shade > 0 ? 255 : 0},${Math.abs(shade) / 120})`;
+          ctx.fillRect(nx, ny, 3, 3);
+        }
+
+        // chipped corner on some bricks
+        if (rand() < 0.15) {
+          ctx.fillStyle = "rgba(20,15,10,0.55)";
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + rand() * 14, y);
+          ctx.lineTo(x, y + rand() * 10);
+          ctx.fill();
+        }
+      } else {
+        // dark cavity where a brick has fallen out
+        ctx.fillStyle = "rgba(10,8,6,0.85)";
+        ctx.fillRect(x, y, brickW - mortar, brickH - mortar);
+      }
+    }
+    row++;
   }
 
-  // damp / age stains, worse near the base of the wall
-  for (let i = 0; i < 5; i++) {
-    const x = rand() * size, y = size * (0.55 + rand() * 0.45);
-    const r = 40 + rand() * 90;
+  // leftover old plaster patches clinging to the brick (unpainted haveli look)
+  for (let i = 0; i < 4; i++) {
+    const x = rand() * size, y = rand() * size;
+    const r = 50 + rand() * 100;
     const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, "rgba(20,20,15,0.35)");
-    grad.addColorStop(1, "rgba(20,20,15,0)");
+    grad.addColorStop(0, "rgba(150,120,90,0.55)");
+    grad.addColorStop(1, "rgba(150,120,90,0)");
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // hairline cracks
-  ctx.strokeStyle = "rgba(15,10,5,0.5)";
-  ctx.lineWidth = 1;
-  for (let i = 0; i < 4; i++) {
-    let x = rand() * size, y = rand() * size;
+  // damp / age stains, worse near the base
+  for (let i = 0; i < 5; i++) {
+    const x = rand() * size, y = size * (0.55 + rand() * 0.45);
+    const r = 40 + rand() * 90;
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, "rgba(15,15,10,0.4)");
+    grad.addColorStop(1, "rgba(15,15,10,0)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // long structural cracks running through several bricks
+  ctx.strokeStyle = "rgba(10,8,5,0.65)";
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 5; i++) {
+    let x = rand() * size, y = rand() * size * 0.3;
     ctx.beginPath();
     ctx.moveTo(x, y);
-    const segs = 4 + Math.floor(rand() * 4);
+    const segs = 6 + Math.floor(rand() * 5);
     for (let j = 0; j < segs; j++) {
-      x += (rand() - 0.5) * 60;
-      y += (rand() - 0.3) * 40;
+      x += (rand() - 0.5) * 50;
+      y += 20 + rand() * 30;
       ctx.lineTo(x, y);
     }
     ctx.stroke();
-  }
-
-  // patchy plaster loss revealing brick underneath
-  for (let i = 0; i < 3; i++) {
-    const x = rand() * size, y = size * (0.8 + rand() * 0.2);
-    ctx.fillStyle = "rgba(90,55,35,0.5)";
-    ctx.beginPath();
-    ctx.ellipse(x, y, 20 + rand() * 30, 10 + rand() * 15, rand() * Math.PI, 0, Math.PI * 2);
-    ctx.fill();
   }
 
   return canvas;
 }
 
 function makeWallMaterial(seed, wRepeat = 2, hRepeat = 1) {
-  const tex = new THREE.CanvasTexture(makePlasterCanvas({ seed }));
+  const tex = new THREE.CanvasTexture(makeBrickCanvas({ seed }));
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(wRepeat, hRepeat);
   tex.colorSpace = THREE.SRGBColorSpace;
-  return new THREE.MeshStandardMaterial({ map: tex, roughness: 1 });
+  return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 });
+}
+
+// ---------- cobweb texture: radial web on a transparent canvas ----------
+function makeCobwebTexture(seed = 1) {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+
+  let s = seed * 5147 + 12345;
+  const rand = () => {
+    s = (s * 5147 + 12345) % 233280;
+    return s / 233280;
+  };
+
+  const cx = size * 0.08, cy = size * 0.08; // web anchored to the corner
+  const maxR = size * 1.05;
+
+  ctx.strokeStyle = "rgba(210,205,190,0.55)";
+  ctx.lineWidth = 1;
+
+  // radiating strands
+  const strands = 8;
+  const angles = [];
+  for (let i = 0; i < strands; i++) {
+    const a = (Math.PI / 2) * (i / (strands - 1)) + (rand() - 0.5) * 0.05;
+    angles.push(a);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(a) * maxR, cy + Math.sin(a) * maxR);
+    ctx.stroke();
+  }
+
+  // concentric connecting threads (slightly irregular, like a worn web)
+  const rings = 6;
+  for (let r = 1; r <= rings; r++) {
+    const rad = (maxR / rings) * r;
+    ctx.beginPath();
+    for (let i = 0; i < angles.length; i++) {
+      const jitter = (rand() - 0.5) * 6;
+      const x = cx + Math.cos(angles[i]) * (rad + jitter);
+      const y = cy + Math.sin(angles[i]) * (rad + jitter);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function addCobweb(scene, x, y, z, rotY = 0, scale = 0.6, seed = 1) {
+  const tex = makeCobwebTexture(seed);
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const web = new THREE.Mesh(new THREE.PlaneGeometry(scale, scale), mat);
+  web.position.set(x, y, z);
+  web.rotation.y = rotY;
+  web.rotation.x = -Math.PI / 8;
+  scene.add(web);
+  return web;
 }
 
 export function createRoom1(scene, engine) {
   const colliders = [];
 
   // ---------- atmosphere ----------
-  scene.fog = new THREE.FogExp2(0x000000, 0.035);
-  scene.background = new THREE.Color(0x000000);
+  // lighter fog + darker-but-not-pitch-black background so the room reads
+  // clearly before the flashlight even comes on
+  scene.fog = new THREE.FogExp2(0x0a0806, 0.016);
+  scene.background = new THREE.Color(0x050403);
 
   // ---------- floor: old stone ----------
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(ROOM_W, ROOM_D),
-    new THREE.MeshStandardMaterial({ color: 0x2a231a, roughness: 0.95 })
+    new THREE.MeshStandardMaterial({ color: 0x3a3024, roughness: 0.95 })
   );
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
@@ -101,7 +212,7 @@ export function createRoom1(scene, engine) {
   // ---------- ceiling: wooden beams look (flat for now, beams added below) ----------
   const ceiling = new THREE.Mesh(
     new THREE.PlaneGeometry(ROOM_W, ROOM_D),
-    new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 1 })
+    new THREE.MeshStandardMaterial({ color: 0x241d16, roughness: 1 })
   );
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.y = ROOM_H;
@@ -115,12 +226,12 @@ export function createRoom1(scene, engine) {
     scene.add(beam);
   }
 
-  // ---------- walls: aged mud-plaster, not flat concrete ----------
+  // ---------- walls: damaged old brick ----------
   const t = 0.2; // thickness
   let wallSeed = 1;
 
   function addWallBox(cx, cz, w, d, h = ROOM_H, cy = h / 2) {
-    const mat = makeWallMaterial(wallSeed++, Math.max(w, d) / 1.6, h / 1.6);
+    const mat = makeWallMaterial(wallSeed++, Math.max(w, d) / 1.4, h / 1.4);
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     mesh.position.set(cx, cy, cz);
     mesh.castShadow = true;
@@ -182,6 +293,12 @@ export function createRoom1(scene, engine) {
     pillar.castShadow = true;
     scene.add(pillar);
   });
+
+  // ---------- cobwebs — tucked into the ceiling corners and window frame ----------
+  addCobweb(scene, -ROOM_W / 2 + 0.05, ROOM_H - 0.05, -ROOM_D / 2 + 0.05, Math.PI * 0.25, 0.9, 3);
+  addCobweb(scene, -ROOM_W / 2 + 0.05, ROOM_H - 0.05, ROOM_D / 2 - 0.05, -Math.PI * 0.25, 0.8, 7);
+  addCobweb(scene, ROOM_W / 2 - 0.05, ROOM_H - 0.05, ROOM_D / 2 - 0.05, Math.PI * 1.25, 0.85, 11);
+  addCobweb(scene, ROOM_W / 2 - 0.15, ROOM_H - 0.5, -(winW / 2 + eastSideLen / 2), Math.PI * 0.9, 0.5, 15);
 
   // ---------- jharokha lattice (jaali) — decorative, sits in the window opening ----------
   const jaaliGroup = new THREE.Group();
@@ -249,7 +366,7 @@ export function createRoom1(scene, engine) {
   diyaBase.position.set(-ROOM_W / 2 + 0.35, 1.145, -3.2);
   scene.add(diyaBase);
 
-  const diyaFlameLight = new THREE.PointLight(0xffb347, 2.2, 6, 2);
+  const diyaFlameLight = new THREE.PointLight(0xffb347, 3.0, 7, 2);
   diyaFlameLight.position.set(-ROOM_W / 2 + 0.35, 1.22, -3.2);
   diyaFlameLight.castShadow = false;
   scene.add(diyaFlameLight);
@@ -260,21 +377,28 @@ export function createRoom1(scene, engine) {
   flame.position.set(-ROOM_W / 2 + 0.35, 1.2, -3.2);
   scene.add(flame);
 
-  // ---------- ambient room lighting ----------
-  const ambient = new THREE.AmbientLight(0x3a352c, 1.1);
+  // ---------- ambient room lighting — brightened so the room is readable
+  // without needing the flashlight on constantly ----------
+  const ambient = new THREE.AmbientLight(0x4a4436, 2.2);
   scene.add(ambient);
 
-  const fillLight = new THREE.HemisphereLight(0x6b6152, 0x2a2318, 0.6);
+  const fillLight = new THREE.HemisphereLight(0x8a8070, 0x3a3324, 1.3);
   scene.add(fillLight);
 
-  const moonShaft = new THREE.SpotLight(0x8fa5c0, 1.1, 10, Math.PI / 6, 0.6, 1.5);
+  const moonShaft = new THREE.SpotLight(0x9fb5d0, 2.0, 12, Math.PI / 5, 0.6, 1.4);
   moonShaft.position.set(ROOM_W / 2 - 0.5, ROOM_H - 0.3, 0);
   moonShaft.target.position.set(-1, 0, 0.5);
   scene.add(moonShaft, moonShaft.target);
 
-  const entranceLight = new THREE.PointLight(0xffe0b0, 1.4, 6, 2);
+  const entranceLight = new THREE.PointLight(0xffe0b0, 2.2, 8, 2);
   entranceLight.position.set(0.5, 2.2, 3.5);
   scene.add(entranceLight);
+
+  // an extra warm fill lamp near the far end of the room so the back wall
+  // and puja corner don't vanish into pure black
+  const backFill = new THREE.PointLight(0xffcf9a, 1.6, 8, 2);
+  backFill.position.set(-1.5, 2.0, -3.0);
+  scene.add(backFill);
 
   // ---------- spawn ----------
   const spawnPoint = new THREE.Vector3(1.5, engine.playerHeight, 3.5);
@@ -284,7 +408,7 @@ export function createRoom1(scene, engine) {
   let flickerT = 0;
   function update(dt) {
     flickerT += dt;
-    diyaFlameLight.intensity = 1.0 + Math.sin(flickerT * 11) * 0.15 + (Math.random() - 0.5) * 0.1;
+    diyaFlameLight.intensity = 1.6 + Math.sin(flickerT * 11) * 0.2 + (Math.random() - 0.5) * 0.15;
     flame.scale.y = 1 + Math.sin(flickerT * 14) * 0.15;
   }
 
