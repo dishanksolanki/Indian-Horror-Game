@@ -8,7 +8,6 @@ import { PointerLockControls } from "three/addons/controls/PointerLockControls.j
 export class Engine {
   constructor(canvas) {
     this.canvas = canvas;
-
     this.scene = new THREE.Scene();
     this.clock = new THREE.Clock();
 
@@ -52,23 +51,25 @@ export class Engine {
     this._focusedInteractable = null;
 
     // flashlight
-    this.flashlight = new THREE.SpotLight(0xfff2d0, 0, 9, Math.PI / 6.2, 0.45, 1.6);
+    // NOTE: started ON with a visible intensity while the room/map is being built,
+    // so you can actually see what you're placing. Flip these back to
+    // (false / 0) once you're ready to restore the intended dark horror atmosphere.
+    this.flashlight = new THREE.SpotLight(0xfff2d0, 3.2, 9, Math.PI / 6.2, 0.45, 1.6);
     this.flashlight.castShadow = true;
     this.flashlight.shadow.mapSize.set(1024, 1024);
-    this.flashlightOn = false;
+    this.flashlightOn = true;
     this.flashTarget = new THREE.Object3D();
     this.scene.add(this.flashlight, this.flashTarget);
     this.flashlight.target = this.flashTarget;
 
     this._raycaster = new THREE.Raycaster();
-    this._paused = true;
 
+    this._paused = true;
     this._bindInput();
     window.addEventListener("resize", () => this._onResize());
   }
 
   // ---------- setup helpers used by rooms ----------
-
   addCollider(box3) {
     this.colliders.push(box3);
   }
@@ -87,11 +88,9 @@ export class Engine {
   }
 
   // ---------- input ----------
-
   _bindInput() {
     document.addEventListener("keydown", (e) => this._onKey(e, true));
     document.addEventListener("keyup", (e) => this._onKey(e, false));
-
     document.addEventListener("keydown", (e) => {
       if (e.code === "KeyF") this.toggleFlashlight();
       if (e.code === "KeyE") this._tryInteract();
@@ -118,7 +117,6 @@ export class Engine {
   }
 
   // ---------- collision ----------
-
   _resolveCollision(nextPos) {
     const r = this.playerRadius;
     const playerBox = new THREE.Box3(
@@ -133,30 +131,36 @@ export class Engine {
 
   _moveWithCollision(dx, dz) {
     const pos = this.camera.position;
-
     // try X and Z independently so sliding along walls feels natural
     const tryX = new THREE.Vector3(pos.x + dx, pos.y, pos.z);
     if (!this._resolveCollision(tryX)) pos.x = tryX.x;
-
     const tryZ = new THREE.Vector3(pos.x, pos.y, pos.z + dz);
     if (!this._resolveCollision(tryZ)) pos.z = tryZ.z;
   }
 
   // ---------- per-frame update ----------
-
   _updateMovement(dt) {
     const speed = this.move.sprint ? this.sprintSpeed : this.walkSpeed;
-
     const forward = (this.move.forward ? 1 : 0) - (this.move.back ? 1 : 0);
     const strafe = (this.move.right ? 1 : 0) - (this.move.left ? 1 : 0);
 
     let moving = false;
     if (forward !== 0 || strafe !== 0) {
-      const dir = new THREE.Vector3(strafe, 0, -forward).normalize();
-      dir.applyQuaternion(this.camera.quaternion.clone().multiply(
-        new THREE.Quaternion().setFromEuler(new THREE.Euler(-this.camera.rotation.x, 0, 0))
-      ));
-      dir.y = 0;
+      // FIX: derive movement direction from the camera's actual world-facing
+      // direction (flattened to the horizontal plane), instead of the old
+      // camera.quaternion trick which effectively cancelled itself out and
+      // ignored yaw entirely. This is what made W/S (and A/D) feel broken —
+      // movement never actually turned with the camera.
+      const camDir = new THREE.Vector3();
+      this.camera.getWorldDirection(camDir);
+      camDir.y = 0;
+      camDir.normalize();
+
+      const camRight = new THREE.Vector3().crossVectors(camDir, new THREE.Vector3(0, 1, 0));
+
+      const dir = new THREE.Vector3();
+      dir.addScaledVector(camDir, forward);
+      dir.addScaledVector(camRight, strafe);
       dir.normalize();
 
       const step = speed * dt;
@@ -186,7 +190,6 @@ export class Engine {
     this._raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
     let closest = null;
     let closestDist = Infinity;
-
     for (const item of this.interactables) {
       const dist = this.camera.position.distanceTo(item.object3D.position);
       if (dist > item.radius) continue;
@@ -199,7 +202,6 @@ export class Engine {
         closestDist = dist;
       }
     }
-
     this._focusedInteractable = closest;
     const promptEl = document.getElementById("interact-prompt");
     if (closest) {
@@ -211,7 +213,6 @@ export class Engine {
   }
 
   // ---------- main loop ----------
-
   start(onFrame) {
     this._onFrame = onFrame;
     this._paused = false;
@@ -225,6 +226,7 @@ export class Engine {
   _loop() {
     requestAnimationFrame(() => this._loop());
     const dt = Math.min(this.clock.getDelta(), 0.05);
+
     if (this._paused || !this.controls.isLocked) {
       this.renderer.render(this.scene, this.camera);
       return;
@@ -233,6 +235,7 @@ export class Engine {
     this._updateMovement(dt);
     this._updateFlashlight();
     this._updateInteractionFocus();
+
     if (this._onFrame) this._onFrame(dt, this);
 
     this.renderer.render(this.scene, this.camera);
