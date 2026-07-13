@@ -1,5 +1,5 @@
 // room1.js — ROOM 1: an old Indian haveli room.
-// Pure map for now: floor, walls, jharokha window, charpai, diya light, puja corner.
+// Pure map for now: floor, walls, jharokha window, diya light, puja corner, hanging bulb.
 // No jumpscares / mechanics yet — just the walkable space.
 import * as THREE from "three";
 
@@ -125,6 +125,82 @@ function makeWallMaterial(seed, wRepeat = 2, hRepeat = 1) {
   return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 });
 }
 
+// ---------- floor tile texture: aged stone/ceramic tiles with grout ----------
+function makeTileCanvas({ size = 512, seed = 1 } = {}) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+
+  let s = seed * 7351 + 21467;
+  const rand = () => {
+    s = (s * 7351 + 21467) % 233280;
+    return s / 233280;
+  };
+
+  const tile = 84;
+  const grout = 4;
+
+  // grout base color
+  ctx.fillStyle = "#171310";
+  ctx.fillRect(0, 0, size, size);
+
+  const tileHues = ["#3f362a", "#463c2e", "#382f24", "#4a3f30", "#352c22"];
+
+  for (let y = 0; y < size; y += tile + grout) {
+    for (let x = 0; x < size; x += tile + grout) {
+      ctx.fillStyle = tileHues[Math.floor(rand() * tileHues.length)];
+      ctx.fillRect(x, y, tile - grout, tile - grout);
+
+      // per-tile speckle/wear noise
+      for (let i = 0; i < 30; i++) {
+        const nx = x + rand() * (tile - grout);
+        const ny = y + rand() * (tile - grout);
+        const shade = rand() * 26 - 13;
+        ctx.fillStyle = `rgba(${shade > 0 ? 255 : 0},${shade > 0 ? 255 : 0},${shade > 0 ? 255 : 0},${Math.abs(shade) / 130})`;
+        ctx.fillRect(nx, ny, 2, 2);
+      }
+
+      // occasional cracked tile
+      if (rand() < 0.12) {
+        ctx.strokeStyle = "rgba(10,8,6,0.6)";
+        ctx.lineWidth = 1;
+        let cx = x + rand() * tile, cy = y + rand() * tile;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        const segs = 2 + Math.floor(rand() * 3);
+        for (let j = 0; j < segs; j++) {
+          cx += (rand() - 0.5) * 20;
+          cy += (rand() - 0.5) * 20;
+          ctx.lineTo(cx, cy);
+        }
+        ctx.stroke();
+      }
+
+      // faint dust/stain patch on some tiles
+      if (rand() < 0.15) {
+        const gx = x + tile * 0.5, gy = y + tile * 0.5;
+        const grad = ctx.createRadialGradient(gx, gy, 0, gx, gy, tile * 0.5);
+        grad.addColorStop(0, "rgba(10,8,5,0.3)");
+        grad.addColorStop(1, "rgba(10,8,5,0)");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(gx, gy, tile * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  return canvas;
+}
+
+function makeFloorMaterial(seed, repeat = 4) {
+  const tex = new THREE.CanvasTexture(makeTileCanvas({ seed }));
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeat, repeat * (ROOM_D / ROOM_W));
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9 });
+}
+
 // ---------- cobweb texture: radial web on a transparent canvas ----------
 function makeCobwebTexture(seed = 1) {
   const size = 256;
@@ -195,15 +271,13 @@ export function createRoom1(scene, engine) {
   const colliders = [];
 
   // ---------- atmosphere ----------
-  // lighter fog + darker-but-not-pitch-black background so the room reads
-  // clearly before the flashlight even comes on
   scene.fog = new THREE.FogExp2(0x0a0806, 0.016);
   scene.background = new THREE.Color(0x050403);
 
-  // ---------- floor: old stone ----------
+  // ---------- floor: aged stone tiles ----------
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(ROOM_W, ROOM_D),
-    new THREE.MeshStandardMaterial({ color: 0x3a3024, roughness: 0.95 })
+    makeFloorMaterial(21)
   );
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
@@ -316,41 +390,8 @@ export function createRoom1(scene, engine) {
   }
   scene.add(jaaliGroup);
 
-  // ---------- charpai (rope cot) ----------
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
-  const ropeMat = new THREE.MeshStandardMaterial({ color: 0x9c8256, roughness: 0.95 });
-  const cotGroup = new THREE.Group();
-  const legPositions = [
-    [-0.75, -1.0], [0.75, -1.0], [-0.75, 1.0], [0.75, 1.0]
-  ];
-  legPositions.forEach(([lx, lz]) => {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.45, 8), woodMat);
-    leg.position.set(lx, 0.225, lz);
-    leg.castShadow = true;
-    cotGroup.add(leg);
-  });
-  const frameSideA = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 2.1), woodMat);
-  frameSideA.position.set(-0.75, 0.45, 0);
-  const frameSideB = frameSideA.clone(); frameSideB.position.x = 0.75;
-  const frameEndA = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.06, 0.06), woodMat);
-  frameEndA.position.set(0, 0.45, -1.02);
-  const frameEndB = frameEndA.clone(); frameEndB.position.z = 1.02;
-  cotGroup.add(frameSideA, frameSideB, frameEndA, frameEndB);
-  const weave = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2.0), ropeMat);
-  weave.rotation.x = -Math.PI / 2;
-  weave.position.set(0, 0.47, 0);
-  weave.receiveShadow = true;
-  cotGroup.add(weave);
-  cotGroup.position.set(-2.2, 0, 2.8);
-  cotGroup.rotation.y = 0.15;
-  cotGroup.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-  scene.add(cotGroup);
-  const cotBox = new THREE.Box3().setFromObject(cotGroup);
-  cotBox.min.y = 0; cotBox.max.y = 0.6; // low collider so it just blocks walking through
-  colliders.push(cotBox);
-  engine.addCollider(cotBox);
-
   // ---------- puja corner (small shelf with diya) ----------
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
   const shelf = new THREE.Mesh(
     new THREE.BoxGeometry(0.7, 0.06, 0.3),
     woodMat
@@ -377,26 +418,59 @@ export function createRoom1(scene, engine) {
   flame.position.set(-ROOM_W / 2 + 0.35, 1.2, -3.2);
   scene.add(flame);
 
+  // ---------- hanging light bulb — bare bulb on a cord, center of the room ----------
+  const bulbGroup = new THREE.Group();
+  const cordLen = 0.9;
+  const bulbY = ROOM_H - cordLen;
+
+  const cordMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6 });
+  const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, cordLen, 6), cordMat);
+  cord.position.set(0, ROOM_H - cordLen / 2, 0);
+  bulbGroup.add(cord);
+
+  const socketMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.5 });
+  const socket = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.06, 10), socketMat);
+  socket.position.set(0, bulbY + 0.05, 0);
+  bulbGroup.add(socket);
+
+  const bulbMat = new THREE.MeshStandardMaterial({
+    color: 0xfff2c4,
+    emissive: 0xffdd88,
+    emissiveIntensity: 1.4,
+    roughness: 0.3,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 10), bulbMat);
+  bulb.position.set(0, bulbY, 0);
+  bulbGroup.add(bulb);
+
+  scene.add(bulbGroup);
+
+  const bulbLight = new THREE.PointLight(0xffd98a, 2.4, 9, 2);
+  bulbLight.position.set(0, bulbY - 0.05, 0);
+  bulbLight.castShadow = true;
+  bulbLight.shadow.mapSize.set(512, 512);
+  scene.add(bulbLight);
+
   // ---------- ambient room lighting — brightened so the room is readable
   // without needing the flashlight on constantly ----------
-  const ambient = new THREE.AmbientLight(0x4a4436, 2.2);
+  const ambient = new THREE.AmbientLight(0x4a4436, 2.0);
   scene.add(ambient);
 
-  const fillLight = new THREE.HemisphereLight(0x8a8070, 0x3a3324, 1.3);
+  const fillLight = new THREE.HemisphereLight(0x8a8070, 0x3a3324, 1.2);
   scene.add(fillLight);
 
-  const moonShaft = new THREE.SpotLight(0x9fb5d0, 2.0, 12, Math.PI / 5, 0.6, 1.4);
+  const moonShaft = new THREE.SpotLight(0x9fb5d0, 1.8, 12, Math.PI / 5, 0.6, 1.4);
   moonShaft.position.set(ROOM_W / 2 - 0.5, ROOM_H - 0.3, 0);
   moonShaft.target.position.set(-1, 0, 0.5);
   scene.add(moonShaft, moonShaft.target);
 
-  const entranceLight = new THREE.PointLight(0xffe0b0, 2.2, 8, 2);
+  const entranceLight = new THREE.PointLight(0xffe0b0, 1.8, 8, 2);
   entranceLight.position.set(0.5, 2.2, 3.5);
   scene.add(entranceLight);
 
-  // an extra warm fill lamp near the far end of the room so the back wall
-  // and puja corner don't vanish into pure black
-  const backFill = new THREE.PointLight(0xffcf9a, 1.6, 8, 2);
+  const backFill = new THREE.PointLight(0xffcf9a, 1.4, 8, 2);
   backFill.position.set(-1.5, 2.0, -3.0);
   scene.add(backFill);
 
@@ -404,12 +478,17 @@ export function createRoom1(scene, engine) {
   const spawnPoint = new THREE.Vector3(1.5, engine.playerHeight, 3.5);
   const spawnYaw = Math.PI * 0.85;
 
-  // ---------- per-frame update: just a gentle flame flicker for now ----------
+  // ---------- per-frame update: diya flicker + bulb flicker ----------
   let flickerT = 0;
   function update(dt) {
     flickerT += dt;
     diyaFlameLight.intensity = 1.6 + Math.sin(flickerT * 11) * 0.2 + (Math.random() - 0.5) * 0.15;
     flame.scale.y = 1 + Math.sin(flickerT * 14) * 0.15;
+
+    // old bare bulb: mostly steady, occasional dim stutter for atmosphere
+    const stutter = Math.random() < 0.01 ? 0.3 : 1;
+    bulbLight.intensity = 2.4 * stutter;
+    bulbMat.emissiveIntensity = 1.4 * stutter;
   }
 
   return { spawnPoint, spawnYaw, update, colliders };
