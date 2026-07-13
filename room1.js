@@ -1,56 +1,49 @@
-// room1.js — "The Bedroom"
-// Builds the geometry, lighting, atmosphere and interactive elements for the first room.
-// Exports createRoom1(scene, engine) -> { spawnPoint, spawnYaw, update(dt, engine) }
+// room1.js — ROOM 1: an old Indian haveli room.
+// Pure map for now: floor, walls, jharokha window, charpai, diya light, puja corner.
+// No jumpscares / mechanics yet — just the walkable space.
 
 import * as THREE from "three";
 
-const ROOM_W = 8;
-const ROOM_D = 10;
-const ROOM_H = 3.1;
-
-function wallMaterial() {
-  return new THREE.MeshStandardMaterial({ color: 0x2b2620, roughness: 0.95, metalness: 0.02 });
-}
-
-function floorMaterial() {
-  return new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 0.9, metalness: 0.0 });
-}
+const ROOM_W = 7;   // east-west
+const ROOM_D = 9;   // north-south
+const ROOM_H = 3.0;
 
 export function createRoom1(scene, engine) {
-  const state = {
-    flickerT: 0,
-    lightOn: true,
-    closetOpened: false,
-    noteRead: false,
-    scareArmed: true,
-    scareTriggered: false,
-  };
+  const colliders = [];
 
-  // ---------- fog & background ----------
-  scene.fog = new THREE.FogExp2(0x000000, 0.11);
+  // ---------- atmosphere ----------
+  scene.fog = new THREE.FogExp2(0x000000, 0.1);
   scene.background = new THREE.Color(0x000000);
 
-  // ---------- floor ----------
+  // ---------- floor: old stone ----------
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(ROOM_W, ROOM_D),
-    floorMaterial()
+    new THREE.MeshStandardMaterial({ color: 0x2a231a, roughness: 0.95 })
   );
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
 
-  // ---------- ceiling ----------
+  // ---------- ceiling: wooden beams look (flat for now, beams added below) ----------
   const ceiling = new THREE.Mesh(
     new THREE.PlaneGeometry(ROOM_W, ROOM_D),
-    new THREE.MeshStandardMaterial({ color: 0x141110, roughness: 1 })
+    new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 1 })
   );
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.y = ROOM_H;
   scene.add(ceiling);
 
-  // ---------- walls (with a doorway gap on the north wall) ----------
-  const wallMat = wallMaterial();
-  const colliders = [];
+  const beamMat = new THREE.MeshStandardMaterial({ color: 0x2e2013, roughness: 0.9 });
+  for (let i = -1; i <= 1; i++) {
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, ROOM_D), beamMat);
+    beam.position.set(i * (ROOM_W / 3), ROOM_H - 0.1, 0);
+    beam.castShadow = true;
+    scene.add(beam);
+  }
+
+  // ---------- walls: mud-plastered, warm ochre ----------
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x6b4e33, roughness: 1 });
+  const t = 0.2; // thickness
 
   function addWallBox(cx, cz, w, d, h = ROOM_H, cy = h / 2) {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
@@ -60,186 +53,133 @@ export function createRoom1(scene, engine) {
     scene.add(mesh);
     const box = new THREE.Box3().setFromObject(mesh);
     colliders.push(box);
+    engine.addCollider(box);
     return mesh;
   }
 
-  const t = 0.2; // wall thickness
-  // south wall (solid)
+  // south wall — solid
   addWallBox(0, ROOM_D / 2, ROOM_W + t, t);
-  // west wall
+
+  // west wall — solid
   addWallBox(-ROOM_W / 2, 0, t, ROOM_D + t);
-  // east wall
-  addWallBox(ROOM_W / 2, 0, t, ROOM_D + t);
-  // north wall split with a doorway gap in the middle
-  const doorGap = 1.4;
-  const sideLen = (ROOM_W - doorGap) / 2;
-  addWallBox(-(doorGap / 2 + sideLen / 2), -ROOM_D / 2, sideLen, t);
-  addWallBox((doorGap / 2 + sideLen / 2), -ROOM_D / 2, sideLen, t);
-  // lintel above the doorway
-  addWallBox(0, -ROOM_D / 2, doorGap, t, 0.6, ROOM_H - 0.3);
 
-  colliders.forEach((box) => engine.addCollider(box));
+  // east wall — has the jharokha (lattice window) cut into it, built from two segments
+  const winW = 1.4, winH = 1.2;
+  const eastSideLen = (ROOM_D - winW) / 2;
+  addWallBox(ROOM_W / 2, -(winW / 2 + eastSideLen / 2), t, eastSideLen);
+  addWallBox(ROOM_W / 2, (winW / 2 + eastSideLen / 2), t, eastSideLen);
+  // lintel above and sill below the window opening
+  addWallBox(ROOM_W / 2, 0, t, winW, ROOM_H - winH - 0.9, ROOM_H - (ROOM_H - winH - 0.9) / 2);
+  addWallBox(ROOM_W / 2, 0, t, winW, 0.9, 0.45);
 
-  // ---------- lighting ----------
-  const ambient = new THREE.AmbientLight(0x1a1a22, 0.35);
+  // north wall — doorway gap in the middle (exit for later rooms)
+  const doorGap = 1.3;
+  const northSideLen = (ROOM_W - doorGap) / 2;
+  addWallBox(-(doorGap / 2 + northSideLen / 2), -ROOM_D / 2, northSideLen, t);
+  addWallBox((doorGap / 2 + northSideLen / 2), -ROOM_D / 2, northSideLen, t);
+  addWallBox(0, -ROOM_D / 2, doorGap, t, 0.5, ROOM_H - 0.25); // lintel
+
+  // ---------- jharokha lattice (jaali) — decorative, sits in the window opening ----------
+  const jaaliGroup = new THREE.Group();
+  const jaaliMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.8 });
+  const bars = 5;
+  for (let i = 0; i < bars; i++) {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.03, winH, 0.06), jaaliMat);
+    bar.position.set(ROOM_W / 2 - 0.02, ROOM_H - winH / 2 - 0.9, -winW / 2 + (i / (bars - 1)) * winW);
+    jaaliGroup.add(bar);
+  }
+  for (let i = 0; i < 3; i++) {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.06, winW), jaaliMat);
+    bar.position.set(ROOM_W / 2 - 0.02, ROOM_H - 0.9 - (i / 2) * winH, 0);
+    jaaliGroup.add(bar);
+  }
+  scene.add(jaaliGroup);
+
+  // ---------- charpai (rope cot) ----------
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
+  const ropeMat = new THREE.MeshStandardMaterial({ color: 0x9c8256, roughness: 0.95 });
+
+  const cotGroup = new THREE.Group();
+  const legPositions = [
+    [-0.75, -1.0], [0.75, -1.0], [-0.75, 1.0], [0.75, 1.0]
+  ];
+  legPositions.forEach(([lx, lz]) => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.45, 8), woodMat);
+    leg.position.set(lx, 0.225, lz);
+    leg.castShadow = true;
+    cotGroup.add(leg);
+  });
+  const frameSideA = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 2.1), woodMat);
+  frameSideA.position.set(-0.75, 0.45, 0);
+  const frameSideB = frameSideA.clone(); frameSideB.position.x = 0.75;
+  const frameEndA = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.06, 0.06), woodMat);
+  frameEndA.position.set(0, 0.45, -1.02);
+  const frameEndB = frameEndA.clone(); frameEndB.position.z = 1.02;
+  cotGroup.add(frameSideA, frameSideB, frameEndA, frameEndB);
+
+  const weave = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2.0), ropeMat);
+  weave.rotation.x = -Math.PI / 2;
+  weave.position.set(0, 0.47, 0);
+  weave.receiveShadow = true;
+  cotGroup.add(weave);
+
+  cotGroup.position.set(-2.2, 0, 2.8);
+  cotGroup.rotation.y = 0.15;
+  cotGroup.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  scene.add(cotGroup);
+
+  const cotBox = new THREE.Box3().setFromObject(cotGroup);
+  cotBox.min.y = 0; cotBox.max.y = 0.6; // low collider so it just blocks walking through
+  colliders.push(cotBox);
+  engine.addCollider(cotBox);
+
+  // ---------- puja corner (small shelf with diya) ----------
+  const shelf = new THREE.Mesh(
+    new THREE.BoxGeometry(0.7, 0.06, 0.3),
+    woodMat
+  );
+  shelf.position.set(-ROOM_W / 2 + 0.35, 1.1, -3.2);
+  shelf.castShadow = shelf.receiveShadow = true;
+  scene.add(shelf);
+
+  const diyaBase = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.06, 0.03, 10),
+    new THREE.MeshStandardMaterial({ color: 0x4a3320, roughness: 0.7 })
+  );
+  diyaBase.position.set(-ROOM_W / 2 + 0.35, 1.145, -3.2);
+  scene.add(diyaBase);
+
+  const diyaFlameLight = new THREE.PointLight(0xffb347, 1.2, 3.5, 2);
+  diyaFlameLight.position.set(-ROOM_W / 2 + 0.35, 1.22, -3.2);
+  diyaFlameLight.castShadow = false;
+  scene.add(diyaFlameLight);
+
+  const flameGeo = new THREE.ConeGeometry(0.02, 0.06, 6);
+  const flameMat = new THREE.MeshBasicMaterial({ color: 0xffcc66 });
+  const flame = new THREE.Mesh(flameGeo, flameMat);
+  flame.position.set(-ROOM_W / 2 + 0.35, 1.2, -3.2);
+  scene.add(flame);
+
+  // ---------- ambient room lighting ----------
+  const ambient = new THREE.AmbientLight(0x1a1712, 0.4);
   scene.add(ambient);
 
-  const ceilingLamp = new THREE.PointLight(0xffcf8a, 1.1, 7, 2);
-  ceilingLamp.position.set(0, ROOM_H - 0.15, 0.5);
-  ceilingLamp.castShadow = true;
-  ceilingLamp.shadow.mapSize.set(512, 512);
-  scene.add(ceilingLamp);
-  state.ceilingLamp = ceilingLamp;
-
-  const moonGlow = new THREE.PointLight(0x334466, 0.25, 6, 2);
-  moonGlow.position.set(-ROOM_W / 2 + 0.5, 1.4, -2);
-  scene.add(moonGlow);
-
-  // ---------- furniture ----------
-  function box(w, h, d, color, roughness = 0.8) {
-    return new THREE.Mesh(
-      new THREE.BoxGeometry(w, h, d),
-      new THREE.MeshStandardMaterial({ color, roughness })
-    );
-  }
-
-  // bed
-  const bedFrame = box(1.6, 0.4, 2.1, 0x3a2a1e);
-  bedFrame.position.set(-2.4, 0.2, 2.5);
-  bedFrame.castShadow = bedFrame.receiveShadow = true;
-  scene.add(bedFrame);
-  const mattress = box(1.5, 0.25, 2.0, 0x54503f);
-  mattress.position.set(-2.4, 0.52, 2.5);
-  mattress.castShadow = mattress.receiveShadow = true;
-  scene.add(mattress);
-  engine.addCollider(new THREE.Box3().setFromObject(bedFrame));
-
-  // nightstand + note
-  const nightstand = box(0.5, 0.55, 0.5, 0x2c2118);
-  nightstand.position.set(-1.4, 0.275, 3.3);
-  nightstand.castShadow = nightstand.receiveShadow = true;
-  scene.add(nightstand);
-  engine.addCollider(new THREE.Box3().setFromObject(nightstand));
-
-  const noteMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.22, 0.28),
-    new THREE.MeshStandardMaterial({ color: 0xe9dfc0, roughness: 0.9, side: THREE.DoubleSide })
-  );
-  noteMesh.rotation.x = -Math.PI / 2;
-  noteMesh.rotation.z = 0.3;
-  noteMesh.position.set(-1.4, 0.565, 3.3);
-  scene.add(noteMesh);
-
-  engine.addInteractable(noteMesh, {
-    radius: 1.5,
-    prompt: "Read Note",
-    onInteract: () => showNote(state),
-  });
-
-  // wardrobe / closet (source of the scare)
-  const closet = box(1.0, 2.2, 0.55, 0x241c14);
-  closet.position.set(3.2, 1.1, -4.3);
-  closet.castShadow = closet.receiveShadow = true;
-  scene.add(closet);
-  engine.addCollider(new THREE.Box3().setFromObject(closet));
-
-  const closetDoor = box(0.48, 2.1, 0.05, 0x1c150f);
-  closetDoor.position.set(2.98, 1.1, -4.02);
-  closetDoor.castShadow = true;
-  scene.add(closetDoor);
-
-  engine.addInteractable(closetDoor, {
-    radius: 1.7,
-    prompt: state.closetOpened ? "" : "Open Closet",
-    onInteract: () => openCloset(state, closetDoor, scene, engine),
-  });
-
-  // desk + chair silhouette for set dressing
-  const desk = box(1.3, 0.75, 0.6, 0x2c2118);
-  desk.position.set(2.6, 0.375, 3.6);
-  desk.castShadow = desk.receiveShadow = true;
-  scene.add(desk);
-  engine.addCollider(new THREE.Box3().setFromObject(desk));
+  const moonShaft = new THREE.SpotLight(0x8fa5c0, 0.5, 8, Math.PI / 8, 0.6, 1.5);
+  moonShaft.position.set(ROOM_W / 2 - 0.5, ROOM_H - 0.3, 0);
+  moonShaft.target.position.set(-1, 0, 0.5);
+  scene.add(moonShaft, moonShaft.target);
 
   // ---------- spawn ----------
-  const spawnPoint = new THREE.Vector3(0, engine.playerHeight, 4);
-  const spawnYaw = Math.PI;
+  const spawnPoint = new THREE.Vector3(1.5, engine.playerHeight, 3.5);
+  const spawnYaw = Math.PI * 0.85;
 
-  // ---------- per-frame update ----------
-  function update(dt, eng) {
-    // flickering ceiling lamp for atmosphere
-    state.flickerT += dt;
-    const flicker = 0.85 + Math.sin(state.flickerT * 9.0) * 0.08 + (Math.random() - 0.5) * 0.06;
-    ceilingLamp.intensity = state.lightOn ? Math.max(0.15, flicker * 1.1) : 0;
-
-    // rare full blackout flicker
-    if (Math.random() < 0.0015) {
-      state.lightOn = !state.lightOn;
-    }
-
-    // closet jumpscare: triggers once, when player gets close after opening it
-    if (state.scareArmed && state.closetOpened && !state.scareTriggered) {
-      const dist = eng.camera.position.distanceTo(closet.position);
-      if (dist < 2.2) {
-        triggerScare(state, scene, eng);
-      }
-    }
+  // ---------- per-frame update: just a gentle flame flicker for now ----------
+  let flickerT = 0;
+  function update(dt) {
+    flickerT += dt;
+    diyaFlameLight.intensity = 1.0 + Math.sin(flickerT * 11) * 0.15 + (Math.random() - 0.5) * 0.1;
+    flame.scale.y = 1 + Math.sin(flickerT * 14) * 0.15;
   }
 
   return { spawnPoint, spawnYaw, update, colliders };
-}
-
-// ---------- helpers ----------
-
-function showNote(state) {
-  if (state.noteRead) return;
-  const overlay = document.getElementById("note-overlay");
-  document.getElementById("note-title").textContent = "A Torn Page";
-  document.getElementById("note-body").textContent =
-    "\"...it knocks three times before it opens the closet on its own. Don't answer. Don't look. If the light goes out, stay still until it stops breathing...\"";
-  overlay.classList.add("show");
-  document.exitPointerLock();
-
-  const closeHandler = (e) => {
-    if (e.code === "KeyE" || e.code === "Escape") {
-      overlay.classList.remove("show");
-      document.removeEventListener("keydown", closeHandler);
-      document.body.requestPointerLock();
-    }
-  };
-  document.addEventListener("keydown", closeHandler);
-  state.noteRead = true;
-}
-
-function openCloset(state, closetDoor, scene, engine) {
-  if (state.closetOpened) return;
-  state.closetOpened = true;
-  // swing the door open
-  closetDoor.rotation.y = -Math.PI / 2.2;
-  closetDoor.position.x -= 0.22;
-  closetDoor.position.z -= 0.22;
-}
-
-function triggerScare(state, scene, engine) {
-  state.scareTriggered = true;
-
-  // kill the lights
-  state.lightOn = false;
-
-  // flash a dark shape briefly, then fade to black and reset
-  const fade = document.getElementById("fade");
-  fade.classList.add("show");
-
-  const monster = new THREE.Mesh(
-    new THREE.BoxGeometry(0.6, 1.9, 0.4),
-    new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 1 })
-  );
-  monster.position.set(engine.camera.position.x, 0.95, engine.camera.position.z - 0.8);
-  scene.add(monster);
-
-  setTimeout(() => {
-    scene.remove(monster);
-    fade.classList.remove("show");
-    state.lightOn = true;
-  }, 1400);
 }
