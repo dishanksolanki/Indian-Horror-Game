@@ -5,7 +5,7 @@ import * as THREE from "three";
 
 const ROOM_W = 5; // east-west
 const ROOM_D = 6; // north-south
-const ROOM_H = 2.6;
+const ROOM_H = 3.0;
 
 // ---------- procedural grunge texture helpers ----------
 // No external image assets needed — everything is baked onto a canvas at
@@ -117,11 +117,33 @@ function makeBrickCanvas({ size = 512, seed = 1 } = {}) {
   return canvas;
 }
 
-function makeWallMaterial(seed, wRepeat = 2, hRepeat = 1) {
-  const tex = new THREE.CanvasTexture(makeBrickCanvas({ seed }));
+// One shared canvas/texture for every wall so the brick size and pattern
+// style is identical everywhere. Each wall segment gets its own CLONE of
+// this texture so it can set its own repeat count (based on its own size),
+// but because they all sample the same source image, the brick scale never
+// mismatches from one wall or one segment to the next.
+let _sharedBrickTexture = null;
+function getSharedBrickTexture() {
+  if (!_sharedBrickTexture) {
+    _sharedBrickTexture = new THREE.CanvasTexture(makeBrickCanvas({ seed: 7 }));
+    _sharedBrickTexture.wrapS = _sharedBrickTexture.wrapT = THREE.RepeatWrapping;
+    _sharedBrickTexture.colorSpace = THREE.SRGBColorSpace;
+  }
+  return _sharedBrickTexture;
+}
+
+// fixed physical size (in world units) that one texture tile should cover,
+// so a 1m-wide wall and a 5m-wide wall show the same size bricks
+const BRICK_TILE_WORLD_SIZE = 1.4;
+
+function makeWallMaterial(wWorld, hWorld) {
+  const tex = getSharedBrickTexture().clone();
+  tex.needsUpdate = true;
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(wRepeat, hRepeat);
-  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.repeat.set(
+    Math.max(1, wWorld / BRICK_TILE_WORLD_SIZE),
+    Math.max(1, hWorld / BRICK_TILE_WORLD_SIZE)
+  );
   return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 });
 }
 
@@ -302,10 +324,9 @@ export function createRoom1(scene, engine) {
 
   // ---------- walls: damaged old brick ----------
   const t = 0.2; // thickness
-  let wallSeed = 1;
 
   function addWallBox(cx, cz, w, d, h = ROOM_H, cy = h / 2) {
-    const mat = makeWallMaterial(wallSeed++, Math.max(w, d) / 1.4, h / 1.4);
+    const mat = makeWallMaterial(Math.max(w, d), h);
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     mesh.position.set(cx, cy, cz);
     mesh.castShadow = true;
