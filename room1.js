@@ -3,9 +3,9 @@
 // No jumpscares / mechanics yet — just the walkable space.
 import * as THREE from "three";
 
-const ROOM_W = 7; // east-west
-const ROOM_D = 9; // north-south
-const ROOM_H = 3.0;
+const ROOM_W = 5; // east-west
+const ROOM_D = 6; // north-south
+const ROOM_H = 2.6;
 
 // ---------- procedural grunge texture helpers ----------
 // No external image assets needed — everything is baked onto a canvas at
@@ -396,7 +396,8 @@ export function createRoom1(scene, engine) {
     new THREE.BoxGeometry(0.7, 0.06, 0.3),
     woodMat
   );
-  shelf.position.set(-ROOM_W / 2 + 0.35, 1.1, -3.2);
+  const pujaZ = -ROOM_D / 2 + 0.5;
+  shelf.position.set(-ROOM_W / 2 + 0.35, 1.1, pujaZ);
   shelf.castShadow = shelf.receiveShadow = true;
   scene.add(shelf);
 
@@ -404,18 +405,18 @@ export function createRoom1(scene, engine) {
     new THREE.CylinderGeometry(0.05, 0.06, 0.03, 10),
     new THREE.MeshStandardMaterial({ color: 0x4a3320, roughness: 0.7 })
   );
-  diyaBase.position.set(-ROOM_W / 2 + 0.35, 1.145, -3.2);
+  diyaBase.position.set(-ROOM_W / 2 + 0.35, 1.145, pujaZ);
   scene.add(diyaBase);
 
   const diyaFlameLight = new THREE.PointLight(0xffb347, 3.0, 7, 2);
-  diyaFlameLight.position.set(-ROOM_W / 2 + 0.35, 1.22, -3.2);
+  diyaFlameLight.position.set(-ROOM_W / 2 + 0.35, 1.22, pujaZ);
   diyaFlameLight.castShadow = false;
   scene.add(diyaFlameLight);
 
   const flameGeo = new THREE.ConeGeometry(0.02, 0.06, 6);
   const flameMat = new THREE.MeshBasicMaterial({ color: 0xffcc66 });
   const flame = new THREE.Mesh(flameGeo, flameMat);
-  flame.position.set(-ROOM_W / 2 + 0.35, 1.2, -3.2);
+  flame.position.set(-ROOM_W / 2 + 0.35, 1.2, pujaZ);
   scene.add(flame);
 
   // ---------- hanging light bulb — bare bulb on a cord, center of the room ----------
@@ -467,15 +468,15 @@ export function createRoom1(scene, engine) {
   scene.add(moonShaft, moonShaft.target);
 
   const entranceLight = new THREE.PointLight(0xffe0b0, 1.8, 8, 2);
-  entranceLight.position.set(0.5, 2.2, 3.5);
+  entranceLight.position.set(0.5, 2.0, ROOM_D / 2 - 0.6);
   scene.add(entranceLight);
 
   const backFill = new THREE.PointLight(0xffcf9a, 1.4, 8, 2);
-  backFill.position.set(-1.5, 2.0, -3.0);
+  backFill.position.set(-1.2, 1.8, -ROOM_D / 2 + 0.6);
   scene.add(backFill);
 
   // ---------- spawn ----------
-  const spawnPoint = new THREE.Vector3(1.5, engine.playerHeight, 3.5);
+  const spawnPoint = new THREE.Vector3(1.2, engine.playerHeight, ROOM_D / 2 - 0.6);
   const spawnYaw = Math.PI * 0.85;
 
   // ---------- per-frame update: diya flicker + bulb flicker ----------
