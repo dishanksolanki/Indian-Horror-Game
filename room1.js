@@ -1,5 +1,6 @@
 // room1.js — ROOM 1: an old Indian haveli room.
-// Pure map for now: floor, walls, jharokha window, charpai, diya light, puja corner.
+// Pure map for now: floor, walls, jharokha window.
+// Furniture (charpai, puja shelf, diya) removed for now — will be added back later.
 // No jumpscares / mechanics yet — just the walkable space.
 
 import * as THREE from "three";
@@ -8,35 +9,117 @@ const ROOM_W = 7; // east-west
 const ROOM_D = 9; // north-south
 const ROOM_H = 3.0;
 
+// ---------------------------------------------------------------------------
+// Procedural grunge texture generator.
+// Builds an aged, dirty, cracked surface (stone / mud-plaster / old wood) on
+// a <canvas> so we don't need any external image assets — this is what kills
+// the "flat color = cartoonish" look and gives real material depth via the
+// bump map. Feel free to tweak the accent/crack/stain counts per surface.
+// ---------------------------------------------------------------------------
+function makeGrungeCanvas(size, baseHex, accentHex, { cracks = 14, blotches = 40, grain = 22, vignette = 0.35 } = {}) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+
+  const hex = (n) => `#${n.toString(16).padStart(6, "0")}`;
+
+  // base fill
+  ctx.fillStyle = hex(baseHex);
+  ctx.fillRect(0, 0, size, size);
+
+  // discoloration blotches (damp patches, soot, age stains)
+  for (let i = 0; i < blotches; i++) {
+    ctx.globalAlpha = 0.04 + Math.random() * 0.14;
+    ctx.fillStyle = hex(accentHex);
+    const w = 15 + Math.random() * size * 0.25;
+    const h = 15 + Math.random() * size * 0.25;
+    ctx.beginPath();
+    ctx.ellipse(Math.random() * size, Math.random() * size, w, h, Math.random() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // cracks / grout lines
+  ctx.strokeStyle = "rgba(8,6,4,0.55)";
+  for (let i = 0; i < cracks; i++) {
+    ctx.lineWidth = 0.5 + Math.random() * 1.8;
+    let x = Math.random() * size;
+    let y = Math.random() * size;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    const segs = 4 + Math.floor(Math.random() * 6);
+    for (let s = 0; s < segs; s++) {
+      x += (Math.random() - 0.5) * size * 0.18;
+      y += (Math.random() - 0.5) * size * 0.18;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // fine grain / noise so it doesn't read as a flat gradient
+  const imgData = ctx.getImageData(0, 0, size, size);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const n = (Math.random() - 0.5) * grain;
+    d[i] += n; d[i + 1] += n; d[i + 2] += n;
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  // vignette so tiled edges don't look perfectly uniform
+  const grad = ctx.createRadialGradient(size / 2, size / 2, size * 0.2, size / 2, size / 2, size * 0.75);
+  grad.addColorStop(0, "rgba(0,0,0,0)");
+  grad.addColorStop(1, `rgba(0,0,0,${vignette})`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  return canvas;
+}
+
+function makeTiledTexture(canvas, repeatX, repeatY) {
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeatX, repeatY);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 export function createRoom1(scene, engine) {
   const colliders = [];
 
   // ---------- atmosphere ----------
-  // NOTE: fog density lowered while building the map so you can actually see
-  // the room's extent. Bump this back up to 0.035 once you're happy with the
-  // layout and want the dark horror atmosphere back.
   scene.fog = new THREE.FogExp2(0x000000, 0.012);
   scene.background = new THREE.Color(0x000000);
 
-  // ---------- floor: old stone ----------
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(ROOM_W, ROOM_D),
-    new THREE.MeshStandardMaterial({ color: 0x2a231a, roughness: 0.95 })
-  );
+  // ---------- shared grunge canvases ----------
+  const stoneCanvas = makeGrungeCanvas(512, 0x2a231a, 0x181310, { cracks: 20, blotches: 55, grain: 20, vignette: 0.4 });
+  const plasterCanvas = makeGrungeCanvas(512, 0x6b4e33, 0x3f2e1d, { cracks: 16, blotches: 45, grain: 18, vignette: 0.3 });
+  const woodCanvas = makeGrungeCanvas(512, 0x1c1712, 0x0c0a08, { cracks: 10, blotches: 30, grain: 24, vignette: 0.45 });
+
+  // ---------- floor: old cracked stone ----------
+  const floorTex = makeTiledTexture(stoneCanvas, ROOM_W / 1.6, ROOM_D / 1.6);
+  const floorMat = new THREE.MeshStandardMaterial({
+    map: floorTex,
+    bumpMap: floorTex,
+    bumpScale: 0.7,
+    roughness: 1,
+  });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, ROOM_D), floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
 
-  // ---------- ceiling: wooden beams look (flat for now, beams added below) ----------
+  // ---------- ceiling: aged dark wood ----------
+  const ceilingTex = makeTiledTexture(woodCanvas, ROOM_W / 1.6, ROOM_D / 1.6);
   const ceiling = new THREE.Mesh(
     new THREE.PlaneGeometry(ROOM_W, ROOM_D),
-    new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 1 })
+    new THREE.MeshStandardMaterial({ map: ceilingTex, bumpMap: ceilingTex, bumpScale: 0.5, roughness: 1 })
   );
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.y = ROOM_H;
   scene.add(ceiling);
 
-  const beamMat = new THREE.MeshStandardMaterial({ color: 0x2e2013, roughness: 0.9 });
+  const beamTex = makeTiledTexture(woodCanvas, 1, 3);
+  const beamMat = new THREE.MeshStandardMaterial({ map: beamTex, bumpMap: beamTex, bumpScale: 0.4, roughness: 0.95 });
   for (let i = -1; i <= 1; i++) {
     const beam = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, ROOM_D), beamMat);
     beam.position.set(i * (ROOM_W / 3), ROOM_H - 0.1, 0);
@@ -44,12 +127,19 @@ export function createRoom1(scene, engine) {
     scene.add(beam);
   }
 
-  // ---------- walls: mud-plastered, warm ochre ----------
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x6b4e33, roughness: 1 });
+  // ---------- walls: mud-plastered, warm ochre, cracked & stained ----------
   const t = 0.2; // thickness
 
   function addWallBox(cx, cz, w, d, h = ROOM_H, cy = h / 2) {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+    // clone the plaster texture per wall segment so each one can have its
+    // own repeat scale based on its actual size (keeps tiling proportional)
+    const tex = new THREE.CanvasTexture(plasterCanvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(Math.max(1, w / 1.6), Math.max(1, h / 1.6));
+    tex.colorSpace = THREE.SRGBColorSpace;
+
+    const mat = new THREE.MeshStandardMaterial({ map: tex, bumpMap: tex, bumpScale: 0.55, roughness: 1 });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     mesh.position.set(cx, cy, cz);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -97,77 +187,10 @@ export function createRoom1(scene, engine) {
   }
   scene.add(jaaliGroup);
 
-  // ---------- charpai (rope cot) ----------
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
-  const ropeMat = new THREE.MeshStandardMaterial({ color: 0x9c8256, roughness: 0.95 });
-  const cotGroup = new THREE.Group();
-  const legPositions = [
-    [-0.75, -1.0], [0.75, -1.0], [-0.75, 1.0], [0.75, 1.0]
-  ];
-  legPositions.forEach(([lx, lz]) => {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.45, 8), woodMat);
-    leg.position.set(lx, 0.225, lz);
-    leg.castShadow = true;
-    cotGroup.add(leg);
-  });
-  const frameSideA = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 2.1), woodMat);
-  frameSideA.position.set(-0.75, 0.45, 0);
-  const frameSideB = frameSideA.clone(); frameSideB.position.x = 0.75;
-  const frameEndA = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.06, 0.06), woodMat);
-  frameEndA.position.set(0, 0.45, -1.02);
-  const frameEndB = frameEndA.clone(); frameEndB.position.z = 1.02;
-  cotGroup.add(frameSideA, frameSideB, frameEndA, frameEndB);
-
-  const weave = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2.0), ropeMat);
-  weave.rotation.x = -Math.PI / 2;
-  weave.position.set(0, 0.47, 0);
-  weave.receiveShadow = true;
-  cotGroup.add(weave);
-
-  cotGroup.position.set(-2.2, 0, 2.8);
-  cotGroup.rotation.y = 0.15;
-  cotGroup.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-  scene.add(cotGroup);
-
-  const cotBox = new THREE.Box3().setFromObject(cotGroup);
-  cotBox.min.y = 0; cotBox.max.y = 0.6; // low collider so it just blocks walking through
-  colliders.push(cotBox);
-  engine.addCollider(cotBox);
-
-  // ---------- puja corner (small shelf with diya) ----------
-  const shelf = new THREE.Mesh(
-    new THREE.BoxGeometry(0.7, 0.06, 0.3),
-    woodMat
-  );
-  shelf.position.set(-ROOM_W / 2 + 0.35, 1.1, -3.2);
-  shelf.castShadow = shelf.receiveShadow = true;
-  scene.add(shelf);
-
-  const diyaBase = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.05, 0.06, 0.03, 10),
-    new THREE.MeshStandardMaterial({ color: 0x4a3320, roughness: 0.7 })
-  );
-  diyaBase.position.set(-ROOM_W / 2 + 0.35, 1.145, -3.2);
-  scene.add(diyaBase);
-
-  const diyaFlameLight = new THREE.PointLight(0xffb347, 2.2, 6, 2);
-  diyaFlameLight.position.set(-ROOM_W / 2 + 0.35, 1.22, -3.2);
-  diyaFlameLight.castShadow = false;
-  scene.add(diyaFlameLight);
-
-  const flameGeo = new THREE.ConeGeometry(0.02, 0.06, 6);
-  const flameMat = new THREE.MeshBasicMaterial({ color: 0xffcc66 });
-  const flame = new THREE.Mesh(flameGeo, flameMat);
-  flame.position.set(-ROOM_W / 2 + 0.35, 1.2, -3.2);
-  scene.add(flame);
+  // ---------- furniture removed for now (charpai, puja shelf, diya) ----------
+  // Will be re-added later once the room shell/textures are finalized.
 
   // ---------- ambient room lighting ----------
-  // NOTE: ambient/hemisphere intensities boosted (and colors brightened) while
-  // building the map, so the room is properly visible during development.
-  // Original horror-atmosphere values were:
-  //   ambient = new THREE.AmbientLight(0x3a352c, 1.1)
-  //   fillLight = new THREE.HemisphereLight(0x6b6152, 0x2a2318, 0.6)
-  // Swap back to those (and raise fog back to 0.035 above) once the layout is done.
   const ambient = new THREE.AmbientLight(0x8a8478, 2.2);
   scene.add(ambient);
 
@@ -179,6 +202,8 @@ export function createRoom1(scene, engine) {
   moonShaft.target.position.set(-1, 0, 0.5);
   scene.add(moonShaft, moonShaft.target);
 
+  // kept as a lighting fixture (not furniture) — gives the room a flickering,
+  // uneasy glow near the entrance now that the diya prop is gone
   const entranceLight = new THREE.PointLight(0xffe0b0, 1.4, 6, 2);
   entranceLight.position.set(0.5, 2.2, 3.5);
   scene.add(entranceLight);
@@ -187,12 +212,13 @@ export function createRoom1(scene, engine) {
   const spawnPoint = new THREE.Vector3(1.5, engine.playerHeight, 3.5);
   const spawnYaw = Math.PI * 0.85;
 
-  // ---------- per-frame update: just a gentle flame flicker for now ----------
+  // ---------- per-frame update: subtle entrance-light flicker for unease ----------
   let flickerT = 0;
+  const baseEntranceIntensity = entranceLight.intensity;
   function update(dt) {
     flickerT += dt;
-    diyaFlameLight.intensity = 1.0 + Math.sin(flickerT * 11) * 0.15 + (Math.random() - 0.5) * 0.1;
-    flame.scale.y = 1 + Math.sin(flickerT * 14) * 0.15;
+    entranceLight.intensity =
+      baseEntranceIntensity + Math.sin(flickerT * 7) * 0.08 + (Math.random() - 0.5) * 0.06;
   }
 
   return { spawnPoint, spawnYaw, update, colliders };
