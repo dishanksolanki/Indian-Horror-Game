@@ -4,15 +4,18 @@
 
 import * as THREE from "three";
 
-const ROOM_W = 7;   // east-west
-const ROOM_D = 9;   // north-south
+const ROOM_W = 7; // east-west
+const ROOM_D = 9; // north-south
 const ROOM_H = 3.0;
 
 export function createRoom1(scene, engine) {
   const colliders = [];
 
   // ---------- atmosphere ----------
-  scene.fog = new THREE.FogExp2(0x000000, 0.035);
+  // NOTE: fog density lowered while building the map so you can actually see
+  // the room's extent. Bump this back up to 0.035 once you're happy with the
+  // layout and want the dark horror atmosphere back.
+  scene.fog = new THREE.FogExp2(0x000000, 0.012);
   scene.background = new THREE.Color(0x000000);
 
   // ---------- floor: old stone ----------
@@ -59,7 +62,6 @@ export function createRoom1(scene, engine) {
 
   // south wall — solid
   addWallBox(0, ROOM_D / 2, ROOM_W + t, t);
-
   // west wall — solid
   addWallBox(-ROOM_W / 2, 0, t, ROOM_D + t);
 
@@ -98,7 +100,6 @@ export function createRoom1(scene, engine) {
   // ---------- charpai (rope cot) ----------
   const woodMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
   const ropeMat = new THREE.MeshStandardMaterial({ color: 0x9c8256, roughness: 0.95 });
-
   const cotGroup = new THREE.Group();
   const legPositions = [
     [-0.75, -1.0], [0.75, -1.0], [-0.75, 1.0], [0.75, 1.0]
@@ -161,10 +162,16 @@ export function createRoom1(scene, engine) {
   scene.add(flame);
 
   // ---------- ambient room lighting ----------
-  const ambient = new THREE.AmbientLight(0x3a352c, 1.1);
+  // NOTE: ambient/hemisphere intensities boosted (and colors brightened) while
+  // building the map, so the room is properly visible during development.
+  // Original horror-atmosphere values were:
+  //   ambient = new THREE.AmbientLight(0x3a352c, 1.1)
+  //   fillLight = new THREE.HemisphereLight(0x6b6152, 0x2a2318, 0.6)
+  // Swap back to those (and raise fog back to 0.035 above) once the layout is done.
+  const ambient = new THREE.AmbientLight(0x8a8478, 2.2);
   scene.add(ambient);
 
-  const fillLight = new THREE.HemisphereLight(0x6b6152, 0x2a2318, 0.6);
+  const fillLight = new THREE.HemisphereLight(0xffffff, 0x4a4030, 1.4);
   scene.add(fillLight);
 
   const moonShaft = new THREE.SpotLight(0x8fa5c0, 1.1, 10, Math.PI / 6, 0.6, 1.5);
