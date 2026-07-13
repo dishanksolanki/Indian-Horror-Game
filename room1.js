@@ -12,7 +12,7 @@ export function createRoom1(scene, engine) {
   const colliders = [];
 
   // ---------- atmosphere ----------
-  scene.fog = new THREE.FogExp2(0x000000, 0.1);
+  scene.fog = new THREE.FogExp2(0x000000, 0.035);
   scene.background = new THREE.Color(0x000000);
 
   // ---------- floor: old stone ----------
@@ -149,7 +149,7 @@ export function createRoom1(scene, engine) {
   diyaBase.position.set(-ROOM_W / 2 + 0.35, 1.145, -3.2);
   scene.add(diyaBase);
 
-  const diyaFlameLight = new THREE.PointLight(0xffb347, 1.2, 3.5, 2);
+  const diyaFlameLight = new THREE.PointLight(0xffb347, 2.2, 6, 2);
   diyaFlameLight.position.set(-ROOM_W / 2 + 0.35, 1.22, -3.2);
   diyaFlameLight.castShadow = false;
   scene.add(diyaFlameLight);
@@ -161,13 +161,20 @@ export function createRoom1(scene, engine) {
   scene.add(flame);
 
   // ---------- ambient room lighting ----------
-  const ambient = new THREE.AmbientLight(0x1a1712, 0.4);
+  const ambient = new THREE.AmbientLight(0x3a352c, 1.1);
   scene.add(ambient);
 
-  const moonShaft = new THREE.SpotLight(0x8fa5c0, 0.5, 8, Math.PI / 8, 0.6, 1.5);
+  const fillLight = new THREE.HemisphereLight(0x6b6152, 0x2a2318, 0.6);
+  scene.add(fillLight);
+
+  const moonShaft = new THREE.SpotLight(0x8fa5c0, 1.1, 10, Math.PI / 6, 0.6, 1.5);
   moonShaft.position.set(ROOM_W / 2 - 0.5, ROOM_H - 0.3, 0);
   moonShaft.target.position.set(-1, 0, 0.5);
   scene.add(moonShaft, moonShaft.target);
+
+  const entranceLight = new THREE.PointLight(0xffe0b0, 1.4, 6, 2);
+  entranceLight.position.set(0.5, 2.2, 3.5);
+  scene.add(entranceLight);
 
   // ---------- spawn ----------
   const spawnPoint = new THREE.Vector3(1.5, engine.playerHeight, 3.5);
