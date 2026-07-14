@@ -2,7 +2,7 @@
 // South wall has a doorway gap matching the corridor width. Other walls are solid, no window.
 
 import * as THREE from "three";
-import { createWallMaterial } from "./materials.js";
+import { createWallMaterial, createFloorMaterial } from "./materials.js";
 
 const ROOM_W = 6; // east-west
 const ROOM_D = 7; // north-south
@@ -17,10 +17,10 @@ export function createRoom2(scene, engine, doorZ) {
   // room center sits further north (more negative z) than its south doorway
   const centerZ = doorZ - ROOM_D / 2;
 
-  // ---------- floor ----------
+  // ---------- floor: old, dirty tiles ----------
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(ROOM_W, ROOM_D),
-    new THREE.MeshStandardMaterial({ color: 0x2a231a, roughness: 0.95 })
+    createFloorMaterial(ROOM_W / 2, ROOM_D / 2)
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(0, 0, centerZ);
