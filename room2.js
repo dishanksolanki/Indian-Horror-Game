@@ -1,7 +1,6 @@
 // room2.js — ROOM 2: a second old Indian haveli room, reached via the corridor from room1.
 // South wall has a doorway gap matching the corridor width (entrance from room1).
-// North wall now also has a matching doorway gap (exit toward room3 via a second corridor).
-// East/west walls remain solid, no window.
+// East wall now also has a doorway gap leading to room5. North and west walls are solid, no window.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -9,7 +8,8 @@ import { createWallMaterial, createFloorMaterial } from "./materials.js";
 const ROOM_W = 6; // east-west
 const ROOM_D = 7; // north-south
 const ROOM_H = 3.0;
-const DOOR_GAP = 1.6; // must match corridor width
+const DOOR_GAP = 1.6;   // must match corridor width (south doorway, room1 -> room2)
+const DOOR_GAP_E = 1.6; // east doorway width (room2 -> room5)
 
 // doorZ: the z coordinate where room2's south wall (and doorway) sits —
 // this is corridor.endZ, so the door lines up exactly with the passage.
@@ -64,27 +64,35 @@ export function createRoom2(scene, engine, doorZ) {
 
   const northZ = centerZ - ROOM_D / 2;
   const southZ = centerZ + ROOM_D / 2; // == doorZ
+  const eastX = ROOM_W / 2;
 
-  // east wall — solid, no window
-  addWallBox(ROOM_W / 2, centerZ, t, ROOM_D + t);
+  // north wall — solid
+  addWallBox(0, northZ, ROOM_W + t, t);
 
-  // west wall — doorway gap in the middle, aligned with the corridor to room4
-  const westSideLen = (ROOM_D - DOOR_GAP) / 2;
-  addWallBox(-ROOM_W / 2, centerZ - (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
-  addWallBox(-ROOM_W / 2, centerZ + (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
-  addWallBox(-ROOM_W / 2, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
+  // west wall — solid, no window
+  addWallBox(-ROOM_W / 2, centerZ, t, ROOM_D + t);
 
-  // south wall — doorway gap in the middle, aligned with the corridor from room1
+  // east wall — doorway gap in the middle, leading to room5
+  const eastSideLen = (ROOM_D - DOOR_GAP_E) / 2;
+  addWallBox(eastX, centerZ - (DOOR_GAP_E / 2 + eastSideLen / 2), t, eastSideLen);
+  addWallBox(eastX, centerZ + (DOOR_GAP_E / 2 + eastSideLen / 2), t, eastSideLen);
+  addWallBox(eastX, centerZ, t, DOOR_GAP_E, 0.4, ROOM_H - 0.2); // lintel
+
+  // south wall — doorway gap in the middle, aligned with the corridor
   const southSideLen = (ROOM_W - DOOR_GAP) / 2;
   addWallBox(-(DOOR_GAP / 2 + southSideLen / 2), southZ, southSideLen, t);
   addWallBox((DOOR_GAP / 2 + southSideLen / 2), southZ, southSideLen, t);
   addWallBox(0, southZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
-  // north wall — doorway gap in the middle, aligned with the corridor to room3
-  const northSideLen = (ROOM_W - DOOR_GAP) / 2;
-  addWallBox(-(DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
-  addWallBox((DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
-  addWallBox(0, northZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
+  // ---------- simple furnishing: a low wooden trunk ----------
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
+  const trunk = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 0.6), woodMat);
+  trunk.position.set(-ROOM_W / 2 + 0.8, 0.25, centerZ - ROOM_D / 2 + 1.0);
+  trunk.castShadow = trunk.receiveShadow = true;
+  scene.add(trunk);
+  const trunkBox = new THREE.Box3().setFromObject(trunk);
+  colliders.push(trunkBox);
+  engine.addCollider(trunkBox);
 
   // ---------- ambient room lighting ----------
   const ambient = new THREE.AmbientLight(0x4a4536, 2.0);
@@ -104,10 +112,7 @@ export function createRoom2(scene, engine, doorZ) {
     eerieLight.intensity = 1.6 + Math.sin(pulseT * 1.5) * 0.3;
   }
 
-  // westX/westDoorZ: the doorway sits in the middle of the west wall —
-  // corridor.js's createCorridorWest starts here and runs further west toward room4.
-  const westX = -ROOM_W / 2;
-  const westDoorZ = centerZ;
-
-  return { colliders, update, centerZ, northZ, westX, westDoorZ };
+  // eastDoorX / eastDoorZ: world coordinates of the new east doorway,
+  // passed to createRoom5() so its west doorway lines up exactly.
+  return { colliders, update, centerZ, eastDoorX: eastX, eastDoorZ: centerZ };
 }
