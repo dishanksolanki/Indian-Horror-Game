@@ -1,8 +1,6 @@
 // room3.js — ROOM 3: a smaller, more claustrophobic inner room of the haveli,
 // reached via the second corridor leading north from room2.
-// South wall has a doorway gap matching the corridor width. North wall stays solid
-// (it holds the cracked mirror). East wall now also has a doorway gap
-// (exit toward hall2 via a tenth corridor). West wall remains solid.
+// South wall has a doorway gap matching the corridor width. Other walls are solid.
 // This room is deeper in the house, so it's kept dimmer and tighter than room1/room2.
 
 import * as THREE from "three";
@@ -69,14 +67,10 @@ export function createRoom3(scene, engine, doorZ) {
 
   // north wall — solid, dead end of the house
   addWallBox(0, northZ, ROOM_W + t, t);
+  // east wall — solid, no window
+  addWallBox(ROOM_W / 2, centerZ, t, ROOM_D + t);
   // west wall — solid, no window
   addWallBox(-ROOM_W / 2, centerZ, t, ROOM_D + t);
-
-  // east wall — doorway gap in the middle, aligned with the corridor to hall2
-  const eastSideLen = (ROOM_D - DOOR_GAP) / 2;
-  addWallBox(ROOM_W / 2, centerZ - (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
-  addWallBox(ROOM_W / 2, centerZ + (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
-  addWallBox(ROOM_W / 2, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
   // south wall — doorway gap in the middle, aligned with the corridor from room2
   const southSideLen = (ROOM_W - DOOR_GAP) / 2;
@@ -122,10 +116,5 @@ export function createRoom3(scene, engine, doorZ) {
     coldLight.intensity = 1.1 + Math.sin(flickerT * 2.2) * 0.2 + (Math.random() - 0.5) * 0.25;
   }
 
-  // eastX/eastDoorZ: the doorway sits in the middle of the east wall —
-  // corridor.js's createCorridorEast starts here and runs further east toward hall2.
-  const eastX = ROOM_W / 2;
-  const eastDoorZ = centerZ;
-
-  return { colliders, update, centerZ, eastX, eastDoorZ };
+  return { colliders, update, centerZ };
 }
