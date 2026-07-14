@@ -1,7 +1,8 @@
 // room5.js — ROOM 5: a side room of the haveli, reached via a corridor
 // running east from room2's east doorway.
 // West wall has a doorway gap matching the corridor width (entrance from room2).
-// North/south/east walls remain solid, no window.
+// East wall now also has a matching doorway gap (exit toward room6 via a fifth corridor).
+// North/south walls remain solid, no window.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -71,14 +72,18 @@ export function createRoom5(scene, engine, doorX, doorZ) {
   addWallBox(centerX, centerZ - ROOM_D / 2, ROOM_W + t, t);
   // south wall — solid, no window
   addWallBox(centerX, centerZ + ROOM_D / 2, ROOM_W + t, t);
-  // east wall — solid, dead end of this wing
-  addWallBox(eastX, centerZ, t, ROOM_D + t);
 
   // west wall — doorway gap in the middle, aligned with the corridor from room2
   const westSideLen = (ROOM_D - DOOR_GAP) / 2;
   addWallBox(westX, centerZ - (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
   addWallBox(westX, centerZ + (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
   addWallBox(westX, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
+
+  // east wall — doorway gap in the middle, aligned with the corridor to room6
+  const eastSideLen = (ROOM_D - DOOR_GAP) / 2;
+  addWallBox(eastX, centerZ - (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
+  addWallBox(eastX, centerZ + (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
+  addWallBox(eastX, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
   // ---------- ambient room lighting ----------
   const ambient = new THREE.AmbientLight(0x413c30, 1.6);
@@ -98,5 +103,9 @@ export function createRoom5(scene, engine, doorX, doorZ) {
     eerieLight.intensity = 1.4 + Math.sin(pulseT * 1.3) * 0.3;
   }
 
-  return { colliders, update, centerX, centerZ, westX, eastX };
+  // eastDoorZ: the doorway sits in the middle of the east wall —
+  // corridor.js's createCorridorEast starts here and runs further east toward room6.
+  const eastDoorZ = centerZ;
+
+  return { colliders, update, centerX, centerZ, westX, eastX, eastDoorZ };
 }
