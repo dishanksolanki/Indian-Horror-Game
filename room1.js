@@ -1,8 +1,10 @@
 // room1.js — ROOM 1: an old Indian haveli room.
-// Pure map for now: floor, walls, jharokha window, charpai, diya light, puja corner.
+// Pure map for now: floor, walls, charpai, diya light, puja corner.
+// North wall has a doorway gap that connects to the corridor -> room2.
 // No jumpscares / mechanics yet — just the walkable space.
 
 import * as THREE from "three";
+import { createWallMaterial } from "./materials.js";
 
 const ROOM_W = 7; // east-west
 const ROOM_D = 9; // north-south
@@ -42,81 +44,7 @@ export function createRoom1(scene, engine) {
   }
 
   // ---------- walls: mud-plastered, old Indian haveli wall texture ----------
-  function makeWallTexture() {
-    const size = 512;
-    const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = size;
-    const ctx = canvas.getContext("2d");
-
-    // base mud-plaster ochre tone
-    ctx.fillStyle = "#6b4e33";
-    ctx.fillRect(0, 0, size, size);
-
-    // uneven lime-wash / plaster patches
-    for (let i = 0; i < 140; i++) {
-      const x = Math.random() * size;
-      const y = Math.random() * size;
-      const r = 10 + Math.random() * 45;
-      const shade = Math.random() > 0.5 ? "rgba(120,90,58,0.18)" : "rgba(40,28,18,0.18)";
-      ctx.fillStyle = shade;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // damp/water stains streaking down
-    for (let i = 0; i < 10; i++) {
-      const x = Math.random() * size;
-      const grad = ctx.createLinearGradient(x, 0, x, size);
-      grad.addColorStop(0, "rgba(20,15,10,0)");
-      grad.addColorStop(0.5, "rgba(20,15,10,0.15)");
-      grad.addColorStop(1, "rgba(20,15,10,0.3)");
-      ctx.fillStyle = grad;
-      ctx.fillRect(x - 15, 0, 30 + Math.random() * 20, size);
-    }
-
-    // fine cracks
-    ctx.strokeStyle = "rgba(15,10,6,0.4)";
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 25; i++) {
-      let x = Math.random() * size;
-      let y = Math.random() * size;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      const segments = 4 + Math.floor(Math.random() * 5);
-      for (let s = 0; s < segments; s++) {
-        x += (Math.random() - 0.5) * 40;
-        y += (Math.random() - 0.5) * 40;
-        ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-
-    // grainy plaster noise
-    const imgData = ctx.getImageData(0, 0, size, size);
-    for (let i = 0; i < imgData.data.length; i += 4) {
-      const n = (Math.random() - 0.5) * 18;
-      imgData.data[i] += n;
-      imgData.data[i + 1] += n;
-      imgData.data[i + 2] += n;
-    }
-    ctx.putImageData(imgData, 0, 0);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(2, 1.4);
-    return texture;
-  }
-
-  const wallTexture = makeWallTexture();
-  const wallMat = new THREE.MeshStandardMaterial({
-    map: wallTexture,
-    bumpMap: wallTexture,
-    bumpScale: 0.04,
-    color: 0xffffff,
-    roughness: 1,
-  });
-
+  const wallMat = createWallMaterial();
   const t = 0.2; // thickness
 
   function addWallBox(cx, cz, w, d, h = ROOM_H, cy = h / 2) {
@@ -135,38 +63,15 @@ export function createRoom1(scene, engine) {
   addWallBox(0, ROOM_D / 2, ROOM_W + t, t);
   // west wall — solid
   addWallBox(-ROOM_W / 2, 0, t, ROOM_D + t);
+  // east wall — solid (window removed)
+  addWallBox(ROOM_W / 2, 0, t, ROOM_D + t);
 
-  // east wall — has the jharokha (lattice window) cut into it, built from two segments
-  const winW = 1.4, winH = 1.2;
-  const eastSideLen = (ROOM_D - winW) / 2;
-  addWallBox(ROOM_W / 2, -(winW / 2 + eastSideLen / 2), t, eastSideLen);
-  addWallBox(ROOM_W / 2, (winW / 2 + eastSideLen / 2), t, eastSideLen);
-  // lintel above and sill below the window opening
-  addWallBox(ROOM_W / 2, 0, t, winW, ROOM_H - winH - 0.9, ROOM_H - (ROOM_H - winH - 0.9) / 2);
-  addWallBox(ROOM_W / 2, 0, t, winW, 0.9, 0.45);
-
-  // north wall — doorway gap in the middle (exit for later rooms)
+  // north wall — doorway gap in the middle (connects to corridor -> room2)
   const doorGap = 1.3;
   const northSideLen = (ROOM_W - doorGap) / 2;
   addWallBox(-(doorGap / 2 + northSideLen / 2), -ROOM_D / 2, northSideLen, t);
   addWallBox((doorGap / 2 + northSideLen / 2), -ROOM_D / 2, northSideLen, t);
   addWallBox(0, -ROOM_D / 2, doorGap, t, 0.5, ROOM_H - 0.25); // lintel
-
-  // ---------- jharokha lattice (jaali) — decorative, sits in the window opening ----------
-  const jaaliGroup = new THREE.Group();
-  const jaaliMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.8 });
-  const bars = 5;
-  for (let i = 0; i < bars; i++) {
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.03, winH, 0.06), jaaliMat);
-    bar.position.set(ROOM_W / 2 - 0.02, ROOM_H - winH / 2 - 0.9, -winW / 2 + (i / (bars - 1)) * winW);
-    jaaliGroup.add(bar);
-  }
-  for (let i = 0; i < 3; i++) {
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.06, winW), jaaliMat);
-    bar.position.set(ROOM_W / 2 - 0.02, ROOM_H - 0.9 - (i / 2) * winH, 0);
-    jaaliGroup.add(bar);
-  }
-  scene.add(jaaliGroup);
 
   // ---------- charpai (rope cot) ----------
   const woodMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
@@ -257,5 +162,8 @@ export function createRoom1(scene, engine) {
     flame.scale.y = 1 + Math.sin(flickerT * 14) * 0.15;
   }
 
-  return { spawnPoint, spawnYaw, update, colliders };
+  // northDoorZ: z coordinate of the north wall (doorway) — corridor.js starts here
+  const northDoorZ = -ROOM_D / 2;
+
+  return { spawnPoint, spawnYaw, update, colliders, northDoorZ };
 }
