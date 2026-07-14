@@ -218,7 +218,7 @@ export function createRoom1(scene, engine) {
   diyaBase.position.set(-ROOM_W / 2 + 0.35, 1.145, -3.2);
   scene.add(diyaBase);
 
-  const diyaFlameLight = new THREE.PointLight(0xffb347, 2.2, 6, 2);
+  const diyaFlameLight = new THREE.PointLight(0xffb347, 3.2, 7, 2);
   diyaFlameLight.position.set(-ROOM_W / 2 + 0.35, 1.22, -3.2);
   diyaFlameLight.castShadow = false;
   scene.add(diyaFlameLight);
@@ -230,18 +230,18 @@ export function createRoom1(scene, engine) {
   scene.add(flame);
 
   // ---------- ambient room lighting ----------
-  const ambient = new THREE.AmbientLight(0x3a352c, 1.1);
+  const ambient = new THREE.AmbientLight(0x4a4536, 2.2);
   scene.add(ambient);
 
-  const fillLight = new THREE.HemisphereLight(0x6b6152, 0x2a2318, 0.6);
+  const fillLight = new THREE.HemisphereLight(0x8a8070, 0x3a3122, 1.3);
   scene.add(fillLight);
 
-  const moonShaft = new THREE.SpotLight(0x8fa5c0, 1.1, 10, Math.PI / 6, 0.6, 1.5);
+  const moonShaft = new THREE.SpotLight(0x8fa5c0, 2.2, 12, Math.PI / 6, 0.6, 1.5);
   moonShaft.position.set(ROOM_W / 2 - 0.5, ROOM_H - 0.3, 0);
   moonShaft.target.position.set(-1, 0, 0.5);
   scene.add(moonShaft, moonShaft.target);
 
-  const entranceLight = new THREE.PointLight(0xffe0b0, 1.4, 6, 2);
+  const entranceLight = new THREE.PointLight(0xffe0b0, 2.6, 8, 2);
   entranceLight.position.set(0.5, 2.2, 3.5);
   scene.add(entranceLight);
 
