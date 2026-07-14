@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
 
 const CORRIDOR_LEN = 2;   // length in meters (matches the requested "2 meter colidor")
-const CORRIDOR_W = 1.3;   // matches the doorGap width used in room1/room2
+const CORRIDOR_W = 1.6;   // matches the doorGap width used in room1/room2
 const CORRIDOR_H = 3.0;
 const t = 0.2;
 
