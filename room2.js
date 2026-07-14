@@ -7,7 +7,7 @@ import { createWallMaterial, createFloorMaterial } from "./materials.js";
 const ROOM_W = 6; // east-west
 const ROOM_D = 7; // north-south
 const ROOM_H = 3.0;
-const DOOR_GAP = 1.3; // must match corridor width
+const DOOR_GAP = 1.6; // must match corridor width
 
 // doorZ: the z coordinate where room2's south wall (and doorway) sits —
 // this is corridor.endZ, so the door lines up exactly with the passage.
@@ -74,7 +74,7 @@ export function createRoom2(scene, engine, doorZ) {
   const southSideLen = (ROOM_W - DOOR_GAP) / 2;
   addWallBox(-(DOOR_GAP / 2 + southSideLen / 2), southZ, southSideLen, t);
   addWallBox((DOOR_GAP / 2 + southSideLen / 2), southZ, southSideLen, t);
-  addWallBox(0, southZ, DOOR_GAP, t, 0.5, ROOM_H - 0.25); // lintel
+  addWallBox(0, southZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
   // ---------- simple furnishing: a low wooden trunk ----------
   const woodMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
