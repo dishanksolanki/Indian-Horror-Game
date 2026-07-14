@@ -2,8 +2,8 @@
 // running east from room5's east doorway.
 // West wall has a doorway gap matching the corridor width (entrance from room5).
 // East wall also has a matching doorway gap (exit toward room7 via a sixth corridor).
-// South wall now also has a matching doorway gap (exit toward room8 via a seventh corridor).
-// North wall remains solid, no window.
+// South wall also has a matching doorway gap (exit toward room8 via a seventh corridor).
+// North wall now also has a matching doorway gap (exit toward room9 via an eighth corridor).
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -69,8 +69,11 @@ export function createRoom6(scene, engine, doorX, doorZ) {
   const westX = centerX - ROOM_W / 2; // == doorX
   const eastX = centerX + ROOM_W / 2;
 
-  // north wall — solid, no window
-  addWallBox(centerX, centerZ - ROOM_D / 2, ROOM_W + t, t);
+  // north wall — doorway gap in the middle, aligned with the corridor to room9
+  const northSideLen = (ROOM_W - DOOR_GAP) / 2;
+  addWallBox(centerX - (DOOR_GAP / 2 + northSideLen / 2), centerZ - ROOM_D / 2, northSideLen, t);
+  addWallBox(centerX + (DOOR_GAP / 2 + northSideLen / 2), centerZ - ROOM_D / 2, northSideLen, t);
+  addWallBox(centerX, centerZ - ROOM_D / 2, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
   // south wall — doorway gap in the middle, aligned with the corridor to room8
   const southSideLen = (ROOM_W - DOOR_GAP) / 2;
@@ -117,5 +120,10 @@ export function createRoom6(scene, engine, doorX, doorZ) {
   const southZ = centerZ + ROOM_D / 2;
   const southDoorX = centerX;
 
-  return { colliders, update, centerX, centerZ, westX, eastX, eastDoorZ, southZ, southDoorX };
+  // northZ/northDoorX: the doorway sits in the middle of the north wall —
+  // corridor.js's createCorridor starts here and runs further north toward room9.
+  const northZ = centerZ - ROOM_D / 2;
+  const northDoorX = centerX;
+
+  return { colliders, update, centerX, centerZ, westX, eastX, eastDoorZ, southZ, southDoorX, northZ, northDoorX };
 }
