@@ -80,22 +80,6 @@ export function createRoom4(scene, engine, doorX, doorZ) {
   addWallBox(eastX, centerZ + (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
   addWallBox(eastX, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
-  // ---------- furnishing: a wooden almirah (wardrobe) against the west wall ----------
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0x33230f, roughness: 0.8 });
-  const almirah = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.9, 1.1), woodMat);
-  almirah.position.set(westX + 0.28, 0.95, centerZ - ROOM_D / 2 + 1.0);
-  almirah.castShadow = almirah.receiveShadow = true;
-  scene.add(almirah);
-  const almirahBox = new THREE.Box3().setFromObject(almirah);
-  colliders.push(almirahBox);
-  engine.addCollider(almirahBox);
-
-  const handleMat = new THREE.MeshStandardMaterial({ color: 0xb08a3e, metalness: 0.6, roughness: 0.4 });
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.18, 8), handleMat);
-  handle.rotation.z = Math.PI / 2;
-  handle.position.set(westX + 0.54, 1.0, centerZ - ROOM_D / 2 + 1.0);
-  scene.add(handle);
-
   // ---------- ambient room lighting ----------
   const ambient = new THREE.AmbientLight(0x413c30, 1.6);
   scene.add(ambient);
