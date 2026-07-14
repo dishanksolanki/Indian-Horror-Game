@@ -1,5 +1,7 @@
 // room2.js — ROOM 2: a second old Indian haveli room, reached via the corridor from room1.
-// South wall has a doorway gap matching the corridor width. Other walls are solid, no window.
+// South wall has a doorway gap matching the corridor width (entrance from room1).
+// North wall now also has a matching doorway gap (exit toward room3 via a second corridor).
+// East/west walls remain solid, no window.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -63,18 +65,22 @@ export function createRoom2(scene, engine, doorZ) {
   const northZ = centerZ - ROOM_D / 2;
   const southZ = centerZ + ROOM_D / 2; // == doorZ
 
-  // north wall — solid
-  addWallBox(0, northZ, ROOM_W + t, t);
   // east wall — solid, no window
   addWallBox(ROOM_W / 2, centerZ, t, ROOM_D + t);
   // west wall — solid, no window
   addWallBox(-ROOM_W / 2, centerZ, t, ROOM_D + t);
 
-  // south wall — doorway gap in the middle, aligned with the corridor
+  // south wall — doorway gap in the middle, aligned with the corridor from room1
   const southSideLen = (ROOM_W - DOOR_GAP) / 2;
   addWallBox(-(DOOR_GAP / 2 + southSideLen / 2), southZ, southSideLen, t);
   addWallBox((DOOR_GAP / 2 + southSideLen / 2), southZ, southSideLen, t);
   addWallBox(0, southZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
+
+  // north wall — doorway gap in the middle, aligned with the corridor to room3
+  const northSideLen = (ROOM_W - DOOR_GAP) / 2;
+  addWallBox(-(DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
+  addWallBox((DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
+  addWallBox(0, northZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
   // ---------- simple furnishing: a low wooden trunk ----------
   const woodMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
@@ -104,5 +110,5 @@ export function createRoom2(scene, engine, doorZ) {
     eerieLight.intensity = 1.6 + Math.sin(pulseT * 1.5) * 0.3;
   }
 
-  return { colliders, update, centerZ };
+  return { colliders, update, centerZ, northZ };
 }
