@@ -4,7 +4,7 @@
 // No jumpscares / mechanics yet — just the walkable space.
 
 import * as THREE from "three";
-import { createWallMaterial } from "./materials.js";
+import { createWallMaterial, createFloorMaterial } from "./materials.js";
 
 const ROOM_W = 7; // east-west
 const ROOM_D = 9; // north-south
@@ -17,10 +17,10 @@ export function createRoom1(scene, engine) {
   scene.fog = new THREE.FogExp2(0x000000, 0.035);
   scene.background = new THREE.Color(0x000000);
 
-  // ---------- floor: old stone ----------
+  // ---------- floor: old, dirty tiles ----------
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(ROOM_W, ROOM_D),
-    new THREE.MeshStandardMaterial({ color: 0x2a231a, roughness: 0.95 })
+    createFloorMaterial(ROOM_W / 2, ROOM_D / 2)
   );
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
