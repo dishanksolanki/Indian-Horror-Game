@@ -1,11 +1,13 @@
 // main.js — wires the Engine to Room 1 -> corridor -> Room 2 -> corridor -> Room 3,
+// with Room 4 and Room 5 branching off Room 2's west and east doorways,
 // and drives the menu / pause UI.
 import { Engine } from "./engine.js";
 import { createRoom1 } from "./room1.js";
-import { createCorridor, createCorridorWest } from "./corridor.js";
+import { createCorridor, createCorridorWest, createCorridorEast } from "./corridor.js";
 import { createRoom2 } from "./room2.js";
 import { createRoom3 } from "./room3.js";
 import { createRoom4 } from "./room4.js";
+import { createRoom5 } from "./room5.js";
 
 const canvas = document.getElementById("scene");
 const engine = new Engine(canvas);
@@ -32,6 +34,12 @@ const corridor3 = createCorridorWest(engine.scene, engine, room2.westX, room2.we
 
 // room4 hangs its east doorway exactly on corridor3's far end.
 const room4 = createRoom4(engine.scene, engine, corridor3.endX, corridor3.z);
+
+// fourth corridor starts at room2's east doorway and runs east to room5.
+const corridor4 = createCorridorEast(engine.scene, engine, room2.eastX, room2.eastDoorZ);
+
+// room5 hangs its west doorway exactly on corridor4's far end.
+const room5 = createRoom5(engine.scene, engine, corridor4.endX, corridor4.z);
 
 const menu = document.getElementById("menu");
 const playBtn = document.getElementById("play-btn");
@@ -62,4 +70,6 @@ engine.start((dt, eng) => {
   room3.update(dt, eng);
   corridor3.update(dt, eng);
   room4.update(dt, eng);
+  corridor4.update(dt, eng);
+  room5.update(dt, eng);
 });
