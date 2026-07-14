@@ -67,11 +67,11 @@ export function createRoom1(scene, engine) {
   addWallBox(ROOM_W / 2, 0, t, ROOM_D + t);
 
   // north wall — doorway gap in the middle (connects to corridor -> room2)
-  const doorGap = 1.3;
+  const doorGap = 1.6;
   const northSideLen = (ROOM_W - doorGap) / 2;
   addWallBox(-(doorGap / 2 + northSideLen / 2), -ROOM_D / 2, northSideLen, t);
   addWallBox((doorGap / 2 + northSideLen / 2), -ROOM_D / 2, northSideLen, t);
-  addWallBox(0, -ROOM_D / 2, doorGap, t, 0.5, ROOM_H - 0.25); // lintel
+  addWallBox(0, -ROOM_D / 2, doorGap, t, 0.4, ROOM_H - 0.2); // lintel
 
   // ---------- charpai (rope cot) ----------
   const woodMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
