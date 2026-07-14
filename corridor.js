@@ -183,3 +183,62 @@ export function createCorridorEast(scene, engine, startX, z) {
 
   return { colliders, update, startX, endX, z };
 }
+
+// createCorridorSouth — same short passage, but running south (positive z) instead
+// of north, to connect room6's south doorway to room8.
+// startZ: the z coordinate of room6's south wall (doorway); x: the doorway's x coordinate.
+export function createCorridorSouth(scene, engine, startZ, x) {
+  const colliders = [];
+  const wallMat = createWallMaterial();
+
+  const centerZ = startZ + CORRIDOR_LEN / 2;
+  const endZ = startZ + CORRIDOR_LEN;
+
+  // ---------- floor: old, dirty tiles ----------
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(CORRIDOR_W, CORRIDOR_LEN),
+    createFloorMaterial(CORRIDOR_W, CORRIDOR_LEN)
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(x, 0, centerZ);
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  // ---------- ceiling ----------
+  const ceiling = new THREE.Mesh(
+    new THREE.PlaneGeometry(CORRIDOR_W, CORRIDOR_LEN),
+    new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 1 })
+  );
+  ceiling.rotation.x = Math.PI / 2;
+  ceiling.position.set(x, CORRIDOR_H, centerZ);
+  scene.add(ceiling);
+
+  // ---------- side walls (east/west sides of this north-south passage) ----------
+  function addWallBox(cx, cz, w, d, h = CORRIDOR_H, cy = h / 2) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+    mesh.position.set(cx, cy, cz);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    const box = new THREE.Box3().setFromObject(mesh);
+    colliders.push(box);
+    engine.addCollider(box);
+    return mesh;
+  }
+
+  addWallBox(x - CORRIDOR_W / 2 - t / 2, centerZ, t, CORRIDOR_LEN + t);
+  addWallBox(x + CORRIDOR_W / 2 + t / 2, centerZ, t, CORRIDOR_LEN + t);
+
+  // ---------- flickering bulb light so the passage isn't pitch black ----------
+  const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
+  bulbLight.position.set(x, CORRIDOR_H - 0.3, centerZ);
+  scene.add(bulbLight);
+
+  let flickerT = 0;
+  function update(dt) {
+    flickerT += dt;
+    bulbLight.intensity = 1.3 + Math.sin(flickerT * 7) * 0.3 + (Math.random() - 0.5) * 0.4;
+  }
+
+  return { colliders, update, startZ, endZ, x };
+}
