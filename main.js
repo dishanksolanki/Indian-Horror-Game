@@ -1,12 +1,16 @@
-// main.js — wires the Engine to Room 1 and drives the menu / pause UI.
-
+// main.js — wires the Engine to Room 1, the corridor, Room 2, and drives the menu / pause UI.
 import { Engine } from "./engine.js";
 import { createRoom1 } from "./room1.js";
+import { createCorridor } from "./corridor.js";
+import { createRoom2 } from "./room2.js";
 
 const canvas = document.getElementById("scene");
 const engine = new Engine(canvas);
 
 const room1 = createRoom1(engine.scene, engine);
+const corridor = createCorridor(engine.scene, engine, room1.northDoorZ);
+const room2 = createRoom2(engine.scene, engine, corridor.endZ);
+
 engine.setSpawn(room1.spawnPoint, room1.spawnYaw);
 
 const menu = document.getElementById("menu");
@@ -32,4 +36,6 @@ engine.controls.addEventListener("unlock", () => {
 
 engine.start((dt, eng) => {
   room1.update(dt, eng);
+  corridor.update(dt, eng);
+  room2.update(dt, eng);
 });
