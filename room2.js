@@ -67,8 +67,12 @@ export function createRoom2(scene, engine, doorZ) {
 
   // east wall — solid, no window
   addWallBox(ROOM_W / 2, centerZ, t, ROOM_D + t);
-  // west wall — solid, no window
-  addWallBox(-ROOM_W / 2, centerZ, t, ROOM_D + t);
+
+  // west wall — doorway gap in the middle, aligned with the corridor to room4
+  const westSideLen = (ROOM_D - DOOR_GAP) / 2;
+  addWallBox(-ROOM_W / 2, centerZ - (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
+  addWallBox(-ROOM_W / 2, centerZ + (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
+  addWallBox(-ROOM_W / 2, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
   // south wall — doorway gap in the middle, aligned with the corridor from room1
   const southSideLen = (ROOM_W - DOOR_GAP) / 2;
@@ -81,16 +85,6 @@ export function createRoom2(scene, engine, doorZ) {
   addWallBox(-(DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
   addWallBox((DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
   addWallBox(0, northZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
-
-  // ---------- simple furnishing: a low wooden trunk ----------
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
-  const trunk = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 0.6), woodMat);
-  trunk.position.set(-ROOM_W / 2 + 0.8, 0.25, centerZ - ROOM_D / 2 + 1.0);
-  trunk.castShadow = trunk.receiveShadow = true;
-  scene.add(trunk);
-  const trunkBox = new THREE.Box3().setFromObject(trunk);
-  colliders.push(trunkBox);
-  engine.addCollider(trunkBox);
 
   // ---------- ambient room lighting ----------
   const ambient = new THREE.AmbientLight(0x4a4536, 2.0);
@@ -110,5 +104,10 @@ export function createRoom2(scene, engine, doorZ) {
     eerieLight.intensity = 1.6 + Math.sin(pulseT * 1.5) * 0.3;
   }
 
-  return { colliders, update, centerZ, northZ };
+  // westX/westDoorZ: the doorway sits in the middle of the west wall —
+  // corridor.js's createCorridorWest starts here and runs further west toward room4.
+  const westX = -ROOM_W / 2;
+  const westDoorZ = centerZ;
+
+  return { colliders, update, centerZ, northZ, westX, westDoorZ };
 }
