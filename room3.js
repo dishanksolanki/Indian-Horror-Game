@@ -78,16 +78,6 @@ export function createRoom3(scene, engine, doorZ) {
   addWallBox((DOOR_GAP / 2 + southSideLen / 2), southZ, southSideLen, t);
   addWallBox(0, southZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
-  // ---------- furnishing: an old iron-bound trunk ----------
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0x2c1d10, roughness: 0.85 });
-  const trunk = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.45, 0.55), woodMat);
-  trunk.position.set(ROOM_W / 2 - 0.7, 0.225, centerZ + ROOM_D / 2 - 1.0);
-  trunk.castShadow = trunk.receiveShadow = true;
-  scene.add(trunk);
-  const trunkBox = new THREE.Box3().setFromObject(trunk);
-  colliders.push(trunkBox);
-  engine.addCollider(trunkBox);
-
   // ---------- furnishing: a small wall shelf with a cracked mirror ----------
   const frameMat = new THREE.MeshStandardMaterial({ color: 0x1f150c, roughness: 0.8 });
   const mirrorFrame = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.04), frameMat);
