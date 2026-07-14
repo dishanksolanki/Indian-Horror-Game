@@ -79,3 +79,98 @@ export function createWallMaterial() {
     roughness: 1,
   });
 }
+
+export function makeFloorTexture() {
+  const size = 512;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+
+  // base worn stone/tile tone
+  ctx.fillStyle = "#2a231a";
+  ctx.fillRect(0, 0, size, size);
+
+  // tile grid — old square tiles, slightly uneven
+  const tileCount = 6;
+  const tileSize = size / tileCount;
+  ctx.strokeStyle = "rgba(10,8,5,0.55)";
+  for (let i = 0; i <= tileCount; i++) {
+    const jitter = () => (Math.random() - 0.5) * 4;
+    ctx.lineWidth = 2 + Math.random();
+    // vertical grout lines
+    ctx.beginPath();
+    ctx.moveTo(i * tileSize + jitter(), 0);
+    ctx.lineTo(i * tileSize + jitter(), size);
+    ctx.stroke();
+    // horizontal grout lines
+    ctx.beginPath();
+    ctx.moveTo(0, i * tileSize + jitter());
+    ctx.lineTo(size, i * tileSize + jitter());
+    ctx.stroke();
+  }
+
+  // per-tile discoloration — some tiles darker/dirtier, some lighter/worn
+  for (let ty = 0; ty < tileCount; ty++) {
+    for (let tx = 0; tx < tileCount; tx++) {
+      const shade = (Math.random() - 0.5) * 0.3;
+      ctx.fillStyle = shade > 0
+        ? `rgba(80,65,45,${shade})`
+        : `rgba(10,8,5,${-shade})`;
+      ctx.fillRect(tx * tileSize + 2, ty * tileSize + 2, tileSize - 4, tileSize - 4);
+    }
+  }
+
+  // dirt / grime patches scattered across the floor
+  for (let i = 0; i < 90; i++) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const r = 6 + Math.random() * 30;
+    ctx.fillStyle = `rgba(15,11,7,${0.08 + Math.random() * 0.18})`;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // scuffs and hairline cracks running across tiles
+  ctx.strokeStyle = "rgba(5,4,2,0.5)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 35; i++) {
+    let x = Math.random() * size;
+    let y = Math.random() * size;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    const segments = 3 + Math.floor(Math.random() * 4);
+    for (let s = 0; s < segments; s++) {
+      x += (Math.random() - 0.5) * 30;
+      y += (Math.random() - 0.5) * 30;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // fine grain noise for a gritty, unclean feel
+  const imgData = ctx.getImageData(0, 0, size, size);
+  for (let i = 0; i < imgData.data.length; i += 4) {
+    const n = (Math.random() - 0.5) * 16;
+    imgData.data[i] += n;
+    imgData.data[i + 1] += n;
+    imgData.data[i + 2] += n;
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  return texture;
+}
+
+export function createFloorMaterial(repeatX = 3, repeatY = 3) {
+  const texture = makeFloorTexture();
+  texture.repeat.set(repeatX, repeatY);
+  return new THREE.MeshStandardMaterial({
+    map: texture,
+    bumpMap: texture,
+    bumpScale: 0.03,
+    color: 0xffffff,
+    roughness: 0.95,
+  });
+}
