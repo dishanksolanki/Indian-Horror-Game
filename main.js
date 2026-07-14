@@ -2,9 +2,10 @@
 // and drives the menu / pause UI.
 import { Engine } from "./engine.js";
 import { createRoom1 } from "./room1.js";
-import { createCorridor } from "./corridor.js";
+import { createCorridor, createCorridorWest } from "./corridor.js";
 import { createRoom2 } from "./room2.js";
 import { createRoom3 } from "./room3.js";
+import { createRoom4 } from "./room4.js";
 
 const canvas = document.getElementById("scene");
 const engine = new Engine(canvas);
@@ -25,6 +26,12 @@ const corridor2 = createCorridor(engine.scene, engine, room2.northZ);
 
 // room3 hangs its south doorway exactly on corridor2's far end.
 const room3 = createRoom3(engine.scene, engine, corridor2.endZ);
+
+// third corridor starts at room2's west doorway and runs west to room4.
+const corridor3 = createCorridorWest(engine.scene, engine, room2.westX, room2.westDoorZ);
+
+// room4 hangs its east doorway exactly on corridor3's far end.
+const room4 = createRoom4(engine.scene, engine, corridor3.endX, corridor3.z);
 
 const menu = document.getElementById("menu");
 const playBtn = document.getElementById("play-btn");
@@ -53,4 +60,6 @@ engine.start((dt, eng) => {
   room2.update(dt, eng);
   corridor2.update(dt, eng);
   room3.update(dt, eng);
+  corridor3.update(dt, eng);
+  room4.update(dt, eng);
 });
