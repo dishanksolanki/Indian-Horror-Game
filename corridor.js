@@ -1,7 +1,7 @@
 // corridor.js — a short 2m passage connecting room1's north doorway to room2's south doorway.
 
 import * as THREE from "three";
-import { createWallMaterial } from "./materials.js";
+import { createWallMaterial, createFloorMaterial } from "./materials.js";
 
 const CORRIDOR_LEN = 2;   // length in meters (matches the requested "2 meter colidor")
 const CORRIDOR_W = 1.3;   // matches the doorGap width used in room1/room2
@@ -17,10 +17,10 @@ export function createCorridor(scene, engine, startZ) {
   const centerZ = startZ - CORRIDOR_LEN / 2;
   const endZ = startZ - CORRIDOR_LEN;
 
-  // ---------- floor ----------
+  // ---------- floor: old, dirty tiles ----------
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(CORRIDOR_W, CORRIDOR_LEN),
-    new THREE.MeshStandardMaterial({ color: 0x2a231a, roughness: 0.95 })
+    createFloorMaterial(CORRIDOR_W, CORRIDOR_LEN)
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(0, 0, centerZ);
