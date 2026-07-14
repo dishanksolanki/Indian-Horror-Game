@@ -2,7 +2,8 @@
 // with Room 4 and Room 5 branching off Room 2's west and east doorways,
 // Room 6 and Room 7 continuing further east off Room 5's and Room 6's east doorways,
 // Room 8 branching off Room 6's south doorway,
-// and Room 9 branching off Room 6's north doorway,
+// Room 9 branching off Room 6's north doorway,
+// and Hall 1 continuing further north off Room 9's north doorway,
 // and drives the menu / pause UI.
 import { Engine } from "./engine.js";
 import { createRoom1 } from "./room1.js";
@@ -21,6 +22,7 @@ import { createRoom6 } from "./room6.js";
 import { createRoom7 } from "./room7.js";
 import { createRoom8 } from "./room8.js";
 import { createRoom9 } from "./room9.js";
+import { createHall1 } from "./hall1.js";
 
 const canvas = document.getElementById("scene");
 const engine = new Engine(canvas);
@@ -78,6 +80,12 @@ const corridor8 = createCorridorNorth(engine.scene, engine, room6.northZ, room6.
 // room9 hangs its south doorway exactly on corridor8's far end.
 const room9 = createRoom9(engine.scene, engine, corridor8.endZ, corridor8.x);
 
+// ninth corridor starts at room9's north doorway and runs north to hall1.
+const corridor9 = createCorridorNorth(engine.scene, engine, room9.northZ, room9.northDoorX);
+
+// hall1 hangs its south doorway exactly on corridor9's far end.
+const hall1 = createHall1(engine.scene, engine, corridor9.endZ, corridor9.x);
+
 const menu = document.getElementById("menu");
 const playBtn = document.getElementById("play-btn");
 const noteOverlay = document.getElementById("note-overlay");
@@ -117,4 +125,6 @@ engine.start((dt, eng) => {
   room8.update(dt, eng);
   corridor8.update(dt, eng);
   room9.update(dt, eng);
+  corridor9.update(dt, eng);
+  hall1.update(dt, eng);
 });
