@@ -1,7 +1,8 @@
 // room2.js — ROOM 2: a second old Indian haveli room, reached via the corridor from room1.
 // South wall has a doorway gap matching the corridor width (entrance from room1).
-// North wall now also has a matching doorway gap (exit toward room3 via a second corridor).
-// East/west walls remain solid, no window.
+// North wall also has a matching doorway gap (exit toward room3 via a second corridor).
+// West wall has a matching doorway gap (exit toward room4 via a second corridor).
+// East wall now also has a matching doorway gap (exit toward room5 via a third corridor).
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -65,8 +66,11 @@ export function createRoom2(scene, engine, doorZ) {
   const northZ = centerZ - ROOM_D / 2;
   const southZ = centerZ + ROOM_D / 2; // == doorZ
 
-  // east wall — solid, no window
-  addWallBox(ROOM_W / 2, centerZ, t, ROOM_D + t);
+  // east wall — doorway gap in the middle, aligned with the corridor to room5
+  const eastSideLen = (ROOM_D - DOOR_GAP) / 2;
+  addWallBox(ROOM_W / 2, centerZ - (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
+  addWallBox(ROOM_W / 2, centerZ + (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
+  addWallBox(ROOM_W / 2, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
   // west wall — doorway gap in the middle, aligned with the corridor to room4
   const westSideLen = (ROOM_D - DOOR_GAP) / 2;
@@ -109,5 +113,10 @@ export function createRoom2(scene, engine, doorZ) {
   const westX = -ROOM_W / 2;
   const westDoorZ = centerZ;
 
-  return { colliders, update, centerZ, northZ, westX, westDoorZ };
+  // eastX/eastDoorZ: the doorway sits in the middle of the east wall —
+  // corridor.js's createCorridorEast starts here and runs further east toward room5.
+  const eastX = ROOM_W / 2;
+  const eastDoorZ = centerZ;
+
+  return { colliders, update, centerZ, northZ, westX, westDoorZ, eastX, eastDoorZ };
 }
