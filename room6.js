@@ -1,8 +1,9 @@
 // room6.js — ROOM 6: a side room of the haveli, reached via a corridor
 // running east from room5's east doorway.
 // West wall has a doorway gap matching the corridor width (entrance from room5).
-// East wall now also has a matching doorway gap (exit toward room7 via a sixth corridor).
-// North/south walls remain solid, no window.
+// East wall also has a matching doorway gap (exit toward room7 via a sixth corridor).
+// South wall now also has a matching doorway gap (exit toward room8 via a seventh corridor).
+// North wall remains solid, no window.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -70,8 +71,12 @@ export function createRoom6(scene, engine, doorX, doorZ) {
 
   // north wall — solid, no window
   addWallBox(centerX, centerZ - ROOM_D / 2, ROOM_W + t, t);
-  // south wall — solid, no window
-  addWallBox(centerX, centerZ + ROOM_D / 2, ROOM_W + t, t);
+
+  // south wall — doorway gap in the middle, aligned with the corridor to room8
+  const southSideLen = (ROOM_W - DOOR_GAP) / 2;
+  addWallBox(centerX - (DOOR_GAP / 2 + southSideLen / 2), centerZ + ROOM_D / 2, southSideLen, t);
+  addWallBox(centerX + (DOOR_GAP / 2 + southSideLen / 2), centerZ + ROOM_D / 2, southSideLen, t);
+  addWallBox(centerX, centerZ + ROOM_D / 2, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
   // west wall — doorway gap in the middle, aligned with the corridor from room5
   const westSideLen = (ROOM_D - DOOR_GAP) / 2;
@@ -107,5 +112,10 @@ export function createRoom6(scene, engine, doorX, doorZ) {
   // corridor.js's createCorridorEast starts here and runs further east toward room7.
   const eastDoorZ = centerZ;
 
-  return { colliders, update, centerX, centerZ, westX, eastX, eastDoorZ };
+  // southZ/southDoorX: the doorway sits in the middle of the south wall —
+  // corridor.js's createCorridorSouth starts here and runs further south toward room8.
+  const southZ = centerZ + ROOM_D / 2;
+  const southDoorX = centerX;
+
+  return { colliders, update, centerX, centerZ, westX, eastX, eastDoorZ, southZ, southDoorX };
 }
