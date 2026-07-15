@@ -23,6 +23,7 @@ import {
   createCorridorEast,
   createCorridorSouth,
   createCorridorNorth,
+  createCorridorBendEastSouth,
 } from "./corridor.js";
 import { createRoom2 } from "./room2.js";
 import { createRoom3 } from "./room3.js";
@@ -153,15 +154,18 @@ const corridor17 = createCorridorNorth(engine.scene, engine, room15.northZ, room
 // small landing room that links room15 and hall1 together.
 const room16 = createRoom16(engine.scene, engine, corridor17.endZ, corridor17.x);
 
-// eighteenth corridor starts at room16's east doorway and runs east — a longer,
-// custom-length bridging passage that travels all the way over to hall1's x position.
-const corridor18Length = hall1.centerX - room16.eastX;
-const corridor18 = createCorridorEast(engine.scene, engine, room16.eastX, room16.eastDoorZ, corridor18Length);
-
-// nineteenth corridor bends south from corridor18's far end and runs down to
-// hall1's north doorway, closing the loop between room15 and hall1.
-const corridor19Length = hall1.northZ - corridor18.z;
-const corridor19 = createCorridorSouth(engine.scene, engine, corridor18.z, corridor18.endX, corridor19Length);
+// eighteenth/nineteenth corridor: a single L-shaped bridging passage from room16's
+// east doorway — east to hall1's x position, then south into hall1's north doorway.
+// Built as one bend (not two glued-together straight corridors) so the corner is a
+// clean open turn instead of each piece's side walls sealing off the joint.
+const corridor18 = createCorridorBendEastSouth(
+  engine.scene,
+  engine,
+  room16.eastX,
+  room16.eastDoorZ,
+  hall1.centerX,
+  hall1.northZ
+);
 
 const menu = document.getElementById("menu");
 const playBtn = document.getElementById("play-btn");
@@ -221,5 +225,4 @@ engine.start((dt, eng) => {
   corridor17.update(dt, eng);
   room16.update(dt, eng);
   corridor18.update(dt, eng);
-  corridor19.update(dt, eng);
 });
