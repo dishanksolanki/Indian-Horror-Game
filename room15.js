@@ -1,7 +1,8 @@
 // room15.js — ROOM 15: a large, mostly bare room of the haveli, reached via a
 // corridor running north from room12's north doorway.
 // South wall has a doorway gap matching the corridor width (entrance from room12).
-// North/east/west walls remain solid, no window — the true dead end of this wing.
+// North wall now also has a doorway gap — a corridor runs north from here to
+// room16, which in turn connects onward to hall1. East/west walls remain solid.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -67,8 +68,11 @@ export function createRoom15(scene, engine, doorZ, doorX) {
   const northZ = centerZ - ROOM_D / 2;
   const southZ = centerZ + ROOM_D / 2; // == doorZ
 
-  // north wall — solid, dead end of this wing
-  addWallBox(centerX, northZ, ROOM_W + t, t);
+  // north wall — doorway gap in the middle, leading onward to room16
+  const northSideLen = (ROOM_W - DOOR_GAP) / 2;
+  addWallBox(centerX - (DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
+  addWallBox(centerX + (DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
+  addWallBox(centerX, northZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
   // west wall — solid, no window
   addWallBox(centerX - ROOM_W / 2, centerZ, t, ROOM_D + t);
   // east wall — solid, no window
@@ -92,5 +96,8 @@ export function createRoom15(scene, engine, doorZ, doorX) {
     // intentionally static
   }
 
-  return { colliders, update, centerX, centerZ, northZ, southZ };
+  // northDoorX: the doorway sits in the middle of the north wall — corridor to room16 starts here.
+  const northDoorX = centerX;
+
+  return { colliders, update, centerX, centerZ, northZ, southZ, northDoorX };
 }
