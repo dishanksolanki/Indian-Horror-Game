@@ -1,8 +1,9 @@
 // room3.js — ROOM 3: a smaller, more claustrophobic inner room of the haveli,
 // reached via the second corridor leading north from room2.
 // South wall has a doorway gap matching the corridor width.
-// East wall now also has a matching doorway gap (exit toward room10 via a tenth corridor).
-// North/west walls remain solid.
+// East wall has a matching doorway gap (exit toward room10 via a tenth corridor).
+// West wall now also has a matching doorway gap (exit toward room11 via an eleventh corridor).
+// North wall remains solid.
 // This room is deeper in the house, so it's kept dimmer and tighter than room1/room2.
 
 import * as THREE from "three";
@@ -74,8 +75,11 @@ export function createRoom3(scene, engine, doorZ) {
   addWallBox(ROOM_W / 2, centerZ - (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
   addWallBox(ROOM_W / 2, centerZ + (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
   addWallBox(ROOM_W / 2, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
-  // west wall — solid, no window
-  addWallBox(-ROOM_W / 2, centerZ, t, ROOM_D + t);
+  // west wall — doorway gap in the middle, aligned with the corridor to room11
+  const westSideLen = (ROOM_D - DOOR_GAP) / 2;
+  addWallBox(-ROOM_W / 2, centerZ - (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
+  addWallBox(-ROOM_W / 2, centerZ + (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
+  addWallBox(-ROOM_W / 2, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
   // south wall — doorway gap in the middle, aligned with the corridor from room2
   const southSideLen = (ROOM_W - DOOR_GAP) / 2;
@@ -126,5 +130,10 @@ export function createRoom3(scene, engine, doorZ) {
   const eastX = ROOM_W / 2;
   const eastDoorZ = centerZ;
 
-  return { colliders, update, centerZ, eastX, eastDoorZ };
+  // westX/westDoorZ: the doorway sits in the middle of the west wall —
+  // corridor.js's createCorridorWest starts here and runs further west toward room11.
+  const westX = -ROOM_W / 2;
+  const westDoorZ = centerZ;
+
+  return { colliders, update, centerZ, eastX, eastDoorZ, westX, westDoorZ };
 }
