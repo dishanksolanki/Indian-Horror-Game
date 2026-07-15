@@ -1,4 +1,4 @@
-// room14.js — ROOM 14: a cramped old storeroom of the haveli, reached via a corridor
+// room14.js — ROOM 14: a cramped, empty room of the haveli, reached via a corridor
 // running east from room12's east doorway.
 // West wall has a doorway gap matching the corridor width (entrance from room12).
 // North/south/east walls remain solid, no window — a forgotten dead-end nook off
@@ -80,31 +80,6 @@ export function createRoom14(scene, engine, doorX, doorZ) {
   addWallBox(westX, centerZ - (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
   addWallBox(westX, centerZ + (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
   addWallBox(westX, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
-
-  // ---------- furnishing: old shelving stacked with clay pots against the east wall ----------
-  const shelfMat = new THREE.MeshStandardMaterial({ color: 0x2c1d10, roughness: 0.85 });
-  const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.4, ROOM_H - 0.4, ROOM_D - 0.8), shelfMat);
-  shelf.position.set(eastX - 0.25, (ROOM_H - 0.4) / 2, centerZ);
-  shelf.castShadow = shelf.receiveShadow = true;
-  scene.add(shelf);
-
-  const shelfBox = new THREE.Box3().setFromObject(shelf);
-  colliders.push(shelfBox);
-  engine.addCollider(shelfBox);
-
-  const potMat = new THREE.MeshStandardMaterial({ color: 0x5c3a22, roughness: 0.9 });
-  const potPositions = [
-    [eastX - 0.55, 0.75, centerZ - 1.2],
-    [eastX - 0.5, 0.75, centerZ - 0.3],
-    [eastX - 0.55, 0.75, centerZ + 0.7],
-    [eastX - 0.5, 1.35, centerZ - 0.7],
-  ];
-  potPositions.forEach(([px, py, pz]) => {
-    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.3, 10), potMat);
-    pot.position.set(px, py, pz);
-    pot.castShadow = pot.receiveShadow = true;
-    scene.add(pot);
-  });
 
   // ---------- ambient room lighting: airless, sealed, still and dusty ----------
   const ambient = new THREE.AmbientLight(0x241f19, 1.0);
