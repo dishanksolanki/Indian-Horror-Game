@@ -1,23 +1,24 @@
-// hall2.js — HALL 2: a large hall of the haveli, reached via a corridor running
-// west from room12's west doorway (the old puja room, now a through-room).
+// hall2.js — HALL 2: a large hall of the haveli, sized to match Hall 1 (10x13m),
+// reached via a corridor running west from room12's west doorway (the old puja
+// room, now a through-room).
 // East wall has a doorway gap matching the corridor width (entrance from room12).
 // North/south/west walls remain solid, no window — this is the dead end of this wing.
 //
 // Placement/collision note: the corridor's fixed connection point (room12's west
 // door) is at x=-4.25, z=-26.5. Rather than centering the hall on that point — which
-// caps its depth because room11 sits close by to the south (x:[-9.25,-4.75],
-// z:[-21.25,-16.25]) — the doorway is placed near the SOUTH end of the hall's east
-// wall (DOOR_OFFSET_FROM_SOUTH) and the hall's bulk extends north into open, unused
-// space. This lets the hall be much larger while keeping a safe 2m+ gap from room11's
-// northern edge. room4 (x:[-11,-5], z:[-13.25,-6.75]) is separated by an even larger
-// gap. No other room/corridor in the level reaches into this x/z region.
+// would collide with room11 (x:[-9.25,-4.75], z:[-21.25,-16.25]) sitting close by to
+// the south — the doorway is placed near the SOUTH end of the hall's east wall
+// (DOOR_OFFSET_FROM_SOUTH) and the hall's bulk extends north into open, unused space.
+// This keeps a safe 2m+ gap from room11's northern edge. room4 (x:[-11,-5],
+// z:[-13.25,-6.75]) is separated by an even larger gap. No other room/corridor in
+// the level reaches into this x/z region.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
 
-const ROOM_W = 12; // east-west
-const ROOM_D = 16; // north-south
-const ROOM_H = 3.8;
+const ROOM_W = 10; // east-west — matches hall1
+const ROOM_D = 13; // north-south — matches hall1
+const ROOM_H = 3.4; // matches hall1
 const DOOR_GAP = 1.6; // must match corridor width
 const DOOR_OFFSET_FROM_SOUTH = 3; // how far the doorway center sits from the south wall
 
@@ -55,8 +56,8 @@ export function createHall2(scene, engine, doorX, doorZ) {
 
   const beamMat = new THREE.MeshStandardMaterial({ color: 0x2e2013, roughness: 0.9 });
   for (let i = -2; i <= 2; i++) {
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, ROOM_D), beamMat);
-    beam.position.set(centerX + i * (ROOM_W / 5), ROOM_H - 0.13, centerZ);
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, ROOM_D), beamMat);
+    beam.position.set(centerX + i * (ROOM_W / 5), ROOM_H - 0.12, centerZ);
     beam.castShadow = true;
     scene.add(beam);
   }
@@ -101,9 +102,8 @@ export function createHall2(scene, engine, doorX, doorZ) {
   const pillarMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
   const pillarRadius = 0.22;
   const pillarPositions = [
-    [centerX - 3.2, centerZ - 5.5], [centerX + 3.2, centerZ - 5.5],
-    [centerX - 3.2, centerZ],       [centerX + 3.2, centerZ],
-    [centerX - 3.2, centerZ + 5.5], [centerX + 3.2, centerZ + 5.5],
+    [centerX - 2.6, centerZ - 3], [centerX + 2.6, centerZ - 3],
+    [centerX - 2.6, centerZ + 3], [centerX + 2.6, centerZ + 3],
   ];
   pillarPositions.forEach(([px, pz]) => {
     const pillar = new THREE.Mesh(
@@ -127,25 +127,20 @@ export function createHall2(scene, engine, doorX, doorZ) {
   const fillLight = new THREE.HemisphereLight(0x6e6555, 0x241d12, 1.0);
   scene.add(fillLight);
 
-  const eerieLightA = new THREE.PointLight(0x9c8a6a, 1.6, 10, 2);
-  eerieLightA.position.set(centerX, ROOM_H - 0.4, centerZ - 5.5);
+  const eerieLightA = new THREE.PointLight(0x9c8a6a, 1.6, 9, 2);
+  eerieLightA.position.set(centerX, ROOM_H - 0.4, centerZ - 3.5);
   scene.add(eerieLightA);
 
-  const eerieLightB = new THREE.PointLight(0x9c8a6a, 1.6, 10, 2);
-  eerieLightB.position.set(centerX, ROOM_H - 0.4, centerZ);
+  const eerieLightB = new THREE.PointLight(0x9c8a6a, 1.6, 9, 2);
+  eerieLightB.position.set(centerX, ROOM_H - 0.4, centerZ + 3.5);
   scene.add(eerieLightB);
-
-  const eerieLightC = new THREE.PointLight(0x9c8a6a, 1.6, 10, 2);
-  eerieLightC.position.set(centerX, ROOM_H - 0.4, centerZ + 5.5);
-  scene.add(eerieLightC);
 
   // ---------- per-frame update: subtle eerie light pulse ----------
   let pulseT = 0;
   function update(dt) {
     pulseT += dt;
-    eerieLightA.intensity = 1.4 + Math.sin(pulseT * 1.1) * 0.3;
-    eerieLightB.intensity = 1.4 + Math.sin(pulseT * 1.1 + 1.1) * 0.3;
-    eerieLightC.intensity = 1.4 + Math.sin(pulseT * 1.1 + 2.2) * 0.3;
+    eerieLightA.intensity = 1.4 + Math.sin(pulseT * 1.3) * 0.3;
+    eerieLightB.intensity = 1.4 + Math.sin(pulseT * 1.3 + 1.1) * 0.3;
   }
 
   return { colliders, update, centerX, centerZ, northZ, southZ, westX, eastX };
