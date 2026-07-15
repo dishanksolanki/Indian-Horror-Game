@@ -1,14 +1,14 @@
-// room15.js — ROOM 15: a small, bare room of the haveli, reached via a corridor
-// running north from room12's north doorway.
+// room15.js — ROOM 15: a large, mostly bare room of the haveli, reached via a
+// corridor running north from room12's north doorway.
 // South wall has a doorway gap matching the corridor width (entrance from room12).
 // North/east/west walls remain solid, no window — the true dead end of this wing.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
 
-const ROOM_W = 4.2; // east-west
-const ROOM_D = 4.5; // north-south
-const ROOM_H = 2.6;
+const ROOM_W = 9;   // east-west — a big room
+const ROOM_D = 10;   // north-south
+const ROOM_H = 3.2;
 const DOOR_GAP = 1.6; // must match corridor width
 
 // doorZ: the z coordinate where room15's south wall (and doorway) sits —
@@ -41,9 +41,9 @@ export function createRoom15(scene, engine, doorZ, doorX) {
   scene.add(ceiling);
 
   const beamMat = new THREE.MeshStandardMaterial({ color: 0x24180d, roughness: 0.9 });
-  for (let i = -1; i <= 1; i++) {
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, ROOM_D), beamMat);
-    beam.position.set(centerX + i * (ROOM_W / 3), ROOM_H - 0.1, centerZ);
+  for (let i = -2; i <= 2; i++) {
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, ROOM_D), beamMat);
+    beam.position.set(centerX + i * (ROOM_W / 5), ROOM_H - 0.1, centerZ);
     beam.castShadow = true;
     scene.add(beam);
   }
