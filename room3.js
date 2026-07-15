@@ -2,8 +2,9 @@
 // reached via the second corridor leading north from room2.
 // South wall has a doorway gap matching the corridor width.
 // East wall has a matching doorway gap (exit toward room10 via a tenth corridor).
-// West wall now also has a matching doorway gap (exit toward room11 via an eleventh corridor).
-// North wall remains solid.
+// West wall has a matching doorway gap (exit toward room11 via an eleventh corridor).
+// North wall now also has a matching doorway gap (exit toward room12 via a twelfth
+// corridor) — the cracked mirror shifts to sit beside the doorway instead of centered.
 // This room is deeper in the house, so it's kept dimmer and tighter than room1/room2.
 
 import * as THREE from "three";
@@ -68,8 +69,11 @@ export function createRoom3(scene, engine, doorZ) {
   const northZ = centerZ - ROOM_D / 2;
   const southZ = centerZ + ROOM_D / 2; // == doorZ
 
-  // north wall — solid, dead end of the house
-  addWallBox(0, northZ, ROOM_W + t, t);
+  // north wall — doorway gap in the middle, aligned with the corridor to room12
+  const northSideLen = (ROOM_W - DOOR_GAP) / 2;
+  addWallBox(-(DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
+  addWallBox((DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
+  addWallBox(0, northZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
   // east wall — doorway gap in the middle, aligned with the corridor to room10
   const eastSideLen = (ROOM_D - DOOR_GAP) / 2;
   addWallBox(ROOM_W / 2, centerZ - (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
@@ -88,9 +92,11 @@ export function createRoom3(scene, engine, doorZ) {
   addWallBox(0, southZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
   // ---------- furnishing: a small wall shelf with a cracked mirror ----------
+  // shifted onto the solid east segment of the north wall, beside the new doorway to room12
+  const mirrorX = (DOOR_GAP / 2 + northSideLen / 2);
   const frameMat = new THREE.MeshStandardMaterial({ color: 0x1f150c, roughness: 0.8 });
   const mirrorFrame = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.04), frameMat);
-  mirrorFrame.position.set(0, 1.5, northZ + 0.05);
+  mirrorFrame.position.set(mirrorX, 1.5, northZ + 0.05);
   mirrorFrame.castShadow = mirrorFrame.receiveShadow = true;
   scene.add(mirrorFrame);
 
@@ -104,7 +110,7 @@ export function createRoom3(scene, engine, doorZ) {
       emissiveIntensity: 0.4,
     })
   );
-  mirrorGlass.position.set(0, 1.5, northZ + 0.071);
+  mirrorGlass.position.set(mirrorX, 1.5, northZ + 0.071);
   scene.add(mirrorGlass);
 
   // ---------- ambient room lighting: dimmer and colder, deepest room in the house ----------
@@ -135,5 +141,5 @@ export function createRoom3(scene, engine, doorZ) {
   const westX = -ROOM_W / 2;
   const westDoorZ = centerZ;
 
-  return { colliders, update, centerZ, eastX, eastDoorZ, westX, westDoorZ };
+  return { colliders, update, centerZ, northZ, eastX, eastDoorZ, westX, westDoorZ };
 }
