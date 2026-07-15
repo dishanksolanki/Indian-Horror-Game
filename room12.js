@@ -2,8 +2,8 @@
 // running north from room3's north doorway, past the cracked mirror in room3.
 // South wall has a doorway gap matching the corridor width (entrance from room3).
 // West wall also has a doorway gap, leading further out via a corridor to room13/Hall 2.
-// East wall now also has a doorway gap, leading further out via a corridor to room14.
-// North wall remains solid, no window — true dead end of the house.
+// East wall also has a doorway gap, leading further out via a corridor to room14.
+// North wall now also has a doorway gap, leading further out via a corridor to room15.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -69,8 +69,11 @@ export function createRoom12(scene, engine, doorZ) {
   const westX = -ROOM_W / 2;
   const eastX = ROOM_W / 2;
 
-  // north wall — solid, true dead end of the house
-  addWallBox(0, northZ, ROOM_W + t, t);
+  // north wall — doorway gap in the middle, aligned with the corridor to room15
+  const northSideLen = (ROOM_W - DOOR_GAP) / 2;
+  addWallBox(-(DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
+  addWallBox((DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
+  addWallBox(0, northZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
   // south wall — doorway gap in the middle, aligned with the corridor from room3
   const southSideLen = (ROOM_W - DOOR_GAP) / 2;
@@ -108,6 +111,9 @@ export function createRoom12(scene, engine, doorZ) {
   // eastX/eastDoorZ: the doorway sits in the middle of the east wall —
   // used by main.js to attach the corridor running out to room14.
   const eastDoorZ = centerZ;
+  // northDoorX: the doorway sits in the middle of the north wall —
+  // used by main.js to attach the corridor running out to room15.
+  const northDoorX = 0;
 
-  return { colliders, update, centerZ, northZ, southZ, westX, eastX, westDoorZ, eastDoorZ };
+  return { colliders, update, centerZ, northZ, southZ, westX, eastX, westDoorZ, eastDoorZ, northDoorX };
 }
