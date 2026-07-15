@@ -128,17 +128,19 @@ export function createCorridorWest(scene, engine, startX, z) {
 // createCorridorEast — same short passage, but running east (positive x) instead
 // of west, to connect room2's east doorway to room5.
 // startX: the x coordinate of room2's east wall (doorway); z: the doorway's z coordinate.
-export function createCorridorEast(scene, engine, startX, z) {
+// length: optional override of the passage length (defaults to CORRIDOR_LEN) — used
+// for longer bridging passages, e.g. room16's east passage on the way to hall1.
+export function createCorridorEast(scene, engine, startX, z, length = CORRIDOR_LEN) {
   const colliders = [];
   const wallMat = createWallMaterial();
 
-  const centerX = startX + CORRIDOR_LEN / 2;
-  const endX = startX + CORRIDOR_LEN;
+  const centerX = startX + length / 2;
+  const endX = startX + length;
 
   // ---------- floor: old, dirty tiles ----------
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(CORRIDOR_LEN, CORRIDOR_W),
-    createFloorMaterial(CORRIDOR_LEN, CORRIDOR_W)
+    new THREE.PlaneGeometry(length, CORRIDOR_W),
+    createFloorMaterial(length, CORRIDOR_W)
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(centerX, 0, z);
@@ -147,7 +149,7 @@ export function createCorridorEast(scene, engine, startX, z) {
 
   // ---------- ceiling ----------
   const ceiling = new THREE.Mesh(
-    new THREE.PlaneGeometry(CORRIDOR_LEN, CORRIDOR_W),
+    new THREE.PlaneGeometry(length, CORRIDOR_W),
     new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 1 })
   );
   ceiling.rotation.x = Math.PI / 2;
@@ -167,18 +169,26 @@ export function createCorridorEast(scene, engine, startX, z) {
     return mesh;
   }
 
-  addWallBox(centerX, z - CORRIDOR_W / 2 - t / 2, CORRIDOR_LEN + t, t);
-  addWallBox(centerX, z + CORRIDOR_W / 2 + t / 2, CORRIDOR_LEN + t, t);
+  addWallBox(centerX, z - CORRIDOR_W / 2 - t / 2, length + t, t);
+  addWallBox(centerX, z + CORRIDOR_W / 2 + t / 2, length + t, t);
 
-  // ---------- flickering bulb light so the passage isn't pitch black ----------
-  const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
-  bulbLight.position.set(centerX, CORRIDOR_H - 0.3, z);
-  scene.add(bulbLight);
+  // ---------- flickering bulb light(s) so the passage isn't pitch black ----------
+  const bulbCount = Math.max(1, Math.round(length / CORRIDOR_LEN));
+  const bulbLights = [];
+  for (let i = 0; i < bulbCount; i++) {
+    const bx = startX + (length / bulbCount) * (i + 0.5);
+    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
+    bulbLight.position.set(bx, CORRIDOR_H - 0.3, z);
+    scene.add(bulbLight);
+    bulbLights.push(bulbLight);
+  }
 
   let flickerT = 0;
   function update(dt) {
     flickerT += dt;
-    bulbLight.intensity = 1.3 + Math.sin(flickerT * 7) * 0.3 + (Math.random() - 0.5) * 0.4;
+    bulbLights.forEach((bulbLight, i) => {
+      bulbLight.intensity = 1.3 + Math.sin(flickerT * 7 + i) * 0.3 + (Math.random() - 0.5) * 0.4;
+    });
   }
 
   return { colliders, update, startX, endX, z };
@@ -187,17 +197,19 @@ export function createCorridorEast(scene, engine, startX, z) {
 // createCorridorSouth — same short passage, but running south (positive z) instead
 // of north, to connect room6's south doorway to room8.
 // startZ: the z coordinate of room6's south wall (doorway); x: the doorway's x coordinate.
-export function createCorridorSouth(scene, engine, startZ, x) {
+// length: optional override of the passage length (defaults to CORRIDOR_LEN) — used
+// for longer bridging passages, e.g. room16's south passage down to hall1.
+export function createCorridorSouth(scene, engine, startZ, x, length = CORRIDOR_LEN) {
   const colliders = [];
   const wallMat = createWallMaterial();
 
-  const centerZ = startZ + CORRIDOR_LEN / 2;
-  const endZ = startZ + CORRIDOR_LEN;
+  const centerZ = startZ + length / 2;
+  const endZ = startZ + length;
 
   // ---------- floor: old, dirty tiles ----------
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(CORRIDOR_W, CORRIDOR_LEN),
-    createFloorMaterial(CORRIDOR_W, CORRIDOR_LEN)
+    new THREE.PlaneGeometry(CORRIDOR_W, length),
+    createFloorMaterial(CORRIDOR_W, length)
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(x, 0, centerZ);
@@ -206,7 +218,7 @@ export function createCorridorSouth(scene, engine, startZ, x) {
 
   // ---------- ceiling ----------
   const ceiling = new THREE.Mesh(
-    new THREE.PlaneGeometry(CORRIDOR_W, CORRIDOR_LEN),
+    new THREE.PlaneGeometry(CORRIDOR_W, length),
     new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 1 })
   );
   ceiling.rotation.x = Math.PI / 2;
@@ -226,18 +238,26 @@ export function createCorridorSouth(scene, engine, startZ, x) {
     return mesh;
   }
 
-  addWallBox(x - CORRIDOR_W / 2 - t / 2, centerZ, t, CORRIDOR_LEN + t);
-  addWallBox(x + CORRIDOR_W / 2 + t / 2, centerZ, t, CORRIDOR_LEN + t);
+  addWallBox(x - CORRIDOR_W / 2 - t / 2, centerZ, t, length + t);
+  addWallBox(x + CORRIDOR_W / 2 + t / 2, centerZ, t, length + t);
 
-  // ---------- flickering bulb light so the passage isn't pitch black ----------
-  const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
-  bulbLight.position.set(x, CORRIDOR_H - 0.3, centerZ);
-  scene.add(bulbLight);
+  // ---------- flickering bulb light(s) so the passage isn't pitch black ----------
+  const bulbCount = Math.max(1, Math.round(length / CORRIDOR_LEN));
+  const bulbLights = [];
+  for (let i = 0; i < bulbCount; i++) {
+    const bz = startZ + (length / bulbCount) * (i + 0.5);
+    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
+    bulbLight.position.set(x, CORRIDOR_H - 0.3, bz);
+    scene.add(bulbLight);
+    bulbLights.push(bulbLight);
+  }
 
   let flickerT = 0;
   function update(dt) {
     flickerT += dt;
-    bulbLight.intensity = 1.3 + Math.sin(flickerT * 7) * 0.3 + (Math.random() - 0.5) * 0.4;
+    bulbLights.forEach((bulbLight, i) => {
+      bulbLight.intensity = 1.3 + Math.sin(flickerT * 7 + i) * 0.3 + (Math.random() - 0.5) * 0.4;
+    });
   }
 
   return { colliders, update, startZ, endZ, x };
