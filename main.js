@@ -11,6 +11,9 @@
 // Hall 2 branching off Room 13's west doorway,
 // Room 14 branching off Room 12's east doorway,
 // Room 15 branching off Room 12's north doorway,
+// Room 16 continuing further north off Room 15's north doorway, then bridging
+// east and south via a bent corridor to connect onward into Hall 1's north doorway
+// (so Room 16 links room15 and hall1 together),
 // and drives the menu / pause UI.
 import { Engine } from "./engine.js";
 import { createRoom1 } from "./room1.js";
@@ -36,6 +39,7 @@ import { createRoom12 } from "./room12.js";
 import { createRoom13 } from "./room13.js";
 import { createRoom14 } from "./room14.js";
 import { createRoom15 } from "./room15.js";
+import { createRoom16 } from "./room16.js";
 import { createHall2 } from "./hall2.js";
 
 const canvas = document.getElementById("scene");
@@ -142,6 +146,23 @@ const corridor9 = createCorridorNorth(engine.scene, engine, room9.northZ, room9.
 // hall1 hangs its south doorway exactly on corridor9's far end.
 const hall1 = createHall1(engine.scene, engine, corridor9.endZ, corridor9.x);
 
+// seventeenth corridor starts at room15's north doorway and runs north to room16.
+const corridor17 = createCorridorNorth(engine.scene, engine, room15.northZ, room15.northDoorX);
+
+// room16 hangs its south doorway exactly on corridor17's far end — this is the
+// small landing room that links room15 and hall1 together.
+const room16 = createRoom16(engine.scene, engine, corridor17.endZ, corridor17.x);
+
+// eighteenth corridor starts at room16's east doorway and runs east — a longer,
+// custom-length bridging passage that travels all the way over to hall1's x position.
+const corridor18Length = hall1.centerX - room16.eastX;
+const corridor18 = createCorridorEast(engine.scene, engine, room16.eastX, room16.eastDoorZ, corridor18Length);
+
+// nineteenth corridor bends south from corridor18's far end and runs down to
+// hall1's north doorway, closing the loop between room15 and hall1.
+const corridor19Length = hall1.northZ - corridor18.z;
+const corridor19 = createCorridorSouth(engine.scene, engine, corridor18.z, corridor18.endX, corridor19Length);
+
 const menu = document.getElementById("menu");
 const playBtn = document.getElementById("play-btn");
 const noteOverlay = document.getElementById("note-overlay");
@@ -197,4 +218,8 @@ engine.start((dt, eng) => {
   room14.update(dt, eng);
   corridor16.update(dt, eng);
   room15.update(dt, eng);
+  corridor17.update(dt, eng);
+  room16.update(dt, eng);
+  corridor18.update(dt, eng);
+  corridor19.update(dt, eng);
 });
