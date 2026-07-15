@@ -1,23 +1,25 @@
-// hall2.js — HALL 2: a second large hall of the haveli, reached via a corridor
-// running west from room12's west doorway (the old puja room, now a through-room).
+// hall2.js — HALL 2: a large hall of the haveli, reached via a corridor running
+// west from room12's west doorway (the old puja room, now a through-room).
 // East wall has a doorway gap matching the corridor width (entrance from room12).
 // North/south/west walls remain solid, no window — this is the dead end of this wing.
 //
-// Placement/collision note: room12 sits at x:[-2.25,2.25], z:[-29,-24]. The corridor
-// out of room12's west wall runs to x=-4.25 at z=-26.5 (room12's centerZ), and hall2
-// hangs off that, centered around x≈-7.75..-11.25, z:[-30.5,-22.5]. The nearest other
-// room, room11, occupies x:[-9.25,-4.75] but z:[-21.25,-16.25] — over 1m of clear z
-// separation from hall2's southern edge (-22.5), so despite overlapping x ranges the
-// two never intersect. room4 (x:[-11,-5], z:[-13.25,-6.75]) is separated by an even
-// larger z gap. No other room/corridor in the level reaches into this x/z region.
+// Placement/collision note: the corridor's fixed connection point (room12's west
+// door) is at x=-4.25, z=-26.5. Rather than centering the hall on that point — which
+// caps its depth because room11 sits close by to the south (x:[-9.25,-4.75],
+// z:[-21.25,-16.25]) — the doorway is placed near the SOUTH end of the hall's east
+// wall (DOOR_OFFSET_FROM_SOUTH) and the hall's bulk extends north into open, unused
+// space. This lets the hall be much larger while keeping a safe 2m+ gap from room11's
+// northern edge. room4 (x:[-11,-5], z:[-13.25,-6.75]) is separated by an even larger
+// gap. No other room/corridor in the level reaches into this x/z region.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
 
-const ROOM_W = 7; // east-west
-const ROOM_D = 8; // north-south
-const ROOM_H = 3.2;
+const ROOM_W = 12; // east-west
+const ROOM_D = 16; // north-south
+const ROOM_H = 3.8;
 const DOOR_GAP = 1.6; // must match corridor width
+const DOOR_OFFSET_FROM_SOUTH = 3; // how far the doorway center sits from the south wall
 
 // doorX: the x coordinate where hall2's east wall (and doorway) sits —
 // this is the corridor's endX, so the door lines up exactly with the passage from room12.
@@ -25,9 +27,12 @@ const DOOR_GAP = 1.6; // must match corridor width
 export function createHall2(scene, engine, doorX, doorZ) {
   const colliders = [];
 
-  // hall center sits further west (more negative x) than its east doorway
+  // the doorway sits near the south end of the hall; the hall's bulk (and its
+  // center) extends north (more negative z) from there.
+  const southZ = doorZ + DOOR_OFFSET_FROM_SOUTH;
+  const northZ = southZ - ROOM_D;
+  const centerZ = (northZ + southZ) / 2;
   const centerX = doorX - ROOM_W / 2;
-  const centerZ = doorZ;
 
   // ---------- floor: old, dirty tiles ----------
   const floor = new THREE.Mesh(
@@ -49,9 +54,9 @@ export function createHall2(scene, engine, doorX, doorZ) {
   scene.add(ceiling);
 
   const beamMat = new THREE.MeshStandardMaterial({ color: 0x2e2013, roughness: 0.9 });
-  for (let i = -1; i <= 1; i++) {
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, ROOM_D), beamMat);
-    beam.position.set(centerX + i * (ROOM_W / 3), ROOM_H - 0.12, centerZ);
+  for (let i = -2; i <= 2; i++) {
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, ROOM_D), beamMat);
+    beam.position.set(centerX + i * (ROOM_W / 5), ROOM_H - 0.13, centerZ);
     beam.castShadow = true;
     scene.add(beam);
   }
@@ -76,24 +81,29 @@ export function createHall2(scene, engine, doorX, doorZ) {
   const eastX = centerX + ROOM_W / 2; // == doorX
 
   // north wall — solid, dead end of this wing
-  addWallBox(centerX, centerZ - ROOM_D / 2, ROOM_W + t, t);
+  addWallBox(centerX, northZ, ROOM_W + t, t);
   // south wall — solid, no window
-  addWallBox(centerX, centerZ + ROOM_D / 2, ROOM_W + t, t);
+  addWallBox(centerX, southZ, ROOM_W + t, t);
   // west wall — solid, no window
   addWallBox(westX, centerZ, t, ROOM_D + t);
 
-  // east wall — doorway gap in the middle, aligned with the corridor from room12
-  const eastSideLen = (ROOM_D - DOOR_GAP) / 2;
-  addWallBox(eastX, centerZ - (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
-  addWallBox(eastX, centerZ + (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
-  addWallBox(eastX, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
+  // east wall — doorway gap offset toward the south end, aligned with the
+  // corridor from room12. Split into two unequal segments around the gap.
+  const gapNorthZ = doorZ - DOOR_GAP / 2;
+  const gapSouthZ = doorZ + DOOR_GAP / 2;
+  const northSegLen = gapNorthZ - northZ;
+  const southSegLen = southZ - gapSouthZ;
+  addWallBox(eastX, northZ + northSegLen / 2, t, northSegLen);
+  addWallBox(eastX, gapSouthZ + southSegLen / 2, t, southSegLen);
+  addWallBox(eastX, doorZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
   // ---------- decorative wooden pillars flanking the central walkway ----------
   const pillarMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
-  const pillarRadius = 0.2;
+  const pillarRadius = 0.22;
   const pillarPositions = [
-    [centerX - 1.8, centerZ - 2.4], [centerX + 1.8, centerZ - 2.4],
-    [centerX - 1.8, centerZ + 2.4], [centerX + 1.8, centerZ + 2.4],
+    [centerX - 3.2, centerZ - 5.5], [centerX + 3.2, centerZ - 5.5],
+    [centerX - 3.2, centerZ],       [centerX + 3.2, centerZ],
+    [centerX - 3.2, centerZ + 5.5], [centerX + 3.2, centerZ + 5.5],
   ];
   pillarPositions.forEach(([px, pz]) => {
     const pillar = new THREE.Mesh(
@@ -111,27 +121,32 @@ export function createHall2(scene, engine, doorX, doorZ) {
   });
 
   // ---------- ambient hall lighting ----------
-  const ambient = new THREE.AmbientLight(0x3a3527, 1.4);
+  const ambient = new THREE.AmbientLight(0x3a3527, 1.5);
   scene.add(ambient);
 
-  const fillLight = new THREE.HemisphereLight(0x6e6555, 0x241d12, 0.9);
+  const fillLight = new THREE.HemisphereLight(0x6e6555, 0x241d12, 1.0);
   scene.add(fillLight);
 
-  const eerieLightA = new THREE.PointLight(0x9c8a6a, 1.5, 8, 2);
-  eerieLightA.position.set(centerX, ROOM_H - 0.4, centerZ - 2.2);
+  const eerieLightA = new THREE.PointLight(0x9c8a6a, 1.6, 10, 2);
+  eerieLightA.position.set(centerX, ROOM_H - 0.4, centerZ - 5.5);
   scene.add(eerieLightA);
 
-  const eerieLightB = new THREE.PointLight(0x9c8a6a, 1.5, 8, 2);
-  eerieLightB.position.set(centerX, ROOM_H - 0.4, centerZ + 2.2);
+  const eerieLightB = new THREE.PointLight(0x9c8a6a, 1.6, 10, 2);
+  eerieLightB.position.set(centerX, ROOM_H - 0.4, centerZ);
   scene.add(eerieLightB);
+
+  const eerieLightC = new THREE.PointLight(0x9c8a6a, 1.6, 10, 2);
+  eerieLightC.position.set(centerX, ROOM_H - 0.4, centerZ + 5.5);
+  scene.add(eerieLightC);
 
   // ---------- per-frame update: subtle eerie light pulse ----------
   let pulseT = 0;
   function update(dt) {
     pulseT += dt;
-    eerieLightA.intensity = 1.3 + Math.sin(pulseT * 1.1) * 0.3;
-    eerieLightB.intensity = 1.3 + Math.sin(pulseT * 1.1 + 1.3) * 0.3;
+    eerieLightA.intensity = 1.4 + Math.sin(pulseT * 1.1) * 0.3;
+    eerieLightB.intensity = 1.4 + Math.sin(pulseT * 1.1 + 1.1) * 0.3;
+    eerieLightC.intensity = 1.4 + Math.sin(pulseT * 1.1 + 2.2) * 0.3;
   }
 
-  return { colliders, update, centerX, centerZ, westX, eastX };
+  return { colliders, update, centerX, centerZ, northZ, southZ, westX, eastX };
 }
