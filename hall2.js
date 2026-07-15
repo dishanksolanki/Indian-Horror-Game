@@ -1,17 +1,20 @@
 // hall2.js — HALL 2: a large hall of the haveli, sized to match Hall 1 (10x13m),
-// reached via a corridor running west from room12's west doorway (the old puja
+// reached via a corridor running west from room13's west doorway (room13 itself
+// being a small through-room reached off room12's west doorway — the old puja
 // room, now a through-room).
-// East wall has a doorway gap matching the corridor width (entrance from room12).
+// East wall has a doorway gap matching the corridor width (entrance from room13).
 // North/south/west walls remain solid, no window — this is the dead end of this wing.
 //
-// Placement/collision note: the corridor's fixed connection point (room12's west
-// door) is at x=-4.25, z=-26.5. Rather than centering the hall on that point — which
-// would collide with room11 (x:[-9.25,-4.75], z:[-21.25,-16.25]) sitting close by to
-// the south — the doorway is placed near the SOUTH end of the hall's east wall
-// (DOOR_OFFSET_FROM_SOUTH) and the hall's bulk extends north into open, unused space.
-// This keeps a safe 2m+ gap from room11's northern edge. room4 (x:[-11,-5],
-// z:[-13.25,-6.75]) is separated by an even larger gap. No other room/corridor in
-// the level reaches into this x/z region.
+// Placement/collision note: the corridor's fixed connection point (room13's west
+// door) is at x=-10.25, z=-26.5 (shifted 6m further west of room12's old direct
+// connection point, x=-4.25, now that room13 sits in between). Rather than
+// centering the hall on that point — which would collide with room11
+// (x:[-9.25,-4.75], z:[-21.25,-16.25]) sitting close by to the south — the doorway
+// is placed near the SOUTH end of the hall's east wall (DOOR_OFFSET_FROM_SOUTH)
+// and the hall's bulk extends north into open, unused space. This keeps a safe 2m+
+// gap from room11's northern edge, and the extra 6m westward shift only widens
+// that gap further. room4 (x:[-11,-5], z:[-13.25,-6.75]) is separated by an even
+// larger gap. No other room/corridor in the level reaches into this x/z region.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -23,8 +26,8 @@ const DOOR_GAP = 1.6; // must match corridor width
 const DOOR_OFFSET_FROM_SOUTH = 3; // how far the doorway center sits from the south wall
 
 // doorX: the x coordinate where hall2's east wall (and doorway) sits —
-// this is the corridor's endX, so the door lines up exactly with the passage from room12.
-// doorZ: the z coordinate of the doorway, matching the corridor's z (room12's west door).
+// this is the corridor's endX, so the door lines up exactly with the passage from room13.
+// doorZ: the z coordinate of the doorway, matching the corridor's z (room13's west door).
 export function createHall2(scene, engine, doorX, doorZ) {
   const colliders = [];
 
