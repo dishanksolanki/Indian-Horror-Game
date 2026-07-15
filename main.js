@@ -14,6 +14,7 @@
 // Room 16 continuing further north off Room 15's north doorway, then bridging
 // east and south via a bent corridor to connect onward into Hall 1's north doorway
 // (so Room 16 links room15 and hall1 together),
+// Room 17 branching off Room 4's south doorway,
 // and drives the menu / pause UI.
 import { Engine } from "./engine.js";
 import { createRoom1 } from "./room1.js";
@@ -42,6 +43,7 @@ import { createRoom14 } from "./room14.js";
 import { createRoom15 } from "./room15.js";
 import { createRoom16 } from "./room16.js";
 import { createHall2 } from "./hall2.js";
+import { createRoom17 } from "./room17.js";
 
 const canvas = document.getElementById("scene");
 const engine = new Engine(canvas);
@@ -110,6 +112,12 @@ const corridor3 = createCorridorWest(engine.scene, engine, room2.westX, room2.we
 
 // room4 hangs its east doorway exactly on corridor3's far end.
 const room4 = createRoom4(engine.scene, engine, corridor3.endX, corridor3.z);
+
+// nineteenth corridor starts at room4's south doorway and runs south to room17.
+const corridor19 = createCorridorSouth(engine.scene, engine, room4.southZ, room4.southDoorX);
+
+// room17 hangs its north doorway exactly on corridor19's far end.
+const room17 = createRoom17(engine.scene, engine, corridor19.endZ, corridor19.x);
 
 // fourth corridor starts at room2's east doorway and runs east to room5.
 const corridor4 = createCorridorEast(engine.scene, engine, room2.eastX, room2.eastDoorZ);
@@ -196,6 +204,8 @@ engine.start((dt, eng) => {
   room3.update(dt, eng);
   corridor3.update(dt, eng);
   room4.update(dt, eng);
+  corridor19.update(dt, eng);
+  room17.update(dt, eng);
   corridor4.update(dt, eng);
   room5.update(dt, eng);
   corridor5.update(dt, eng);
