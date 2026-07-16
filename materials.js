@@ -1,7 +1,20 @@
 // materials.js — shared old Indian house wall material (mud-plaster look).
-// Used by room1.js, corridor.js, and room2.js so every wall in the house matches.
+// Used by every room/corridor/hall file so every wall in the house matches.
+//
+// PERFORMANCE NOTE: createWallMaterial()/createFloorMaterial() used to be called
+// once per room/corridor (~59 times across the whole map), and each call built a
+// brand new 512x512 canvas from scratch with a per-pixel noise pass — that's
+// tens of millions of pixel operations run at load time, plus ~59 separate
+// textures sitting in GPU memory. Since every room wants the exact same look
+// anyway, we now generate the texture/material ONCE per (texture, material)
+// combo and hand back a shared reference. This is purely an internal caching
+// change — callers don't need to change anything.
 
 import * as THREE from "three";
+
+let _wallTexture = null;
+let _wallMaterial = null;
+let _floorTextureCache = new Map(); // keyed by "repeatX,repeatY" since floor repeat varies per room
 
 export function makeWallTexture() {
   const size = 512;
@@ -70,14 +83,19 @@ export function makeWallTexture() {
 }
 
 export function createWallMaterial() {
-  const texture = makeWallTexture();
-  return new THREE.MeshStandardMaterial({
-    map: texture,
-    bumpMap: texture,
-    bumpScale: 0.04,
-    color: 0xffffff,
-    roughness: 1,
-  });
+  // build the texture + material exactly once, then hand back the same
+  // instance to every room/corridor that asks for it
+  if (!_wallMaterial) {
+    _wallTexture = makeWallTexture();
+    _wallMaterial = new THREE.MeshStandardMaterial({
+      map: _wallTexture,
+      bumpMap: _wallTexture,
+      bumpScale: 0.04,
+      color: 0xffffff,
+      roughness: 1,
+    });
+  }
+  return _wallMaterial;
 }
 
 export function makeFloorTexture() {
@@ -163,14 +181,25 @@ export function makeFloorTexture() {
   return texture;
 }
 
+// createFloorMaterial is called with different repeat values per room (rooms
+// have different sizes), so we cache one texture/material per distinct
+// (repeatX, repeatY) pair instead of one shared texture for everything —
+// still collapses ~30 duplicate generations down to a handful of unique ones.
 export function createFloorMaterial(repeatX = 3, repeatY = 3) {
-  const texture = makeFloorTexture();
-  texture.repeat.set(repeatX, repeatY);
-  return new THREE.MeshStandardMaterial({
-    map: texture,
-    bumpMap: texture,
-    bumpScale: 0.03,
-    color: 0xffffff,
-    roughness: 0.95,
-  });
+  const key = `${repeatX},${repeatY}`;
+  let cached = _floorTextureCache.get(key);
+  if (!cached) {
+    const texture = makeFloorTexture();
+    texture.repeat.set(repeatX, repeatY);
+    const material = new THREE.MeshStandardMaterial({
+      map: texture,
+      bumpMap: texture,
+      bumpScale: 0.03,
+      color: 0xffffff,
+      roughness: 0.95,
+    });
+    cached = material;
+    _floorTextureCache.set(key, cached);
+  }
+  return cached;
 }
