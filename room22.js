@@ -1,7 +1,8 @@
 // room22.js — ROOM 22: a side room of the haveli, reached via a corridor
 // running north from room21's north doorway.
 // South wall has a doorway gap matching the corridor width (entrance from room21).
-// North/east/west walls remain solid, no window — this is the dead end of this wing.
+// North wall also has a matching doorway gap (exit toward room23 via a corridor).
+// East/west walls remain solid, no window.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -67,8 +68,11 @@ export function createRoom22(scene, engine, doorZ, doorX) {
   const southZ = centerZ + ROOM_D / 2; // == doorZ
   const northZ = centerZ - ROOM_D / 2;
 
-  // north wall — solid, dead end of this wing
-  addWallBox(centerX, northZ, ROOM_W + t, t);
+  // north wall — doorway gap in the middle, aligned with the corridor to room23
+  const northSideLen = (ROOM_W - DOOR_GAP) / 2;
+  addWallBox(centerX - (DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
+  addWallBox(centerX + (DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
+  addWallBox(centerX, northZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
   // west wall — solid, no window
   addWallBox(centerX - ROOM_W / 2, centerZ, t, ROOM_D + t);
   // east wall — solid, no window
@@ -98,5 +102,9 @@ export function createRoom22(scene, engine, doorZ, doorX) {
     eerieLight.intensity = 1.4 + Math.sin(pulseT * 1.3) * 0.3;
   }
 
-  return { colliders, update, centerX, centerZ, northZ, southZ };
+  // northDoorX: the doorway sits in the middle of the north wall — corridor.js's
+  // createCorridorNorth starts here and runs further north toward room23.
+  const northDoorX = centerX;
+
+  return { colliders, update, centerX, centerZ, northZ, southZ, northDoorX };
 }
