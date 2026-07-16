@@ -21,7 +21,13 @@ export class Engine {
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // PERFORMANCE: devicePixelRatio is 2-3 on most phones/retina laptops, which
+    // means rendering 4-9x the actual pixel count of the screen. Capping at
+    // 1.5 instead of 2 cuts fragment-shader work substantially (this matters a
+    // lot here since every fragment loops over every light in the scene) with
+    // barely any visible sharpness difference. Raise back to 2 if you have
+    // perf headroom and want maximum crispness.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -56,13 +62,38 @@ export class Engine {
     // (false / 0) once you're ready to restore the intended dark horror atmosphere.
     this.flashlight = new THREE.SpotLight(0xfff2d0, 3.2, 9, Math.PI / 6.2, 0.45, 1.6);
     this.flashlight.castShadow = true;
-    this.flashlight.shadow.mapSize.set(1024, 1024);
+    // PERFORMANCE: this shadow map re-renders the scene from the flashlight's
+    // point of view every single frame — it's the single most expensive part
+    // of the whole render loop. 1024x1024 is overkill for a handheld light
+    // with only a 9-unit range; 512x512 looks nearly identical in practice
+    // and roughly quarters this pass's cost. Bump it back up if you have
+    // headroom to spare.
+    this.flashlight.shadow.mapSize.set(512, 512);
     this.flashlightOn = true;
     this.flashTarget = new THREE.Object3D();
     this.scene.add(this.flashlight, this.flashTarget);
     this.flashlight.target = this.flashTarget;
 
     this._raycaster = new THREE.Raycaster();
+
+    // ---------- PERFORMANCE: reusable scratch objects ----------
+    // The old code allocated a fresh Vector3/Box3 every single frame inside
+    // the movement, flashlight, and interaction-focus updates. That garbage
+    // gets collected constantly (many times a second), which is what causes
+    // the little stutters/hitches on top of the raw FPS being low. Reusing
+    // the same objects every frame avoids that churn entirely.
+    this._scratchCamDir = new THREE.Vector3();
+    this._scratchCamRight = new THREE.Vector3();
+    this._scratchMoveDir = new THREE.Vector3();
+    this._worldUp = new THREE.Vector3(0, 1, 0);
+    this._scratchTryX = new THREE.Vector3();
+    this._scratchTryZ = new THREE.Vector3();
+    this._scratchBoxMin = new THREE.Vector3();
+    this._scratchBoxMax = new THREE.Vector3();
+    this._scratchPlayerBox = new THREE.Box3(this._scratchBoxMin, this._scratchBoxMax);
+    this._scratchFlashDir = new THREE.Vector3();
+    this._scratchDirToItem = new THREE.Vector3();
+    this._scratchNdc = new THREE.Vector2(0, 0);
 
     this._paused = true;
     this._bindInput();
@@ -119,10 +150,9 @@ export class Engine {
   // ---------- collision ----------
   _resolveCollision(nextPos) {
     const r = this.playerRadius;
-    const playerBox = new THREE.Box3(
-      new THREE.Vector3(nextPos.x - r, 0, nextPos.z - r),
-      new THREE.Vector3(nextPos.x + r, this.playerHeight, nextPos.z + r)
-    );
+    this._scratchBoxMin.set(nextPos.x - r, 0, nextPos.z - r);
+    this._scratchBoxMax.set(nextPos.x + r, this.playerHeight, nextPos.z + r);
+    const playerBox = this._scratchPlayerBox;
     for (const box of this.colliders) {
       if (playerBox.intersectsBox(box)) return true;
     }
@@ -132,9 +162,9 @@ export class Engine {
   _moveWithCollision(dx, dz) {
     const pos = this.camera.position;
     // try X and Z independently so sliding along walls feels natural
-    const tryX = new THREE.Vector3(pos.x + dx, pos.y, pos.z);
+    const tryX = this._scratchTryX.set(pos.x + dx, pos.y, pos.z);
     if (!this._resolveCollision(tryX)) pos.x = tryX.x;
-    const tryZ = new THREE.Vector3(pos.x, pos.y, pos.z + dz);
+    const tryZ = this._scratchTryZ.set(pos.x, pos.y, pos.z + dz);
     if (!this._resolveCollision(tryZ)) pos.z = tryZ.z;
   }
 
@@ -151,14 +181,14 @@ export class Engine {
       // camera.quaternion trick which effectively cancelled itself out and
       // ignored yaw entirely. This is what made W/S (and A/D) feel broken —
       // movement never actually turned with the camera.
-      const camDir = new THREE.Vector3();
+      const camDir = this._scratchCamDir;
       this.camera.getWorldDirection(camDir);
       camDir.y = 0;
       camDir.normalize();
 
-      const camRight = new THREE.Vector3().crossVectors(camDir, new THREE.Vector3(0, 1, 0));
+      const camRight = this._scratchCamRight.crossVectors(camDir, this._worldUp);
 
-      const dir = new THREE.Vector3();
+      const dir = this._scratchMoveDir.set(0, 0, 0);
       dir.addScaledVector(camDir, forward);
       dir.addScaledVector(camRight, strafe);
       dir.normalize();
@@ -180,22 +210,27 @@ export class Engine {
 
   _updateFlashlight() {
     const camPos = this.camera.position;
-    const camDir = new THREE.Vector3();
+    const camDir = this._scratchFlashDir;
     this.camera.getWorldDirection(camDir);
     this.flashlight.position.copy(camPos);
     this.flashTarget.position.copy(camPos).add(camDir.multiplyScalar(3));
   }
 
   _updateInteractionFocus() {
-    this._raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+    this._raycaster.setFromCamera(this._scratchNdc, this.camera);
+    // compute camera facing direction once per frame, not once per interactable
+    const camDir = this._scratchCamDir;
+    this.camera.getWorldDirection(camDir);
+
     let closest = null;
     let closestDist = Infinity;
     for (const item of this.interactables) {
       const dist = this.camera.position.distanceTo(item.object3D.position);
       if (dist > item.radius) continue;
-      const dirToItem = item.object3D.position.clone().sub(this.camera.position).normalize();
-      const camDir = new THREE.Vector3();
-      this.camera.getWorldDirection(camDir);
+      const dirToItem = this._scratchDirToItem
+        .copy(item.object3D.position)
+        .sub(this.camera.position)
+        .normalize();
       const facing = camDir.dot(dirToItem);
       if (facing > 0.85 && dist < closestDist) {
         closest = item;
