@@ -1,7 +1,8 @@
 // hall3.js — HALL 3: a large hall of the haveli, sized to match Hall 1/Hall 2
 // (10x13m), reached via a corridor running north from room23's north doorway.
 // South wall has a doorway gap matching the corridor width (entrance from room23).
-// North/east/west walls remain solid, no window — this is the dead end of this wing.
+// North wall also has a matching doorway gap (exit toward room24 via a corridor).
+// East/west walls remain solid, no window.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -67,8 +68,11 @@ export function createHall3(scene, engine, doorZ, doorX) {
   const northZ = centerZ - ROOM_D / 2;
   const southZ = centerZ + ROOM_D / 2; // == doorZ
 
-  // north wall — solid, dead end of this wing
-  addWallBox(centerX, northZ, ROOM_W + t, t);
+  // north wall — doorway gap in the middle, aligned with the corridor to room24
+  const northSideLen = (ROOM_W - DOOR_GAP) / 2;
+  addWallBox(centerX - (DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
+  addWallBox(centerX + (DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
+  addWallBox(centerX, northZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
   // west wall — solid, no window
   addWallBox(centerX - ROOM_W / 2, centerZ, t, ROOM_D + t);
   // east wall — solid, no window
@@ -125,5 +129,9 @@ export function createHall3(scene, engine, doorZ, doorX) {
     eerieLightB.intensity = 1.4 + Math.sin(pulseT * 1.3 + 1.1) * 0.3;
   }
 
-  return { colliders, update, centerX, centerZ, northZ, southZ };
+  // northDoorX: the doorway sits in the middle of the north wall — corridor.js's
+  // createCorridorNorth starts here and runs further north toward room24.
+  const northDoorX = centerX;
+
+  return { colliders, update, centerX, centerZ, northZ, southZ, northDoorX };
 }
