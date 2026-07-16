@@ -1,7 +1,9 @@
 // room24.js — ROOM 24: a side room of the haveli, reached via a corridor
-// running north from hall3's north doorway.
+// running north from hall3's north doorway, and also connected onward (east, then
+// south) via a bridging corridor to room16.
 // South wall has a doorway gap matching the corridor width (entrance from hall3).
-// North/east/west walls remain solid, no window — this is the dead end of this wing.
+// East wall also has a doorway gap, leading to the long bridging corridor to room16.
+// North/west walls remain solid, no window.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -71,8 +73,14 @@ export function createRoom24(scene, engine, doorZ, doorX) {
   addWallBox(centerX, northZ, ROOM_W + t, t);
   // west wall — solid, no window
   addWallBox(centerX - ROOM_W / 2, centerZ, t, ROOM_D + t);
-  // east wall — solid, no window
-  addWallBox(centerX + ROOM_W / 2, centerZ, t, ROOM_D + t);
+
+  const eastX = centerX + ROOM_W / 2;
+  // east wall — doorway gap in the middle, leading onward (via a bridging corridor)
+  // to room16
+  const eastSideLen = (ROOM_D - DOOR_GAP) / 2;
+  addWallBox(eastX, centerZ - (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
+  addWallBox(eastX, centerZ + (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
+  addWallBox(eastX, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
   // south wall — doorway gap in the middle, aligned with the corridor from hall3
   const southSideLen = (ROOM_W - DOOR_GAP) / 2;
@@ -98,5 +106,8 @@ export function createRoom24(scene, engine, doorZ, doorX) {
     eerieLight.intensity = 1.4 + Math.sin(pulseT * 1.3) * 0.3;
   }
 
-  return { colliders, update, centerX, centerZ, northZ, southZ };
+  // eastDoorZ: the doorway sits in the middle of the east wall — bridging corridor to room16 starts here.
+  const eastDoorZ = centerZ;
+
+  return { colliders, update, centerX, centerZ, northZ, southZ, eastX, eastDoorZ };
 }
