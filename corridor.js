@@ -465,3 +465,146 @@ export function createCorridorBendEastSouth(scene, engine, startX, startZ, corne
 
   return { colliders, update, startX, startZ, cornerX, endZ };
 }
+
+// createCorridorBendWestNorth — an L-shaped bent passage running the opposite way
+// from createCorridorBendEastSouth: starts heading west from a doorway, then turns
+// and heads north, ending at a second doorway. Same "single continuous shape"
+// construction as the east-south bend (one unbroken outer wall wrapping the convex
+// side of the turn, inner walls stopping short of the corner so it stays open) —
+// used e.g. for room16's west doorway bending north to reach room24's east doorway.
+// startX, startZ: the doorway where the passage begins (e.g. room16's west doorway).
+// cornerX: the x position where the passage turns from heading west to heading north
+// (e.g. room24's eastX / east doorway x). Must be less than startX.
+// endZ: the z position where the passage ends, at x = cornerX (e.g. room24's east
+// doorway z). Must be less than startZ.
+export function createCorridorBendWestNorth(scene, engine, startX, startZ, cornerX, endZ) {
+  const colliders = [];
+  const wallMat = createWallMaterial();
+
+  function addWallBox(cx, cz, w, d, h = CORRIDOR_H, cy = h / 2) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+    mesh.position.set(cx, cy, cz);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    const box = new THREE.Box3().setFromObject(mesh);
+    colliders.push(box);
+    engine.addCollider(box);
+    return mesh;
+  }
+
+  // ---------- west leg: from startX to cornerX, centered at z = startZ ----------
+  const westCenterX = (startX + cornerX) / 2;
+  const westLen = startX - cornerX;
+
+  const westFloor = new THREE.Mesh(
+    new THREE.PlaneGeometry(westLen, CORRIDOR_W),
+    createFloorMaterial(westLen, CORRIDOR_W)
+  );
+  westFloor.rotation.x = -Math.PI / 2;
+  westFloor.position.set(westCenterX, 0, startZ);
+  westFloor.receiveShadow = true;
+  scene.add(westFloor);
+
+  const westCeiling = new THREE.Mesh(
+    new THREE.PlaneGeometry(westLen, CORRIDOR_W),
+    new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 1 })
+  );
+  westCeiling.rotation.x = Math.PI / 2;
+  westCeiling.position.set(westCenterX, CORRIDOR_H, startZ);
+  scene.add(westCeiling);
+
+  // ---------- north leg: from startZ to endZ, centered at x = cornerX ----------
+  const northCenterZ = (startZ + endZ) / 2;
+  const northLen = startZ - endZ;
+
+  const northFloor = new THREE.Mesh(
+    new THREE.PlaneGeometry(CORRIDOR_W, northLen),
+    createFloorMaterial(CORRIDOR_W, northLen)
+  );
+  northFloor.rotation.x = -Math.PI / 2;
+  northFloor.position.set(cornerX, 0, northCenterZ);
+  northFloor.receiveShadow = true;
+  scene.add(northFloor);
+
+  const northCeiling = new THREE.Mesh(
+    new THREE.PlaneGeometry(CORRIDOR_W, northLen),
+    new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 1 })
+  );
+  northCeiling.rotation.x = Math.PI / 2;
+  northCeiling.position.set(cornerX, CORRIDOR_H, northCenterZ);
+  scene.add(northCeiling);
+
+  // ---------- walls ----------
+  // "outer" wall: the convex side of the bend — the west leg's far wall (south side)
+  // wraps continuously around the corner into the north leg's far wall (west side),
+  // so the bend has one unbroken solid boundary on its outside.
+  const outerZ = startZ + CORRIDOR_W / 2 + t / 2;
+  const outerWestLegX0 = cornerX - CORRIDOR_W / 2 - t / 2; // reaches past the corner
+  const outerWestLegX1 = startX + t / 2;
+  addWallBox(
+    (outerWestLegX0 + outerWestLegX1) / 2,
+    outerZ,
+    outerWestLegX1 - outerWestLegX0,
+    t
+  );
+
+  const outerX = cornerX - CORRIDOR_W / 2 - t / 2;
+  const outerNorthLegZ0 = endZ - t / 2;
+  const outerNorthLegZ1 = outerZ; // meets the west leg's outer wall exactly at the corner
+  addWallBox(
+    outerX,
+    (outerNorthLegZ0 + outerNorthLegZ1) / 2,
+    t,
+    outerNorthLegZ1 - outerNorthLegZ0
+  );
+
+  // "inner" walls: the concave side of the bend — each leg's near wall stops
+  // short of the turn instead of cutting across it, leaving the corner open.
+  const innerZ = startZ - CORRIDOR_W / 2 - t / 2;
+  const innerWestLegX0 = cornerX + CORRIDOR_W / 2; // stops before the turn opens up
+  const innerWestLegX1 = startX + t / 2;
+  addWallBox(
+    (innerWestLegX0 + innerWestLegX1) / 2,
+    innerZ,
+    innerWestLegX1 - innerWestLegX0,
+    t
+  );
+
+  const innerX = cornerX + CORRIDOR_W / 2 + t / 2;
+  const innerNorthLegZ0 = endZ - t / 2;
+  const innerNorthLegZ1 = startZ - CORRIDOR_W / 2; // stops before the turn opens up
+  addWallBox(
+    innerX,
+    (innerNorthLegZ0 + innerNorthLegZ1) / 2,
+    t,
+    innerNorthLegZ1 - innerNorthLegZ0
+  );
+
+  // ---------- flickering bulb lights along both legs ----------
+  const bulbLights = [];
+  const westBulbCount = Math.max(1, Math.round(westLen / CORRIDOR_LEN));
+  for (let i = 0; i < westBulbCount; i++) {
+    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
+    bulbLight.position.set(startX - (westLen / westBulbCount) * (i + 0.5), CORRIDOR_H - 0.3, startZ);
+    scene.add(bulbLight);
+    bulbLights.push(bulbLight);
+  }
+  const northBulbCount = Math.max(1, Math.round(northLen / CORRIDOR_LEN));
+  for (let i = 0; i < northBulbCount; i++) {
+    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
+    bulbLight.position.set(cornerX, CORRIDOR_H - 0.3, startZ - (northLen / northBulbCount) * (i + 0.5));
+    scene.add(bulbLight);
+    bulbLights.push(bulbLight);
+  }
+
+  let flickerT = 0;
+  function update(dt) {
+    flickerT += dt;
+    bulbLights.forEach((bulbLight, i) => {
+      bulbLight.intensity = 1.3 + Math.sin(flickerT * 7 + i) * 0.3 + (Math.random() - 0.5) * 0.4;
+    });
+  }
+
+  return { colliders, update, startX, startZ, cornerX, endZ };
+}
