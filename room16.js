@@ -1,9 +1,11 @@
 // room16.js — ROOM 16: a small connecting landing between the two far wings of the
 // haveli. Reached via a corridor running north from room15's north doorway, and in
-// turn connects onward (east, then south) via a bridging corridor to hall1.
+// turn connects onward (east, then south) via a bridging corridor to hall1, and also
+// (west, then north) via a second bridging corridor to room24.
 // South wall has a doorway gap matching the corridor width (entrance from room15).
 // East wall also has a doorway gap, leading to the long bridging corridor to hall1.
-// North/west walls remain solid, no window.
+// West wall also has a doorway gap, leading to the long bridging corridor to room24.
+// North wall remains solid, no window.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -74,8 +76,12 @@ export function createRoom16(scene, engine, doorZ, doorX) {
   // north wall — solid, no window
   addWallBox(centerX, northZ, ROOM_W + t, t);
 
-  // west wall — solid, no window
-  addWallBox(westX, centerZ, t, ROOM_D + t);
+  // west wall — doorway gap in the middle, leading onward (via a second bridging
+  // corridor) to room24
+  const westSideLen = (ROOM_D - DOOR_GAP) / 2;
+  addWallBox(westX, centerZ - (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
+  addWallBox(westX, centerZ + (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
+  addWallBox(westX, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
   // east wall — doorway gap in the middle, leading onward (via a bridging corridor) to hall1
   const eastSideLen = (ROOM_D - DOOR_GAP) / 2;
@@ -109,6 +115,8 @@ export function createRoom16(scene, engine, doorZ, doorX) {
 
   // eastDoorZ: the doorway sits in the middle of the east wall — bridging corridor to hall1 starts here.
   const eastDoorZ = centerZ;
+  // westDoorZ: the doorway sits in the middle of the west wall — bridging corridor to room24 starts here.
+  const westDoorZ = centerZ;
 
-  return { colliders, update, centerX, centerZ, northZ, southZ, westX, eastX, eastDoorZ };
+  return { colliders, update, centerX, centerZ, northZ, southZ, westX, eastX, eastDoorZ, westDoorZ };
 }
