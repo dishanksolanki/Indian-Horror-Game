@@ -2,7 +2,8 @@
 // running west from room4's west doorway.
 // East wall has a doorway gap matching the corridor width (entrance from room4).
 // South wall also has a matching doorway gap (exit toward room19 via a corridor).
-// North/west walls remain solid, no window.
+// West wall also has a matching doorway gap (exit toward room20 via a corridor).
+// North wall remains solid, no window.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -75,8 +76,11 @@ export function createRoom18(scene, engine, doorX, doorZ) {
   addWallBox(centerX - (DOOR_GAP / 2 + southSideLen / 2), centerZ + ROOM_D / 2, southSideLen, t);
   addWallBox(centerX + (DOOR_GAP / 2 + southSideLen / 2), centerZ + ROOM_D / 2, southSideLen, t);
   addWallBox(centerX, centerZ + ROOM_D / 2, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
-  // west wall — solid, dead end of this wing
-  addWallBox(westX, centerZ, t, ROOM_D + t);
+  // west wall — doorway gap in the middle, aligned with the corridor to room20
+  const westSideLen = (ROOM_D - DOOR_GAP) / 2;
+  addWallBox(westX, centerZ - (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
+  addWallBox(westX, centerZ + (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
+  addWallBox(westX, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
   // east wall — doorway gap in the middle, aligned with the corridor from room4
   const eastSideLen = (ROOM_D - DOOR_GAP) / 2;
@@ -107,5 +111,9 @@ export function createRoom18(scene, engine, doorX, doorZ) {
   const southZ = centerZ + ROOM_D / 2;
   const southDoorX = centerX;
 
-  return { colliders, update, centerX, centerZ, westX, eastX, southZ, southDoorX };
+  // westDoorZ: the doorway sits in the middle of the west wall —
+  // corridor.js's createCorridorWest starts here and runs further west toward room20.
+  const westDoorZ = centerZ;
+
+  return { colliders, update, centerX, centerZ, westX, eastX, southZ, southDoorX, westDoorZ };
 }
