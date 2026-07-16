@@ -22,7 +22,8 @@
 // Room 22 continuing further north off Room 21's north doorway,
 // Room 23 continuing further north off Room 22's north doorway,
 // Hall 3 continuing further north off Room 23's north doorway,
-// Room 24 continuing further north off Hall 3's north doorway,
+// Room 24 continuing further north off Hall 3's north doorway, and bridged (east,
+// then south) via a second corridor into Room 16's west doorway,
 // and drives the menu / pause UI.
 import { Engine } from "./engine.js";
 import { createRoom1 } from "./room1.js";
@@ -33,6 +34,7 @@ import {
   createCorridorSouth,
   createCorridorNorth,
   createCorridorBendEastSouth,
+  createCorridorBendWestNorth,
 } from "./corridor.js";
 import { createRoom2 } from "./room2.js";
 import { createRoom3 } from "./room3.js";
@@ -239,6 +241,19 @@ const corridor18 = createCorridorBendEastSouth(
   hall1.northZ
 );
 
+// twenty-eighth corridor: a single L-shaped bridging passage from room16's west
+// doorway — west, then turning north — down to room24's east doorway. Room24 was
+// previously a dead end reached only from hall3; this connects it onward into
+// room16, and by extension the rest of that wing of the haveli.
+const corridor28 = createCorridorBendWestNorth(
+  engine.scene,
+  engine,
+  room16.westX,
+  room16.westDoorZ,
+  room24.eastX,
+  room24.eastDoorZ
+);
+
 const menu = document.getElementById("menu");
 const playBtn = document.getElementById("play-btn");
 const noteOverlay = document.getElementById("note-overlay");
@@ -315,4 +330,5 @@ engine.start((dt, eng) => {
   corridor17.update(dt, eng);
   room16.update(dt, eng);
   corridor18.update(dt, eng);
+  corridor28.update(dt, eng);
 });
