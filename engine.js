@@ -1,6 +1,12 @@
 // engine.js — reusable first-person engine core.
 // Handles rendering, pointer-lock look/movement, collision, flashlight and interaction raycasting.
 // Rooms (see room1.js) plug into this by providing colliders, lights, interactables and an update hook.
+//
+// NEW: generic "hide spot" mechanic (enterHide / exitHide) — lets a room define a spot
+// (e.g. under a charpai) the player can duck into. While hiding, normal WASD movement is
+// frozen, the camera is snapped down to a crouch height at the hide position, and the
+// interact key (E) becomes a dedicated "exit hiding" action regardless of what the player
+// is looking at, so you can't accidentally re-trigger some other interactable while hidden.
 
 import * as THREE from "three";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
@@ -50,6 +56,17 @@ export class Engine {
     this.interactables = [];
     this._focusedInteractable = null;
 
+    // --- hide-spot state ---
+    // Set by enterHide()/cleared by exitHide(). While `hiding` is true, normal
+    // movement + the regular interaction raycast are suspended (see
+    // _updateMovement / _updateInteractionFocus / _tryInteract below).
+    this.hiding = false;
+    this._hidePrePos = new THREE.Vector3();
+    this._hidePreYaw = 0;
+    this._hideBaseY = this.playerHeight;
+    this._hideExitPrompt = "Stop Hiding";
+    this._hideOnExit = null;
+
     // flashlight
     this.flashlight = new THREE.SpotLight(0xfff2d0, 0, 9, Math.PI / 6.2, 0.45, 1.6);
     this.flashlight.castShadow = true;
@@ -60,6 +77,7 @@ export class Engine {
     this.flashlight.target = this.flashTarget;
 
     this._raycaster = new THREE.Raycaster();
+
     this._paused = true;
 
     this._bindInput();
@@ -72,12 +90,9 @@ export class Engine {
   }
 
   addInteractable(object3D, { radius = 1.6, prompt = "Interact", onInteract = () => {} } = {}) {
-    // NOTE: must return the pushed object so callers can mutate its
-    // `.prompt` later (e.g. toggling "Open X" / "Close X"), and so they
-    // can reference the exact same object the engine is tracking.
-    const interactable = { object3D, radius, prompt, onInteract };
-    this.interactables.push(interactable);
-    return interactable;
+    const entry = { object3D, radius, prompt, onInteract };
+    this.interactables.push(entry);
+    return entry;
   }
 
   setSpawn(vec3, yawRadians = 0) {
@@ -87,6 +102,51 @@ export class Engine {
 
   lock() {
     this.controls.lock();
+  }
+
+  // ---------- hide spot ----------
+  /**
+   * Duck the player into a hiding spot (e.g. under a charpai, inside an almirah).
+   * @param {Object} opts
+   * @param {THREE.Vector3} opts.position - world position to snap the camera to (x/z used, y comes from crouchHeight)
+   * @param {number|null} [opts.yaw] - optional world yaw (radians) to face while hidden
+   * @param {number} [opts.crouchHeight=0.4] - camera height while hidden (keep low + inside the geometry)
+   * @param {string} [opts.exitPrompt="Stop Hiding"] - prompt shown for the E-to-exit action
+   * @param {Function|null} [opts.onEnter] - callback fired once hiding starts
+   * @param {Function|null} [opts.onExit] - callback fired once hiding ends
+   */
+  enterHide({ position, yaw = null, crouchHeight = 0.4, exitPrompt = "Stop Hiding", onEnter = null, onExit = null } = {}) {
+    if (this.hiding) return;
+    this.hiding = true;
+
+    // remember where we were so we can pop back out cleanly
+    this._hidePrePos.copy(this.camera.position);
+    this._hidePreYaw = this.controls.getObject().rotation.y;
+    this._hideBaseY = this._baseY;
+    this._hideExitPrompt = exitPrompt;
+    this._hideOnExit = onExit;
+
+    this.camera.position.set(position.x, crouchHeight, position.z);
+    this._baseY = crouchHeight;
+    if (yaw !== null) this.controls.getObject().rotation.y = yaw;
+
+    // stop any held movement keys from carrying over
+    this.move.forward = this.move.back = this.move.left = this.move.right = false;
+    this._bobT = 0;
+
+    if (onEnter) onEnter();
+  }
+
+  exitHide() {
+    if (!this.hiding) return;
+    this.hiding = false;
+    this._baseY = this._hideBaseY;
+    this.camera.position.copy(this._hidePrePos);
+    this.controls.getObject().rotation.y = this._hidePreYaw;
+
+    const cb = this._hideOnExit;
+    this._hideOnExit = null;
+    if (cb) cb();
   }
 
   // ---------- input ----------
@@ -100,6 +160,8 @@ export class Engine {
   }
 
   _onKey(e, isDown) {
+    // while hiding, ignore movement keys entirely (see _updateMovement early-out too)
+    if (this.hiding && isDown) return;
     switch (e.code) {
       case "KeyW": case "ArrowUp": this.move.forward = isDown; break;
       case "KeyS": case "ArrowDown": this.move.back = isDown; break;
@@ -110,11 +172,16 @@ export class Engine {
   }
 
   toggleFlashlight() {
+    if (this.hiding) return; // stay dark and quiet while tucked away
     this.flashlightOn = !this.flashlightOn;
     this.flashlight.intensity = this.flashlightOn ? 3.2 : 0;
   }
 
   _tryInteract() {
+    if (this.hiding) {
+      this.exitHide();
+      return;
+    }
     if (this._focusedInteractable) this._focusedInteractable.onInteract();
   }
 
@@ -142,6 +209,13 @@ export class Engine {
 
   // ---------- per-frame update ----------
   _updateMovement(dt) {
+    // frozen in place while hidden — look-around still works via PointerLockControls,
+    // but WASD does nothing and there's no headbob.
+    if (this.hiding) {
+      this._bobT = 0;
+      return;
+    }
+
     const speed = this.move.sprint ? this.sprintSpeed : this.walkSpeed;
     const forward = (this.move.forward ? 1 : 0) - (this.move.back ? 1 : 0);
     const strafe = (this.move.right ? 1 : 0) - (this.move.left ? 1 : 0);
@@ -179,8 +253,20 @@ export class Engine {
   }
 
   _updateInteractionFocus() {
-    this._raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+    const promptEl = document.getElementById("interact-prompt");
 
+    // while hidden, the only available action is "come out" — don't raycast
+    // the normal interactable list at all so nothing else can steal focus.
+    if (this.hiding) {
+      this._focusedInteractable = null;
+      if (promptEl) {
+        promptEl.textContent = `[ E ] ${this._hideExitPrompt}`;
+        promptEl.classList.add("show");
+      }
+      return;
+    }
+
+    this._raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
     let closest = null;
     let closestDist = Infinity;
 
@@ -200,13 +286,13 @@ export class Engine {
     }
 
     this._focusedInteractable = closest;
-
-    const promptEl = document.getElementById("interact-prompt");
     if (closest) {
-      promptEl.textContent = `[ E ] ${closest.prompt}`;
-      promptEl.classList.add("show");
+      if (promptEl) {
+        promptEl.textContent = `[ E ] ${closest.prompt}`;
+        promptEl.classList.add("show");
+      }
     } else {
-      promptEl.classList.remove("show");
+      if (promptEl) promptEl.classList.remove("show");
     }
   }
 
@@ -233,6 +319,7 @@ export class Engine {
     this._updateMovement(dt);
     this._updateFlashlight();
     this._updateInteractionFocus();
+
     if (this._onFrame) this._onFrame(dt, this);
 
     this.renderer.render(this.scene, this.camera);
