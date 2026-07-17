@@ -102,22 +102,9 @@ export function createRoom10(scene, engine, doorX, doorZ) {
   colliders.push(trunkBox);
   engine.addCollider(trunkBox);
 
-  // ---------- ambient room lighting: dim, dusty, forgotten ----------
-  const ambient = new THREE.AmbientLight(0x362f24, 1.3);
-  scene.add(ambient);
-
-  const fillLight = new THREE.HemisphereLight(0x6a6152, 0x241d12, 0.8);
-  scene.add(fillLight);
-
-  const dustyLight = new THREE.PointLight(0xc9a35f, 1.3, 6, 2);
-  dustyLight.position.set(centerX, ROOM_H - 0.3, centerZ);
-  scene.add(dustyLight);
-
-  // ---------- per-frame update: weak, dying-bulb flicker ----------
-  let flickerT = 0;
-  function update(dt) {
-    flickerT += dt;
-    dustyLight.intensity = 1.0 + Math.sin(flickerT * 3.1) * 0.15 + (Math.random() - 0.5) * 0.2;
+  // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
+  function update() {
+    // intentionally static
   }
 
   return { colliders, update, centerX, centerZ, westX, eastX };
