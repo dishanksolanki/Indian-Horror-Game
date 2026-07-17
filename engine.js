@@ -21,13 +21,7 @@ export class Engine {
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    // PERFORMANCE: devicePixelRatio is 2-3 on most phones/retina laptops, which
-    // means rendering 4-9x the actual pixel count of the screen. Capping at
-    // 1.5 instead of 2 cuts fragment-shader work substantially (this matters a
-    // lot here since every fragment loops over every light in the scene) with
-    // barely any visible sharpness difference. Raise back to 2 if you have
-    // perf headroom and want maximum crispness.
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -57,47 +51,17 @@ export class Engine {
     this._focusedInteractable = null;
 
     // flashlight
-    // Rooms no longer carry their own ambient/eerie lighting (removed for
-    // performance — see room*.js), so the torch is now the player's only
-    // light source. Brighter, longer-range, and a wider cone than before so
-    // it actually lights up a dark room instead of just a narrow spot.
-    this.flashlightIntensity = 6.5;
-    this.flashlight = new THREE.SpotLight(0xfff2d0, this.flashlightIntensity, 14, Math.PI / 5, 0.5, 1.2);
+    this.flashlight = new THREE.SpotLight(0xfff2d0, 0, 9, Math.PI / 6.2, 0.45, 1.6);
     this.flashlight.castShadow = true;
-    // PERFORMANCE: this shadow map re-renders the scene from the flashlight's
-    // point of view every single frame — it's the single most expensive part
-    // of the whole render loop. 1024x1024 is overkill for a handheld light
-    // with only a 9-unit range; 512x512 looks nearly identical in practice
-    // and roughly quarters this pass's cost. Bump it back up if you have
-    // headroom to spare.
-    this.flashlight.shadow.mapSize.set(512, 512);
-    this.flashlightOn = true;
+    this.flashlight.shadow.mapSize.set(1024, 1024);
+    this.flashlightOn = false;
     this.flashTarget = new THREE.Object3D();
     this.scene.add(this.flashlight, this.flashTarget);
     this.flashlight.target = this.flashTarget;
 
     this._raycaster = new THREE.Raycaster();
-
-    // ---------- PERFORMANCE: reusable scratch objects ----------
-    // The old code allocated a fresh Vector3/Box3 every single frame inside
-    // the movement, flashlight, and interaction-focus updates. That garbage
-    // gets collected constantly (many times a second), which is what causes
-    // the little stutters/hitches on top of the raw FPS being low. Reusing
-    // the same objects every frame avoids that churn entirely.
-    this._scratchCamDir = new THREE.Vector3();
-    this._scratchCamRight = new THREE.Vector3();
-    this._scratchMoveDir = new THREE.Vector3();
-    this._worldUp = new THREE.Vector3(0, 1, 0);
-    this._scratchTryX = new THREE.Vector3();
-    this._scratchTryZ = new THREE.Vector3();
-    this._scratchBoxMin = new THREE.Vector3();
-    this._scratchBoxMax = new THREE.Vector3();
-    this._scratchPlayerBox = new THREE.Box3(this._scratchBoxMin, this._scratchBoxMax);
-    this._scratchFlashDir = new THREE.Vector3();
-    this._scratchDirToItem = new THREE.Vector3();
-    this._scratchNdc = new THREE.Vector2(0, 0);
-
     this._paused = true;
+
     this._bindInput();
     window.addEventListener("resize", () => this._onResize());
   }
@@ -108,7 +72,9 @@ export class Engine {
   }
 
   addInteractable(object3D, { radius = 1.6, prompt = "Interact", onInteract = () => {} } = {}) {
-    this.interactables.push({ object3D, radius, prompt, onInteract });
+    const item = { object3D, radius, prompt, onInteract };
+    this.interactables.push(item);
+    return item;
   }
 
   setSpawn(vec3, yawRadians = 0) {
@@ -142,7 +108,7 @@ export class Engine {
 
   toggleFlashlight() {
     this.flashlightOn = !this.flashlightOn;
-    this.flashlight.intensity = this.flashlightOn ? this.flashlightIntensity : 0;
+    this.flashlight.intensity = this.flashlightOn ? 3.2 : 0;
   }
 
   _tryInteract() {
@@ -152,9 +118,10 @@ export class Engine {
   // ---------- collision ----------
   _resolveCollision(nextPos) {
     const r = this.playerRadius;
-    this._scratchBoxMin.set(nextPos.x - r, 0, nextPos.z - r);
-    this._scratchBoxMax.set(nextPos.x + r, this.playerHeight, nextPos.z + r);
-    const playerBox = this._scratchPlayerBox;
+    const playerBox = new THREE.Box3(
+      new THREE.Vector3(nextPos.x - r, 0, nextPos.z - r),
+      new THREE.Vector3(nextPos.x + r, this.playerHeight, nextPos.z + r)
+    );
     for (const box of this.colliders) {
       if (playerBox.intersectsBox(box)) return true;
     }
@@ -164,9 +131,9 @@ export class Engine {
   _moveWithCollision(dx, dz) {
     const pos = this.camera.position;
     // try X and Z independently so sliding along walls feels natural
-    const tryX = this._scratchTryX.set(pos.x + dx, pos.y, pos.z);
+    const tryX = new THREE.Vector3(pos.x + dx, pos.y, pos.z);
     if (!this._resolveCollision(tryX)) pos.x = tryX.x;
-    const tryZ = this._scratchTryZ.set(pos.x, pos.y, pos.z + dz);
+    const tryZ = new THREE.Vector3(pos.x, pos.y, pos.z + dz);
     if (!this._resolveCollision(tryZ)) pos.z = tryZ.z;
   }
 
@@ -178,21 +145,11 @@ export class Engine {
 
     let moving = false;
     if (forward !== 0 || strafe !== 0) {
-      // FIX: derive movement direction from the camera's actual world-facing
-      // direction (flattened to the horizontal plane), instead of the old
-      // camera.quaternion trick which effectively cancelled itself out and
-      // ignored yaw entirely. This is what made W/S (and A/D) feel broken —
-      // movement never actually turned with the camera.
-      const camDir = this._scratchCamDir;
-      this.camera.getWorldDirection(camDir);
-      camDir.y = 0;
-      camDir.normalize();
-
-      const camRight = this._scratchCamRight.crossVectors(camDir, this._worldUp);
-
-      const dir = this._scratchMoveDir.set(0, 0, 0);
-      dir.addScaledVector(camDir, forward);
-      dir.addScaledVector(camRight, strafe);
+      const dir = new THREE.Vector3(strafe, 0, -forward).normalize();
+      dir.applyQuaternion(this.camera.quaternion.clone().multiply(
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(-this.camera.rotation.x, 0, 0))
+      ));
+      dir.y = 0;
       dir.normalize();
 
       const step = speed * dt;
@@ -212,34 +169,35 @@ export class Engine {
 
   _updateFlashlight() {
     const camPos = this.camera.position;
-    const camDir = this._scratchFlashDir;
+    const camDir = new THREE.Vector3();
     this.camera.getWorldDirection(camDir);
     this.flashlight.position.copy(camPos);
     this.flashTarget.position.copy(camPos).add(camDir.multiplyScalar(3));
   }
 
   _updateInteractionFocus() {
-    this._raycaster.setFromCamera(this._scratchNdc, this.camera);
-    // compute camera facing direction once per frame, not once per interactable
-    const camDir = this._scratchCamDir;
-    this.camera.getWorldDirection(camDir);
+    this._raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
 
     let closest = null;
     let closestDist = Infinity;
+
     for (const item of this.interactables) {
       const dist = this.camera.position.distanceTo(item.object3D.position);
       if (dist > item.radius) continue;
-      const dirToItem = this._scratchDirToItem
-        .copy(item.object3D.position)
-        .sub(this.camera.position)
-        .normalize();
+
+      const dirToItem = item.object3D.position.clone().sub(this.camera.position).normalize();
+      const camDir = new THREE.Vector3();
+      this.camera.getWorldDirection(camDir);
       const facing = camDir.dot(dirToItem);
+
       if (facing > 0.85 && dist < closestDist) {
         closest = item;
         closestDist = dist;
       }
     }
+
     this._focusedInteractable = closest;
+
     const promptEl = document.getElementById("interact-prompt");
     if (closest) {
       promptEl.textContent = `[ E ] ${closest.prompt}`;
