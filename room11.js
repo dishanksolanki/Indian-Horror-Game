@@ -115,22 +115,9 @@ export function createRoom11(scene, engine, doorX, doorZ) {
   colliders.push(cotBox);
   engine.addCollider(cotBox);
 
-  // ---------- ambient room lighting: airless, sealed-off feel ----------
-  const ambient = new THREE.AmbientLight(0x322c22, 1.1);
-  scene.add(ambient);
-
-  const fillLight = new THREE.HemisphereLight(0x615848, 0x1e1810, 0.7);
-  scene.add(fillLight);
-
-  const sickLight = new THREE.PointLight(0x8a9f6f, 1.1, 6, 2);
-  sickLight.position.set(centerX, ROOM_H - 0.3, centerZ);
-  scene.add(sickLight);
-
-  // ---------- per-frame update: slow, sickly light pulse ----------
-  let pulseT = 0;
-  function update(dt) {
-    pulseT += dt;
-    sickLight.intensity = 0.95 + Math.sin(pulseT * 0.9) * 0.2 + (Math.random() - 0.5) * 0.1;
+  // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
+  function update() {
+    // intentionally static
   }
 
   return { colliders, update, centerX, centerZ, eastX, westX };
