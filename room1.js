@@ -1,7 +1,7 @@
 // room1.js — ROOM 1: an old Indian haveli room.
 // Pure map for now: floor, walls, charpai, diya light, puja corner, wooden almirah.
 // North wall has a doorway gap that connects to the corridor -> room2.
-// No jumpscares / mechanics yet — just the walkable space.
+// No jumpscares / mechanics yet — just the walkable space (+ the charpai hide spot below).
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -106,6 +106,50 @@ export function createRoom1(scene, engine) {
   cotBox.min.y = 0; cotBox.max.y = 0.6; // low collider so it just blocks walking through
   colliders.push(cotBox);
   engine.addCollider(cotBox);
+
+  // ---------- charpai hide spot ----------
+  // Lets the player duck into the gap between the floor and the cot frame
+  // (below the rope weave, between the four legs) to hide. Approaching the
+  // foot-end of the cot and pressing E ducks the player down and freezes
+  // movement (see engine.enterHide); pressing E again pops back out to
+  // exactly where they were standing.
+  //
+  // Both points are expressed in the cot's own local space and rotated by
+  // cotGroup.rotation.y so they stay correct if the cot's position/rotation
+  // above is ever tweaked.
+  function cotLocalToWorld(localX, localY, localZ) {
+    const v = new THREE.Vector3(localX, localY, localZ);
+    v.applyAxisAngle(new THREE.Vector3(0, 1, 0), cotGroup.rotation.y);
+    v.add(cotGroup.position);
+    return v;
+  }
+
+  // where the player stands to trigger the prompt — just outside the foot end (+z)
+  const charpaiHideApproach = cotLocalToWorld(0, 1.3, 1.6);
+  // where the camera snaps to once hidden — centered under the cot, low, between the legs
+  const charpaiHideSpot = cotLocalToWorld(0, 0, 0);
+  const charpaiHideYaw = cotGroup.rotation.y + Math.PI; // face back out toward the room
+
+  const charpaiHideAnchor = new THREE.Object3D();
+  charpaiHideAnchor.position.copy(charpaiHideApproach);
+  scene.add(charpaiHideAnchor);
+
+  let hidingUnderCharpai = false;
+  engine.addInteractable(charpaiHideAnchor, {
+    radius: 2.2,
+    prompt: "Hide Under Charpai",
+    onInteract: () => {
+      if (engine.hiding) return;
+      hidingUnderCharpai = true;
+      engine.enterHide({
+        position: charpaiHideSpot,
+        yaw: charpaiHideYaw,
+        crouchHeight: 0.32,
+        exitPrompt: "Come Out",
+        onExit: () => { hidingUnderCharpai = false; },
+      });
+    },
+  });
 
   // ---------- puja corner (small shelf with diya) ----------
   const shelf = new THREE.Mesh(
