@@ -135,10 +135,10 @@ export function createRoom1(scene, engine) {
   scene.add(flame);
 
   // ---------- wooden almirah (old Indian wardrobe/cupboard) ----------
-  // Stood flush against the east wall, south of the doorway swing and clear of
-  // the charpai and puja corner. Simple carcass + two hinged-look doors + a
-  // small cornice on top, in the same dark teak tone as the rest of the wood
-  // furniture in the room.
+  // Stood flush against the east wall, south of the moonlight window shaft and
+  // clear of the charpai and puja corner. Simple carcass + two hinged doors +
+  // a small cornice on top, in the same dark teak tone as the rest of the
+  // wood furniture in the room.
   const almirahBodyMat = new THREE.MeshStandardMaterial({ color: 0x2f1e10, roughness: 0.8 });
   const almirahDoorMat = new THREE.MeshStandardMaterial({ color: 0x3d2814, roughness: 0.7 });
   const almirahTrimMat = new THREE.MeshStandardMaterial({ color: 0x6b4a26, roughness: 0.6, metalness: 0.05 });
@@ -177,15 +177,21 @@ export function createRoom1(scene, engine) {
   almirahBase.position.set(0, 0.04, 0);
   almirahGroup.add(almirahBase);
 
-  // two hinged doors, built on pivot groups so they can actually swing open.
-  // The carcass front (the doors) faces -x — into the room, away from the
-  // east wall the almirah stands against.
+  // Two hinged doors, built on pivot groups so they can actually swing open.
+  // almirahGroup is placed with its carcass BACK against the east wall
+  // (world x ~ ROOM_W/2) and its FRONT — the doors — facing toward -x,
+  // i.e. into the room. That front face sits at local x = FRONT_X, a
+  // negative number, which is exactly where we already want it: no extra
+  // group-level rotation is needed (a previous version of this file added
+  // `almirahGroup.rotation.y = Math.PI`, which flipped the doors around to
+  // the WALL side — that was the bug making the almirah impossible to
+  // reach/open).
   const doorHalfW = ALM_W / 2 - 0.03;
   const doorH = ALM_H - 0.3;
   const doorGeo = new THREE.BoxGeometry(0.04, doorH, doorHalfW);
   const panelGeo = new THREE.BoxGeometry(0.01, doorH * 0.55, doorHalfW * 0.6);
   const handleGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.14, 8);
-  const FRONT_X = -(ALM_D / 2 + 0.02); // front face, proud of the carcass box
+  const FRONT_X = -(ALM_D / 2 + 0.02); // front face, proud of the carcass box, facing -x (into the room)
 
   // left door — hinged on the south edge (z = -ALM_W/2), swings toward -x
   const pivotL = new THREE.Group();
@@ -215,9 +221,9 @@ export function createRoom1(scene, engine) {
   almirahGroup.add(pivotR);
 
   // place flush against the east wall (inner face is at ROOM_W/2 - t/2),
-  // south of the moonlight window shaft and clear of the charpai/puja corner
+  // south of the moonlight window shaft and clear of the charpai/puja corner.
+  // NOTE: no rotation.y here — see the comment above the doors.
   almirahGroup.position.set(ROOM_W / 2 - t / 2 - ALM_D / 2, 0, 3.0);
-  almirahGroup.rotation.y = Math.PI; // doors were built facing -x locally; flip to face into the room
   almirahGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   scene.add(almirahGroup);
 
@@ -228,25 +234,27 @@ export function createRoom1(scene, engine) {
   engine.addCollider(almirahBox);
 
   // ---------- almirah open/close interaction ----------
-  const ALMIRAH_OPEN_ANGLE = Math.PI * 0.62; // ~112°, doors swing outward away from each other
+  const ALMIRAH_OPEN_ANGLE = Math.PI * 0.5; // 90°: 0 = closed, 90° = fully open, swinging outward
   let almirahOpen = false;
   let almirahT = 0; // animated 0 (closed) -> 1 (open)
 
-  // almirahGroup is rotated 180° (doors were modeled facing local -x, then
-  // flipped to face into the room), so a local point in front of the doors
-  // lands at (group.x - localX, group.y + localY, group.z - localZ) in world
-  // space. Compute that once — the almirah doesn't move — and give the
-  // interactable a plain, already-in-world-space anchor object.
+  // almirahGroup is NOT rotated, so local axes line up with world axes
+  // directly: the interaction anchor just needs to sit a bit in front of the
+  // doors (further -x, deeper into the room) so the player can walk up to
+  // it and be within range/facing it. Height is placed near eye level so the
+  // engine's facing-dot-product check (which uses full 3D direction,
+  // including the vertical component) actually passes when a normal-height
+  // player looks at it head-on, instead of only working if you crouch/look down.
   const almirahWorldAnchor = new THREE.Object3D();
   almirahWorldAnchor.position.set(
-    almirahGroup.position.x - (FRONT_X - 0.3),
-    almirahGroup.position.y + ALM_H / 2,
+    almirahGroup.position.x + FRONT_X - 0.35,
+    1.55,
     almirahGroup.position.z
   );
   scene.add(almirahWorldAnchor);
 
   const almirahInteractable = engine.addInteractable(almirahWorldAnchor, {
-    radius: 1.8,
+    radius: 2.0,
     prompt: "Open Almirah",
     onInteract: () => {
       almirahOpen = !almirahOpen;
@@ -274,7 +282,7 @@ export function createRoom1(scene, engine) {
   const spawnPoint = new THREE.Vector3(1.5, engine.playerHeight, 3.5);
   const spawnYaw = Math.PI * 0.85;
 
-  // ---------- per-frame update: just a gentle flame flicker for now ----------
+  // ---------- per-frame update: flame flicker + almirah door animation ----------
   let flickerT = 0;
   function update(dt) {
     flickerT += dt;
