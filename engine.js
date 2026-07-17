@@ -1,6 +1,7 @@
 // engine.js — reusable first-person engine core.
 // Handles rendering, pointer-lock look/movement, collision, flashlight and interaction raycasting.
 // Rooms (see room1.js) plug into this by providing colliders, lights, interactables and an update hook.
+
 import * as THREE from "three";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
@@ -17,11 +18,6 @@ export class Engine {
       120
     );
     this.camera.position.set(0, 1.7, 0);
-    // Match PointerLockControls' internal euler order ('YXZ') so that
-    // camera.rotation.y / camera.rotation.x correctly decompose into
-    // pure yaw / pitch. Without this, THREE's default 'XYZ' order mixes
-    // yaw into the .x component, which caused W/S to invert as you looked around.
-    this.camera.rotation.order = "YXZ";
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -64,7 +60,6 @@ export class Engine {
     this.flashlight.target = this.flashTarget;
 
     this._raycaster = new THREE.Raycaster();
-
     this._paused = true;
 
     this._bindInput();
@@ -77,7 +72,12 @@ export class Engine {
   }
 
   addInteractable(object3D, { radius = 1.6, prompt = "Interact", onInteract = () => {} } = {}) {
-    this.interactables.push({ object3D, radius, prompt, onInteract });
+    // NOTE: must return the pushed object so callers can mutate its
+    // `.prompt` later (e.g. toggling "Open X" / "Close X"), and so they
+    // can reference the exact same object the engine is tracking.
+    const interactable = { object3D, radius, prompt, onInteract };
+    this.interactables.push(interactable);
+    return interactable;
   }
 
   setSpawn(vec3, yawRadians = 0) {
@@ -148,11 +148,10 @@ export class Engine {
 
     let moving = false;
     if (forward !== 0 || strafe !== 0) {
-      // Rotate the local movement input by yaw only (camera.rotation.y),
-      // now that camera.rotation.order = 'YXZ' matches PointerLockControls,
-      // so this stays consistent no matter how much you've looked up/down.
       const dir = new THREE.Vector3(strafe, 0, -forward).normalize();
-      dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.camera.rotation.y);
+      dir.applyQuaternion(this.camera.quaternion.clone().multiply(
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(-this.camera.rotation.x, 0, 0))
+      ));
       dir.y = 0;
       dir.normalize();
 
@@ -181,6 +180,7 @@ export class Engine {
 
   _updateInteractionFocus() {
     this._raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+
     let closest = null;
     let closestDist = Infinity;
 
@@ -200,6 +200,7 @@ export class Engine {
     }
 
     this._focusedInteractable = closest;
+
     const promptEl = document.getElementById("interact-prompt");
     if (closest) {
       promptEl.textContent = `[ E ] ${closest.prompt}`;
@@ -232,7 +233,6 @@ export class Engine {
     this._updateMovement(dt);
     this._updateFlashlight();
     this._updateInteractionFocus();
-
     if (this._onFrame) this._onFrame(dt, this);
 
     this.renderer.render(this.scene, this.camera);
