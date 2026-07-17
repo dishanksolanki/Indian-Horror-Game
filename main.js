@@ -275,6 +275,9 @@ const corridor28 = createCorridorDoglegWestNorthWest(
 const menu = document.getElementById("menu");
 const playBtn = document.getElementById("play-btn");
 const noteOverlay = document.getElementById("note-overlay");
+const winOverlay = document.getElementById("win-overlay");
+const fade = document.getElementById("fade");
+const playAgainBtn = document.getElementById("play-again-btn");
 
 playBtn.addEventListener("click", () => {
   engine.lock();
@@ -286,11 +289,28 @@ engine.controls.addEventListener("lock", () => {
 });
 
 engine.controls.addEventListener("unlock", () => {
-  // don't show the main menu if the note overlay is open — that has its own flow
-  if (!noteOverlay.classList.contains("show")) {
+  // don't show the main menu if the note overlay or the win screen is open —
+  // those each have their own flow
+  if (!noteOverlay.classList.contains("show") && !winOverlay.classList.contains("show")) {
     menu.style.display = "flex";
   }
   engine.pause();
+});
+
+// ---------- win condition: room16's big door dispatches this when opened ----------
+window.addEventListener("game:win", () => {
+  fade.classList.add("show");
+  // let the door-opening animation and the fade-to-black play out before
+  // cutting to the win screen and releasing the pointer lock
+  setTimeout(() => {
+    engine.pause();
+    engine.controls.unlock();
+    winOverlay.classList.add("show");
+  }, 1700);
+});
+
+playAgainBtn.addEventListener("click", () => {
+  window.location.reload();
 });
 
 engine.start((dt, eng) => {
