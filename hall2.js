@@ -123,27 +123,9 @@ export function createHall2(scene, engine, doorX, doorZ) {
     engine.addCollider(pillarBox);
   });
 
-  // ---------- ambient hall lighting ----------
-  const ambient = new THREE.AmbientLight(0x3a3527, 1.5);
-  scene.add(ambient);
-
-  const fillLight = new THREE.HemisphereLight(0x6e6555, 0x241d12, 1.0);
-  scene.add(fillLight);
-
-  const eerieLightA = new THREE.PointLight(0x9c8a6a, 1.6, 9, 2);
-  eerieLightA.position.set(centerX, ROOM_H - 0.4, centerZ - 3.5);
-  scene.add(eerieLightA);
-
-  const eerieLightB = new THREE.PointLight(0x9c8a6a, 1.6, 9, 2);
-  eerieLightB.position.set(centerX, ROOM_H - 0.4, centerZ + 3.5);
-  scene.add(eerieLightB);
-
-  // ---------- per-frame update: subtle eerie light pulse ----------
-  let pulseT = 0;
-  function update(dt) {
-    pulseT += dt;
-    eerieLightA.intensity = 1.4 + Math.sin(pulseT * 1.3) * 0.3;
-    eerieLightB.intensity = 1.4 + Math.sin(pulseT * 1.3 + 1.1) * 0.3;
+  // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
+  function update() {
+    // intentionally static
   }
 
   return { colliders, update, centerX, centerZ, northZ, southZ, westX, eastX };
