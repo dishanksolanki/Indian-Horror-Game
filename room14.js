@@ -81,22 +81,9 @@ export function createRoom14(scene, engine, doorX, doorZ) {
   addWallBox(westX, centerZ + (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
   addWallBox(westX, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
-  // ---------- ambient room lighting: airless, sealed, still and dusty ----------
-  const ambient = new THREE.AmbientLight(0x241f19, 1.0);
-  scene.add(ambient);
-
-  const fillLight = new THREE.HemisphereLight(0x453b2e, 0x160f0a, 0.6);
-  scene.add(fillLight);
-
-  const dustyLight = new THREE.PointLight(0xc9a35f, 1.2, 6, 2);
-  dustyLight.position.set(centerX, ROOM_H - 0.3, centerZ);
-  scene.add(dustyLight);
-
-  // ---------- per-frame update: weak, dying-bulb flicker ----------
-  let flickerT = 0;
-  function update(dt) {
-    flickerT += dt;
-    dustyLight.intensity = 1.0 + Math.sin(flickerT * 2.7) * 0.15 + (Math.random() - 0.5) * 0.2;
+  // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
+  function update() {
+    // intentionally static
   }
 
   return { colliders, update, centerX, centerZ, westX, eastX };
