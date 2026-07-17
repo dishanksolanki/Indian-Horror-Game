@@ -69,19 +69,17 @@ export function createCorridor(scene, engine, startZ) {
 // createCorridorWest — same short passage, but running west (negative x) instead
 // of north, to connect room2's west doorway to room4.
 // startX: the x coordinate of room2's west wall (doorway); z: the doorway's z coordinate.
-// length: optional override of the passage length (defaults to CORRIDOR_LEN) — used
-// for longer bridging passages, e.g. the final leg into room24's east doorway.
-export function createCorridorWest(scene, engine, startX, z, length = CORRIDOR_LEN) {
+export function createCorridorWest(scene, engine, startX, z) {
   const colliders = [];
   const wallMat = createWallMaterial();
 
-  const centerX = startX - length / 2;
-  const endX = startX - length;
+  const centerX = startX - CORRIDOR_LEN / 2;
+  const endX = startX - CORRIDOR_LEN;
 
   // ---------- floor: old, dirty tiles ----------
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(length, CORRIDOR_W),
-    createFloorMaterial(length, CORRIDOR_W)
+    new THREE.PlaneGeometry(CORRIDOR_LEN, CORRIDOR_W),
+    createFloorMaterial(CORRIDOR_LEN, CORRIDOR_W)
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(centerX, 0, z);
@@ -90,7 +88,7 @@ export function createCorridorWest(scene, engine, startX, z, length = CORRIDOR_L
 
   // ---------- ceiling ----------
   const ceiling = new THREE.Mesh(
-    new THREE.PlaneGeometry(length, CORRIDOR_W),
+    new THREE.PlaneGeometry(CORRIDOR_LEN, CORRIDOR_W),
     new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 1 })
   );
   ceiling.rotation.x = Math.PI / 2;
@@ -110,26 +108,18 @@ export function createCorridorWest(scene, engine, startX, z, length = CORRIDOR_L
     return mesh;
   }
 
-  addWallBox(centerX, z - CORRIDOR_W / 2 - t / 2, length + t, t);
-  addWallBox(centerX, z + CORRIDOR_W / 2 + t / 2, length + t, t);
+  addWallBox(centerX, z - CORRIDOR_W / 2 - t / 2, CORRIDOR_LEN + t, t);
+  addWallBox(centerX, z + CORRIDOR_W / 2 + t / 2, CORRIDOR_LEN + t, t);
 
-  // ---------- flickering bulb light(s) so the passage isn't pitch black ----------
-  const bulbCount = Math.max(1, Math.round(length / CORRIDOR_LEN));
-  const bulbLights = [];
-  for (let i = 0; i < bulbCount; i++) {
-    const bx = startX - (length / bulbCount) * (i + 0.5);
-    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
-    bulbLight.position.set(bx, CORRIDOR_H - 0.3, z);
-    scene.add(bulbLight);
-    bulbLights.push(bulbLight);
-  }
+  // ---------- flickering bulb light so the passage isn't pitch black ----------
+  const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
+  bulbLight.position.set(centerX, CORRIDOR_H - 0.3, z);
+  scene.add(bulbLight);
 
   let flickerT = 0;
   function update(dt) {
     flickerT += dt;
-    bulbLights.forEach((bulbLight, i) => {
-      bulbLight.intensity = 1.3 + Math.sin(flickerT * 7 + i) * 0.3 + (Math.random() - 0.5) * 0.4;
-    });
+    bulbLight.intensity = 1.3 + Math.sin(flickerT * 7) * 0.3 + (Math.random() - 0.5) * 0.4;
   }
 
   return { colliders, update, startX, endX, z };
@@ -617,4 +607,159 @@ export function createCorridorBendWestNorth(scene, engine, startX, startZ, corne
   }
 
   return { colliders, update, startX, startZ, cornerX, endZ };
+}
+
+// createCorridorDoglegWestNorthWest — a three-segment jog: west from a doorway,
+// north to change row, then west again into a second doorway. Needed instead of
+// a single L-bend when BOTH doorways face the same direction (east-west) with an
+// offset between their z positions — e.g. room16's west doorway and room24's
+// east doorway. A single bend's second leg would have to run straight along the
+// target room's wall for the length of that offset, slicing through the solid
+// wall on either side of the doorway gap instead of passing through it.
+// This builds all three legs and BOTH corners as one continuous shape (each
+// corner gets its own open turn — a continuous outer wall wrapping the convex
+// side, inner walls stopping short of the turn) rather than gluing two
+// separately-built corridor pieces together, which leaves each piece's own side
+// walls jutting into the other's path right at the join.
+// startX, startZ: the doorway where the passage begins (e.g. room16's west doorway).
+// turnX: the x position, clear of both rooms, where the passage jogs from
+// startZ's row over to endZ's row. Must be less than startX and greater than endX.
+// endZ, endX: the doorway where the passage ends (e.g. room24's east doorway).
+// Requires turnX < startX and endZ < startZ.
+export function createCorridorDoglegWestNorthWest(scene, engine, startX, startZ, turnX, endZ, endX) {
+  const colliders = [];
+  const wallMat = createWallMaterial();
+
+  function addWallBox(cx, cz, w, d, h = CORRIDOR_H, cy = h / 2) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+    mesh.position.set(cx, cy, cz);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    const box = new THREE.Box3().setFromObject(mesh);
+    colliders.push(box);
+    engine.addCollider(box);
+    return mesh;
+  }
+
+  function addFloorAndCeiling(w, d, cx, cz) {
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, d),
+      createFloorMaterial(w, d)
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(cx, 0, cz);
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    const ceiling = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, d),
+      new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 1 })
+    );
+    ceiling.rotation.x = Math.PI / 2;
+    ceiling.position.set(cx, CORRIDOR_H, cz);
+    scene.add(ceiling);
+  }
+
+  // ---------- leg 1 (west): startX -> turnX, at z = startZ ----------
+  const leg1CenterX = (startX + turnX) / 2;
+  const leg1Len = startX - turnX;
+  addFloorAndCeiling(leg1Len, CORRIDOR_W, leg1CenterX, startZ);
+
+  // ---------- leg 2 (north): startZ -> endZ, at x = turnX ----------
+  const leg2CenterZ = (startZ + endZ) / 2;
+  const leg2Len = startZ - endZ;
+  addFloorAndCeiling(CORRIDOR_W, leg2Len, turnX, leg2CenterZ);
+
+  // ---------- leg 3 (west): turnX -> endX, at z = endZ ----------
+  const leg3CenterX = (turnX + endX) / 2;
+  const leg3Len = turnX - endX;
+  addFloorAndCeiling(leg3Len, CORRIDOR_W, leg3CenterX, endZ);
+
+  // ---------- corner 1 (leg1 west -> leg2 north) ----------
+  // outer = south side of leg1 + west side of leg2, wrapping the convex side continuously
+  const corner1OuterZ = startZ + CORRIDOR_W / 2 + t / 2;
+  const corner1OuterX = turnX - CORRIDOR_W / 2 - t / 2;
+  addWallBox(
+    (corner1OuterX + (startX + t / 2)) / 2,
+    corner1OuterZ,
+    (startX + t / 2) - corner1OuterX,
+    t
+  ); // leg1's south wall — reaches past corner1, flush at the start doorway
+  const corner1InnerZ = startZ - CORRIDOR_W / 2 - t / 2;
+  addWallBox(
+    ((turnX + CORRIDOR_W / 2) + (startX + t / 2)) / 2,
+    corner1InnerZ,
+    (startX + t / 2) - (turnX + CORRIDOR_W / 2),
+    t
+  ); // leg1's north wall (inner) — stops short of corner1, flush at the start doorway
+
+  // ---------- corner 2 (leg2 north -> leg3 west) ----------
+  // outer = east side of leg2 + north side of leg3, wrapping the convex side continuously
+  const corner2OuterX = turnX + CORRIDOR_W / 2 + t / 2;
+  const corner2OuterZ = endZ - CORRIDOR_W / 2 - t / 2;
+  addWallBox(
+    ((endX - t / 2) + corner2OuterX) / 2,
+    corner2OuterZ,
+    corner2OuterX - (endX - t / 2),
+    t
+  ); // leg3's north wall — reaches from the end doorway up to meet leg2's east wall at corner2
+  const corner2InnerZ = endZ + CORRIDOR_W / 2 + t / 2;
+  addWallBox(
+    ((endX - t / 2) + (turnX - CORRIDOR_W / 2)) / 2,
+    corner2InnerZ,
+    (turnX - CORRIDOR_W / 2) - (endX - t / 2),
+    t
+  ); // leg3's south wall (inner) — stops short of corner2, flush at the end doorway
+
+  // ---------- leg2's two side walls ----------
+  // Leg2 sits between two turns of OPPOSITE handedness (corner1 is a left turn,
+  // corner2 is a right turn), so each of leg2's side walls is "outer" at one end
+  // and "inner" at the other, instead of running the full length on one side.
+  addWallBox(
+    corner1OuterX, // west side, == turnX - CORRIDOR_W/2 - t/2
+    ((endZ + CORRIDOR_W / 2) + corner1OuterZ) / 2,
+    t,
+    corner1OuterZ - (endZ + CORRIDOR_W / 2)
+  ); // outer near corner1 (meets leg1's south wall exactly), inner near corner2 (stops short)
+  addWallBox(
+    corner2OuterX, // east side, == turnX + CORRIDOR_W/2 + t/2
+    (corner2OuterZ + (startZ - CORRIDOR_W / 2)) / 2,
+    t,
+    (startZ - CORRIDOR_W / 2) - corner2OuterZ
+  ); // outer near corner2 (meets leg3's north wall exactly), inner near corner1 (stops short)
+
+  // ---------- flickering bulb lights along all three legs ----------
+  const bulbLights = [];
+  const leg1BulbCount = Math.max(1, Math.round(leg1Len / CORRIDOR_LEN));
+  for (let i = 0; i < leg1BulbCount; i++) {
+    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
+    bulbLight.position.set(startX - (leg1Len / leg1BulbCount) * (i + 0.5), CORRIDOR_H - 0.3, startZ);
+    scene.add(bulbLight);
+    bulbLights.push(bulbLight);
+  }
+  const leg2BulbCount = Math.max(1, Math.round(leg2Len / CORRIDOR_LEN));
+  for (let i = 0; i < leg2BulbCount; i++) {
+    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
+    bulbLight.position.set(turnX, CORRIDOR_H - 0.3, startZ - (leg2Len / leg2BulbCount) * (i + 0.5));
+    scene.add(bulbLight);
+    bulbLights.push(bulbLight);
+  }
+  const leg3BulbCount = Math.max(1, Math.round(leg3Len / CORRIDOR_LEN));
+  for (let i = 0; i < leg3BulbCount; i++) {
+    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
+    bulbLight.position.set(turnX - (leg3Len / leg3BulbCount) * (i + 0.5), CORRIDOR_H - 0.3, endZ);
+    scene.add(bulbLight);
+    bulbLights.push(bulbLight);
+  }
+
+  let flickerT = 0;
+  function update(dt) {
+    flickerT += dt;
+    bulbLights.forEach((bulbLight, i) => {
+      bulbLight.intensity = 1.3 + Math.sin(flickerT * 7 + i) * 0.3 + (Math.random() - 0.5) * 0.4;
+    });
+  }
+
+  return { colliders, update, startX, startZ, turnX, endZ, endX };
 }
