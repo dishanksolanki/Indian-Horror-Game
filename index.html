@@ -73,6 +73,28 @@
     pointer-events: none; transition: opacity 1.4s ease;
   }
   #fade.show { opacity: 1; }
+
+  #win-overlay {
+    position: absolute; inset: 0; z-index: 40; display: none; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    background: radial-gradient(ellipse at center, #1a1512 0%, #000 85%);
+    color: #e6dcc0;
+  }
+  #win-overlay.show { display: flex; }
+  #win-overlay h1 {
+    font-size: 44px; letter-spacing: 8px; font-weight: normal; margin-bottom: 18px;
+    color: #d8c88a; text-shadow: 0 0 24px rgba(216,200,138,0.5);
+  }
+  #win-overlay p {
+    max-width: 520px; font-size: 16px; line-height: 1.7; opacity: 0.75;
+    letter-spacing: 0.5px; margin-bottom: 36px;
+  }
+  #play-again-btn {
+    padding: 14px 46px; background: transparent; border: 1px solid #6b5f47; color: #e6dcc0;
+    font-size: 16px; letter-spacing: 4px; cursor: pointer; font-family: inherit;
+    transition: all 0.25s ease;
+  }
+  #play-again-btn:hover { background: #6b1414; border-color: #6b1414; color: #fff; }
 </style>
 </head>
 <body>
@@ -100,6 +122,12 @@
       WASD — Move &nbsp;|&nbsp; MOUSE — Look &nbsp;|&nbsp; SHIFT — Walk Softly<br>
       F — Flashlight &nbsp;|&nbsp; E — Interact &nbsp;|&nbsp; ESC — Pause
     </div>
+  </div>
+
+  <div id="win-overlay">
+    <h1>YOU ESCAPED</h1>
+    <p>The old door gives way at last, and the haveli releases you into the night.</p>
+    <button id="play-again-btn">PLAY AGAIN</button>
   </div>
 </div>
 
