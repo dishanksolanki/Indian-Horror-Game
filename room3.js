@@ -113,22 +113,9 @@ export function createRoom3(scene, engine, doorZ) {
   mirrorGlass.position.set(mirrorX, 1.5, northZ + 0.071);
   scene.add(mirrorGlass);
 
-  // ---------- ambient room lighting: dimmer and colder, deepest room in the house ----------
-  const ambient = new THREE.AmbientLight(0x2c2a24, 1.2);
-  scene.add(ambient);
-
-  const fillLight = new THREE.HemisphereLight(0x5a5548, 0x201a12, 0.7);
-  scene.add(fillLight);
-
-  const coldLight = new THREE.PointLight(0x7f95b8, 1.4, 7, 2);
-  coldLight.position.set(0, ROOM_H - 0.35, centerZ);
-  scene.add(coldLight);
-
-  // ---------- per-frame update: unsettled, irregular light flicker (deepest room feels wrong) ----------
-  let flickerT = 0;
-  function update(dt) {
-    flickerT += dt;
-    coldLight.intensity = 1.1 + Math.sin(flickerT * 2.2) * 0.2 + (Math.random() - 0.5) * 0.25;
+  // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
+  function update() {
+    // intentionally static
   }
 
   // eastX/eastDoorZ: the doorway sits in the middle of the east wall —
