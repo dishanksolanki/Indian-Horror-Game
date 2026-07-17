@@ -57,10 +57,12 @@ export class Engine {
     this._focusedInteractable = null;
 
     // flashlight
-    // NOTE: started ON with a visible intensity while the room/map is being built,
-    // so you can actually see what you're placing. Flip these back to
-    // (false / 0) once you're ready to restore the intended dark horror atmosphere.
-    this.flashlight = new THREE.SpotLight(0xfff2d0, 3.2, 9, Math.PI / 6.2, 0.45, 1.6);
+    // Rooms no longer carry their own ambient/eerie lighting (removed for
+    // performance — see room*.js), so the torch is now the player's only
+    // light source. Brighter, longer-range, and a wider cone than before so
+    // it actually lights up a dark room instead of just a narrow spot.
+    this.flashlightIntensity = 6.5;
+    this.flashlight = new THREE.SpotLight(0xfff2d0, this.flashlightIntensity, 14, Math.PI / 5, 0.5, 1.2);
     this.flashlight.castShadow = true;
     // PERFORMANCE: this shadow map re-renders the scene from the flashlight's
     // point of view every single frame — it's the single most expensive part
@@ -140,7 +142,7 @@ export class Engine {
 
   toggleFlashlight() {
     this.flashlightOn = !this.flashlightOn;
-    this.flashlight.intensity = this.flashlightOn ? 3.2 : 0;
+    this.flashlight.intensity = this.flashlightOn ? this.flashlightIntensity : 0;
   }
 
   _tryInteract() {
