@@ -52,15 +52,8 @@ export function createCorridor(scene, engine, startZ) {
   addWallBox(-CORRIDOR_W / 2 - t / 2, centerZ, t, CORRIDOR_LEN + t);
   addWallBox(CORRIDOR_W / 2 + t / 2, centerZ, t, CORRIDOR_LEN + t);
 
-  // ---------- flickering bulb light so the passage isn't pitch black ----------
-  const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
-  bulbLight.position.set(0, CORRIDOR_H - 0.3, centerZ);
-  scene.add(bulbLight);
-
-  let flickerT = 0;
-  function update(dt) {
-    flickerT += dt;
-    bulbLight.intensity = 1.3 + Math.sin(flickerT * 7) * 0.3 + (Math.random() - 0.5) * 0.4;
+  function update() {
+    // intentionally static
   }
 
   return { colliders, update, startZ, endZ };
@@ -111,15 +104,8 @@ export function createCorridorWest(scene, engine, startX, z) {
   addWallBox(centerX, z - CORRIDOR_W / 2 - t / 2, CORRIDOR_LEN + t, t);
   addWallBox(centerX, z + CORRIDOR_W / 2 + t / 2, CORRIDOR_LEN + t, t);
 
-  // ---------- flickering bulb light so the passage isn't pitch black ----------
-  const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
-  bulbLight.position.set(centerX, CORRIDOR_H - 0.3, z);
-  scene.add(bulbLight);
-
-  let flickerT = 0;
-  function update(dt) {
-    flickerT += dt;
-    bulbLight.intensity = 1.3 + Math.sin(flickerT * 7) * 0.3 + (Math.random() - 0.5) * 0.4;
+  function update() {
+    // intentionally static
   }
 
   return { colliders, update, startX, endX, z };
@@ -172,23 +158,8 @@ export function createCorridorEast(scene, engine, startX, z, length = CORRIDOR_L
   addWallBox(centerX, z - CORRIDOR_W / 2 - t / 2, length + t, t);
   addWallBox(centerX, z + CORRIDOR_W / 2 + t / 2, length + t, t);
 
-  // ---------- flickering bulb light(s) so the passage isn't pitch black ----------
-  const bulbCount = Math.max(1, Math.round(length / CORRIDOR_LEN));
-  const bulbLights = [];
-  for (let i = 0; i < bulbCount; i++) {
-    const bx = startX + (length / bulbCount) * (i + 0.5);
-    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
-    bulbLight.position.set(bx, CORRIDOR_H - 0.3, z);
-    scene.add(bulbLight);
-    bulbLights.push(bulbLight);
-  }
-
-  let flickerT = 0;
-  function update(dt) {
-    flickerT += dt;
-    bulbLights.forEach((bulbLight, i) => {
-      bulbLight.intensity = 1.3 + Math.sin(flickerT * 7 + i) * 0.3 + (Math.random() - 0.5) * 0.4;
-    });
+  function update() {
+    // intentionally static
   }
 
   return { colliders, update, startX, endX, z };
@@ -241,23 +212,8 @@ export function createCorridorSouth(scene, engine, startZ, x, length = CORRIDOR_
   addWallBox(x - CORRIDOR_W / 2 - t / 2, centerZ, t, length + t);
   addWallBox(x + CORRIDOR_W / 2 + t / 2, centerZ, t, length + t);
 
-  // ---------- flickering bulb light(s) so the passage isn't pitch black ----------
-  const bulbCount = Math.max(1, Math.round(length / CORRIDOR_LEN));
-  const bulbLights = [];
-  for (let i = 0; i < bulbCount; i++) {
-    const bz = startZ + (length / bulbCount) * (i + 0.5);
-    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
-    bulbLight.position.set(x, CORRIDOR_H - 0.3, bz);
-    scene.add(bulbLight);
-    bulbLights.push(bulbLight);
-  }
-
-  let flickerT = 0;
-  function update(dt) {
-    flickerT += dt;
-    bulbLights.forEach((bulbLight, i) => {
-      bulbLight.intensity = 1.3 + Math.sin(flickerT * 7 + i) * 0.3 + (Math.random() - 0.5) * 0.4;
-    });
+  function update() {
+    // intentionally static
   }
 
   return { colliders, update, startZ, endZ, x };
@@ -309,15 +265,8 @@ export function createCorridorNorth(scene, engine, startZ, x) {
   addWallBox(x - CORRIDOR_W / 2 - t / 2, centerZ, t, CORRIDOR_LEN + t);
   addWallBox(x + CORRIDOR_W / 2 + t / 2, centerZ, t, CORRIDOR_LEN + t);
 
-  // ---------- flickering bulb light so the passage isn't pitch black ----------
-  const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
-  bulbLight.position.set(x, CORRIDOR_H - 0.3, centerZ);
-  scene.add(bulbLight);
-
-  let flickerT = 0;
-  function update(dt) {
-    flickerT += dt;
-    bulbLight.intensity = 1.3 + Math.sin(flickerT * 7) * 0.3 + (Math.random() - 0.5) * 0.4;
+  function update() {
+    // intentionally static
   }
 
   return { colliders, update, startZ, endZ, x };
@@ -438,29 +387,8 @@ export function createCorridorBendEastSouth(scene, engine, startX, startZ, corne
     innerSouthLegZ1 - innerSouthLegZ0
   );
 
-  // ---------- flickering bulb lights along both legs ----------
-  const bulbLights = [];
-  const eastBulbCount = Math.max(1, Math.round(eastLen / CORRIDOR_LEN));
-  for (let i = 0; i < eastBulbCount; i++) {
-    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
-    bulbLight.position.set(startX + (eastLen / eastBulbCount) * (i + 0.5), CORRIDOR_H - 0.3, startZ);
-    scene.add(bulbLight);
-    bulbLights.push(bulbLight);
-  }
-  const southBulbCount = Math.max(1, Math.round(southLen / CORRIDOR_LEN));
-  for (let i = 0; i < southBulbCount; i++) {
-    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
-    bulbLight.position.set(cornerX, CORRIDOR_H - 0.3, startZ + (southLen / southBulbCount) * (i + 0.5));
-    scene.add(bulbLight);
-    bulbLights.push(bulbLight);
-  }
-
-  let flickerT = 0;
-  function update(dt) {
-    flickerT += dt;
-    bulbLights.forEach((bulbLight, i) => {
-      bulbLight.intensity = 1.3 + Math.sin(flickerT * 7 + i) * 0.3 + (Math.random() - 0.5) * 0.4;
-    });
+  function update() {
+    // intentionally static
   }
 
   return { colliders, update, startX, startZ, cornerX, endZ };
@@ -581,29 +509,8 @@ export function createCorridorBendWestNorth(scene, engine, startX, startZ, corne
     innerNorthLegZ1 - innerNorthLegZ0
   );
 
-  // ---------- flickering bulb lights along both legs ----------
-  const bulbLights = [];
-  const westBulbCount = Math.max(1, Math.round(westLen / CORRIDOR_LEN));
-  for (let i = 0; i < westBulbCount; i++) {
-    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
-    bulbLight.position.set(startX - (westLen / westBulbCount) * (i + 0.5), CORRIDOR_H - 0.3, startZ);
-    scene.add(bulbLight);
-    bulbLights.push(bulbLight);
-  }
-  const northBulbCount = Math.max(1, Math.round(northLen / CORRIDOR_LEN));
-  for (let i = 0; i < northBulbCount; i++) {
-    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
-    bulbLight.position.set(cornerX, CORRIDOR_H - 0.3, startZ - (northLen / northBulbCount) * (i + 0.5));
-    scene.add(bulbLight);
-    bulbLights.push(bulbLight);
-  }
-
-  let flickerT = 0;
-  function update(dt) {
-    flickerT += dt;
-    bulbLights.forEach((bulbLight, i) => {
-      bulbLight.intensity = 1.3 + Math.sin(flickerT * 7 + i) * 0.3 + (Math.random() - 0.5) * 0.4;
-    });
+  function update() {
+    // intentionally static
   }
 
   return { colliders, update, startX, startZ, cornerX, endZ };
@@ -729,36 +636,8 @@ export function createCorridorDoglegWestNorthWest(scene, engine, startX, startZ,
     (startZ - CORRIDOR_W / 2) - corner2OuterZ
   ); // outer near corner2 (meets leg3's north wall exactly), inner near corner1 (stops short)
 
-  // ---------- flickering bulb lights along all three legs ----------
-  const bulbLights = [];
-  const leg1BulbCount = Math.max(1, Math.round(leg1Len / CORRIDOR_LEN));
-  for (let i = 0; i < leg1BulbCount; i++) {
-    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
-    bulbLight.position.set(startX - (leg1Len / leg1BulbCount) * (i + 0.5), CORRIDOR_H - 0.3, startZ);
-    scene.add(bulbLight);
-    bulbLights.push(bulbLight);
-  }
-  const leg2BulbCount = Math.max(1, Math.round(leg2Len / CORRIDOR_LEN));
-  for (let i = 0; i < leg2BulbCount; i++) {
-    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
-    bulbLight.position.set(turnX, CORRIDOR_H - 0.3, startZ - (leg2Len / leg2BulbCount) * (i + 0.5));
-    scene.add(bulbLight);
-    bulbLights.push(bulbLight);
-  }
-  const leg3BulbCount = Math.max(1, Math.round(leg3Len / CORRIDOR_LEN));
-  for (let i = 0; i < leg3BulbCount; i++) {
-    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
-    bulbLight.position.set(turnX - (leg3Len / leg3BulbCount) * (i + 0.5), CORRIDOR_H - 0.3, endZ);
-    scene.add(bulbLight);
-    bulbLights.push(bulbLight);
-  }
-
-  let flickerT = 0;
-  function update(dt) {
-    flickerT += dt;
-    bulbLights.forEach((bulbLight, i) => {
-      bulbLight.intensity = 1.3 + Math.sin(flickerT * 7 + i) * 0.3 + (Math.random() - 0.5) * 0.4;
-    });
+  function update() {
+    // intentionally static
   }
 
   return { colliders, update, startX, startZ, turnX, endZ, endX };
