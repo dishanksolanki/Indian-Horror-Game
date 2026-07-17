@@ -1,7 +1,7 @@
 // room1.js — ROOM 1: an old Indian haveli room.
 // Pure map for now: floor, walls, charpai, diya light, puja corner, wooden almirah.
 // North wall has a doorway gap that connects to the corridor -> room2.
-// No jumpscares / mechanics yet — just the walkable space.
+// No jumpscares / mechanics yet — just the walkable space (+ the charpai hide spot below).
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -73,39 +73,133 @@ export function createRoom1(scene, engine) {
   addWallBox((doorGap / 2 + northSideLen / 2), -ROOM_D / 2, northSideLen, t);
   addWallBox(0, -ROOM_D / 2, doorGap, t, 0.4, ROOM_H - 0.2); // lintel
 
-  // ---------- charpai (rope cot) ----------
+  // ---------- charpai (rope cot) — rebuilt as a hide spot ----------
+  // Taller legs than a "real" charpai on purpose, so there's an obvious,
+  // readable gap underneath to crawl into, plus cloth skirts draped off the
+  // frame on three sides (west, east, head-end) to visually sell "tucked out
+  // of sight." The foot end (+z, facing into the room) is left open — that's
+  // the side the player approaches from and ducks in through.
   const woodMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
   const ropeMat = new THREE.MeshStandardMaterial({ color: 0x9c8256, roughness: 0.95 });
+  const clothMat = new THREE.MeshStandardMaterial({
+    color: 0x6b2e28,
+    roughness: 1,
+    side: THREE.DoubleSide,
+  });
+
+  const COT_LEG_H = 0.52;   // taller than before — real crawl clearance underneath
+  const COT_W = 1.5;        // x extent of the frame (matches leg spread)
+  const COT_D = 2.04;       // z extent of the frame
+
   const cotGroup = new THREE.Group();
+
   const legPositions = [
     [-0.75, -1.0], [0.75, -1.0], [-0.75, 1.0], [0.75, 1.0]
   ];
   legPositions.forEach(([lx, lz]) => {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.45, 8), woodMat);
-    leg.position.set(lx, 0.225, lz);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, COT_LEG_H, 8), woodMat);
+    leg.position.set(lx, COT_LEG_H / 2, lz);
     leg.castShadow = true;
     cotGroup.add(leg);
   });
+
   const frameSideA = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 2.1), woodMat);
-  frameSideA.position.set(-0.75, 0.45, 0);
+  frameSideA.position.set(-0.75, COT_LEG_H, 0);
   const frameSideB = frameSideA.clone(); frameSideB.position.x = 0.75;
   const frameEndA = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.06, 0.06), woodMat);
-  frameEndA.position.set(0, 0.45, -1.02);
+  frameEndA.position.set(0, COT_LEG_H, -1.02);
   const frameEndB = frameEndA.clone(); frameEndB.position.z = 1.02;
   cotGroup.add(frameSideA, frameSideB, frameEndA, frameEndB);
+
   const weave = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2.0), ropeMat);
   weave.rotation.x = -Math.PI / 2;
-  weave.position.set(0, 0.47, 0);
+  weave.position.set(0, COT_LEG_H + 0.02, 0);
   weave.receiveShadow = true;
   cotGroup.add(weave);
+
+  // a lumpy, slept-in blanket on top, just for detail/atmosphere
+  const blanket = new THREE.Mesh(
+    new THREE.BoxGeometry(1.3, 0.08, 1.7),
+    new THREE.MeshStandardMaterial({ color: 0x7a3a30, roughness: 1 })
+  );
+  blanket.position.set(0.05, COT_LEG_H + 0.09, -0.1);
+  blanket.rotation.y = 0.05;
+  blanket.castShadow = true;
+  cotGroup.add(blanket);
+
+  // cloth skirts hanging from the frame down toward the floor — west, east
+  // and head-end (-z) sides. Foot end (+z) is deliberately left uncovered:
+  // that's the approach/entry side for the hide spot.
+  function addSkirt(cx, cz, w, rotY) {
+    const skirt = new THREE.Mesh(new THREE.PlaneGeometry(w, COT_LEG_H - 0.03), clothMat);
+    skirt.position.set(cx, (COT_LEG_H - 0.03) / 2, cz);
+    skirt.rotation.y = rotY;
+    skirt.castShadow = true;
+    skirt.receiveShadow = true;
+    cotGroup.add(skirt);
+  }
+  addSkirt(-0.76, 0, COT_D, Math.PI / 2);       // west side
+  addSkirt(0.76, 0, COT_D, Math.PI / 2);        // east side
+  addSkirt(0, -1.03, COT_W, 0);                 // head end (-z)
+
   cotGroup.position.set(-2.2, 0, 2.8);
   cotGroup.rotation.y = 0.15;
   cotGroup.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   scene.add(cotGroup);
+
+  // Collider only covers the frame/blanket band near the top, NOT the empty
+  // space underneath — that's what makes the crawl space walkable/hideable
+  // instead of solid. Walking into the cot from any side still bumps into
+  // this band; only the deliberate hide interaction teleports the camera
+  // down into the gap below it.
   const cotBox = new THREE.Box3().setFromObject(cotGroup);
-  cotBox.min.y = 0; cotBox.max.y = 0.6; // low collider so it just blocks walking through
+  cotBox.min.y = COT_LEG_H - 0.05;
+  cotBox.max.y = COT_LEG_H + 0.2;
   colliders.push(cotBox);
   engine.addCollider(cotBox);
+
+  // ---------- charpai hide spot ----------
+  // Walk up to the open (foot-end) side of the cot and press E to duck down
+  // into the gap underneath, below the skirts and out of sight. Press E
+  // again to pop back out to exactly where you were standing.
+  //
+  // Both points are expressed in the cot's own local space and rotated by
+  // cotGroup.rotation.y so they stay correct if the cot's position/rotation
+  // above is ever tweaked.
+  function cotLocalToWorld(localX, localY, localZ) {
+    const v = new THREE.Vector3(localX, localY, localZ);
+    v.applyAxisAngle(new THREE.Vector3(0, 1, 0), cotGroup.rotation.y);
+    v.add(cotGroup.position);
+    return v;
+  }
+
+  // where the player stands to trigger the prompt — just outside the open foot end (+z)
+  const charpaiHideApproach = cotLocalToWorld(0, 1.3, 1.7);
+  // where the camera snaps to once hidden — centered under the cot, low, between the legs
+  const charpaiHideSpot = cotLocalToWorld(0, 0, 0.15);
+  const charpaiHideYaw = cotGroup.rotation.y + Math.PI; // face back out toward the room
+  const charpaiCrouchHeight = COT_LEG_H * 0.6; // low enough to clear the frame, off the floor
+
+  const charpaiHideAnchor = new THREE.Object3D();
+  charpaiHideAnchor.position.copy(charpaiHideApproach);
+  scene.add(charpaiHideAnchor);
+
+  let hidingUnderCharpai = false;
+  engine.addInteractable(charpaiHideAnchor, {
+    radius: 2.2,
+    prompt: "Hide Under Charpai",
+    onInteract: () => {
+      if (engine.hiding) return;
+      hidingUnderCharpai = true;
+      engine.enterHide({
+        position: charpaiHideSpot,
+        yaw: charpaiHideYaw,
+        crouchHeight: charpaiCrouchHeight,
+        exitPrompt: "Come Out",
+        onExit: () => { hidingUnderCharpai = false; },
+      });
+    },
+  });
 
   // ---------- puja corner (small shelf with diya) ----------
   const shelf = new THREE.Mesh(
