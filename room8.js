@@ -80,22 +80,9 @@ export function createRoom8(scene, engine, doorZ, doorX) {
   addWallBox(centerX + (DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
   addWallBox(centerX, northZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
-  // ---------- ambient room lighting ----------
-  const ambient = new THREE.AmbientLight(0x413c30, 1.6);
-  scene.add(ambient);
-
-  const fillLight = new THREE.HemisphereLight(0x7c7364, 0x2c2618, 1.0);
-  scene.add(fillLight);
-
-  const eerieLight = new THREE.PointLight(0x9fb0c8, 1.6, 7, 2);
-  eerieLight.position.set(centerX, ROOM_H - 0.35, centerZ);
-  scene.add(eerieLight);
-
-  // ---------- per-frame update: subtle eerie light pulse ----------
-  let pulseT = 0;
-  function update(dt) {
-    pulseT += dt;
-    eerieLight.intensity = 1.4 + Math.sin(pulseT * 1.3) * 0.3;
+  // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
+  function update() {
+    // intentionally static
   }
 
   return { colliders, update, centerX, centerZ, northZ, southZ };
