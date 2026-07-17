@@ -1,5 +1,5 @@
 // room1.js — ROOM 1: an old Indian haveli room.
-// Pure map for now: floor, walls, charpai, diya light, puja corner.
+// Pure map for now: floor, walls, charpai, diya light, puja corner, wooden almirah.
 // North wall has a doorway gap that connects to the corridor -> room2.
 // No jumpscares / mechanics yet — just the walkable space.
 
@@ -133,6 +133,87 @@ export function createRoom1(scene, engine) {
   const flame = new THREE.Mesh(flameGeo, flameMat);
   flame.position.set(-ROOM_W / 2 + 0.35, 1.2, -3.2);
   scene.add(flame);
+
+  // ---------- wooden almirah (old Indian wardrobe/cupboard) ----------
+  // Stood flush against the east wall, south of the doorway swing and clear of
+  // the charpai and puja corner. Simple carcass + two hinged-look doors + a
+  // small cornice on top, in the same dark teak tone as the rest of the wood
+  // furniture in the room.
+  const almirahBodyMat = new THREE.MeshStandardMaterial({ color: 0x2f1e10, roughness: 0.8 });
+  const almirahDoorMat = new THREE.MeshStandardMaterial({ color: 0x3d2814, roughness: 0.7 });
+  const almirahTrimMat = new THREE.MeshStandardMaterial({ color: 0x6b4a26, roughness: 0.6, metalness: 0.05 });
+  const almirahHandleMat = new THREE.MeshStandardMaterial({ color: 0x8a7350, roughness: 0.4, metalness: 0.6 });
+
+  const almirahGroup = new THREE.Group();
+
+  const ALM_W = 1.0;  // width (along room's z, since it's flush on the east wall)
+  const ALM_H = 2.05; // height
+  const ALM_D = 0.55; // depth (into the room, along x)
+
+  // main carcass
+  const almirahBody = new THREE.Mesh(
+    new THREE.BoxGeometry(ALM_D, ALM_H, ALM_W),
+    almirahBodyMat
+  );
+  almirahBody.position.set(0, ALM_H / 2, 0);
+  almirahBody.castShadow = true;
+  almirahBody.receiveShadow = true;
+  almirahGroup.add(almirahBody);
+
+  // cornice / crown on top, slightly overhanging
+  const almirahCornice = new THREE.Mesh(
+    new THREE.BoxGeometry(ALM_D + 0.08, 0.08, ALM_W + 0.08),
+    almirahTrimMat
+  );
+  almirahCornice.position.set(0, ALM_H + 0.04, 0);
+  almirahCornice.castShadow = true;
+  almirahGroup.add(almirahCornice);
+
+  // plinth/base
+  const almirahBase = new THREE.Mesh(
+    new THREE.BoxGeometry(ALM_D + 0.04, 0.08, ALM_W + 0.04),
+    almirahTrimMat
+  );
+  almirahBase.position.set(0, 0.04, 0);
+  almirahGroup.add(almirahBase);
+
+  // two door panels, slightly proud of the carcass face, with a center seam
+  const doorW = ALM_W / 2 - 0.03;
+  const doorH = ALM_H - 0.3;
+  const doorGeo = new THREE.BoxGeometry(0.04, doorH, doorW);
+  const doorL = new THREE.Mesh(doorGeo, almirahDoorMat);
+  doorL.position.set(ALM_D / 2 + 0.02, ALM_H / 2, -doorW / 2 - 0.015);
+  doorL.castShadow = true;
+  const doorR = doorL.clone();
+  doorR.position.z = doorW / 2 + 0.015;
+  almirahGroup.add(doorL, doorR);
+
+  // small carved panel inset on each door for a bit of haveli character
+  const panelGeo = new THREE.BoxGeometry(0.01, doorH * 0.55, doorW * 0.6);
+  const panelL = new THREE.Mesh(panelGeo, almirahTrimMat);
+  panelL.position.set(ALM_D / 2 + 0.045, ALM_H / 2, -doorW / 2 - 0.015);
+  const panelR = panelL.clone();
+  panelR.position.z = doorW / 2 + 0.015;
+  almirahGroup.add(panelL, panelR);
+
+  // brass-ish handles
+  const handleGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.14, 8);
+  const handleL = new THREE.Mesh(handleGeo, almirahHandleMat);
+  handleL.rotation.z = Math.PI / 2;
+  handleL.position.set(ALM_D / 2 + 0.06, ALM_H / 2, -0.04);
+  const handleR = handleL.clone();
+  handleR.position.z = 0.04;
+  almirahGroup.add(handleL, handleR);
+
+  // place flush against the east wall (inner face is at ROOM_W/2 - t/2),
+  // south of the moonlight window shaft and clear of the charpai/puja corner
+  almirahGroup.position.set(ROOM_W / 2 - t / 2 - ALM_D / 2, 0, 3.0);
+  almirahGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  scene.add(almirahGroup);
+
+  const almirahBox = new THREE.Box3().setFromObject(almirahGroup);
+  colliders.push(almirahBox);
+  engine.addCollider(almirahBox);
 
   // ---------- ambient room lighting ----------
   const ambient = new THREE.AmbientLight(0x4a4536, 2.2);
