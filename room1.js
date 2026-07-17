@@ -128,8 +128,11 @@ export function createRoom1(scene, engine) {
   cotGroup.add(blanket);
 
   // cloth skirts hanging from the frame down toward the floor — west, east
-  // and head-end (-z) sides. Foot end (+z) is deliberately left uncovered:
-  // that's the approach/entry side for the hide spot.
+  // and foot-end (+z) sides. Head end (-z) is deliberately left uncovered:
+  // that's the approach/entry side for the hide spot. (The foot end sits
+  // right up against the south wall with barely any floor space to stand
+  // on, so the open side has to be the head end, which opens onto the
+  // room's clear floor instead.)
   function addSkirt(cx, cz, w, rotY) {
     const skirt = new THREE.Mesh(new THREE.PlaneGeometry(w, COT_LEG_H - 0.03), clothMat);
     skirt.position.set(cx, (COT_LEG_H - 0.03) / 2, cz);
@@ -140,7 +143,7 @@ export function createRoom1(scene, engine) {
   }
   addSkirt(-0.76, 0, COT_D, Math.PI / 2);       // west side
   addSkirt(0.76, 0, COT_D, Math.PI / 2);        // east side
-  addSkirt(0, -1.03, COT_W, 0);                 // head end (-z)
+  addSkirt(0, 1.03, COT_W, 0);                  // foot end (+z)
 
   cotGroup.position.set(-2.2, 0, 2.8);
   cotGroup.rotation.y = 0.15;
@@ -159,9 +162,16 @@ export function createRoom1(scene, engine) {
   engine.addCollider(cotBox);
 
   // ---------- charpai hide spot ----------
-  // Walk up to the open (foot-end) side of the cot and press E to duck down
+  // Walk up to the open (head-end) side of the cot and press E to duck down
   // into the gap underneath, below the skirts and out of sight. Press E
   // again to pop back out to exactly where you were standing.
+  //
+  // NOTE: this used to anchor off the foot end (+z), but the cot sits at
+  // z=2.8 only ~1.7 units from the south wall (z=4.5) — that anchor landed
+  // almost exactly inside the wall, so the player could never actually
+  // stand close enough / face it correctly and the prompt never appeared.
+  // The head end (-z) opens onto the room's clear floor instead, so that's
+  // the side used for both the approach point and the facing skirts above.
   //
   // Both points are expressed in the cot's own local space and rotated by
   // cotGroup.rotation.y so they stay correct if the cot's position/rotation
@@ -173,11 +183,14 @@ export function createRoom1(scene, engine) {
     return v;
   }
 
-  // where the player stands to trigger the prompt — just outside the open foot end (+z)
-  const charpaiHideApproach = cotLocalToWorld(0, 1.3, 1.7);
+  // where the player stands to trigger the prompt — just outside the open head end (-z)
+  const charpaiHideApproach = cotLocalToWorld(0, 1.3, -1.7);
   // where the camera snaps to once hidden — centered under the cot, low, between the legs
-  const charpaiHideSpot = cotLocalToWorld(0, 0, 0.15);
-  const charpaiHideYaw = cotGroup.rotation.y + Math.PI; // face back out toward the room
+  const charpaiHideSpot = cotLocalToWorld(0, 0, -0.15);
+  // camera's default forward is -Z at yaw 0, which already matches the local
+  // -z (open/head-end) direction once rotated by the cot's own yaw — so no
+  // extra +PI offset is needed here (unlike the old foot-end version).
+  const charpaiHideYaw = cotGroup.rotation.y;
   const charpaiCrouchHeight = COT_LEG_H * 0.6; // low enough to clear the frame, off the floor
 
   const charpaiHideAnchor = new THREE.Object3D();
