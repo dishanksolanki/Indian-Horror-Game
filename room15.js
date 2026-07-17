@@ -84,14 +84,7 @@ export function createRoom15(scene, engine, doorZ, doorX) {
   addWallBox(centerX + (DOOR_GAP / 2 + southSideLen / 2), southZ, southSideLen, t);
   addWallBox(centerX, southZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
-  // ---------- ambient room lighting: dim and still ----------
-  const ambient = new THREE.AmbientLight(0x241f19, 1.0);
-  scene.add(ambient);
-
-  const fillLight = new THREE.HemisphereLight(0x453b2e, 0x160f0a, 0.6);
-  scene.add(fillLight);
-
-  // ---------- per-frame update: nothing animated here — a quiet, still room ----------
+  // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
   function update() {
     // intentionally static
   }
