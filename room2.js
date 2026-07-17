@@ -90,22 +90,9 @@ export function createRoom2(scene, engine, doorZ) {
   addWallBox((DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
   addWallBox(0, northZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
-  // ---------- ambient room lighting ----------
-  const ambient = new THREE.AmbientLight(0x4a4536, 2.0);
-  scene.add(ambient);
-
-  const fillLight = new THREE.HemisphereLight(0x8a8070, 0x3a3122, 1.2);
-  scene.add(fillLight);
-
-  const eerieLight = new THREE.PointLight(0x9fb0c8, 1.8, 8, 2);
-  eerieLight.position.set(0, ROOM_H - 0.4, centerZ);
-  scene.add(eerieLight);
-
-  // ---------- per-frame update: subtle eerie light pulse ----------
-  let pulseT = 0;
-  function update(dt) {
-    pulseT += dt;
-    eerieLight.intensity = 1.6 + Math.sin(pulseT * 1.5) * 0.3;
+  // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
+  function update() {
+    // intentionally static
   }
 
   // westX/westDoorZ: the doorway sits in the middle of the west wall —
