@@ -95,6 +95,82 @@ export function createRoom16(scene, engine, doorZ, doorX) {
   addWallBox(centerX + (DOOR_GAP / 2 + southSideLen / 2), southZ, southSideLen, t);
   addWallBox(centerX, southZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
+  // ---------- the ancient door (north wall) — this is the win condition ----------
+  // NOT a passage: the north wall stays fully solid/collidable (see addWallBox
+  // above). This is a decorative double door mounted flush against the inside
+  // face of that wall. Walking up to it and pressing [E] opens it and ends the
+  // game — see the "game:win" event dispatched below, handled in main.js.
+  const doorFrameMat = new THREE.MeshStandardMaterial({ color: 0x1c130a, roughness: 0.85 });
+  const doorPanelMat = new THREE.MeshStandardMaterial({ color: 0x2b1c10, roughness: 0.7, metalness: 0.05 });
+  const doorStudMat = new THREE.MeshStandardMaterial({ color: 0x8a7442, roughness: 0.4, metalness: 0.7 });
+
+  const DOOR_W = 2.6;
+  const DOOR_H = 2.5;
+  const doorFaceZ = northZ + t / 2 + 0.03; // just off the interior face of the north wall
+  const panelW = DOOR_W / 2;
+
+  // frame
+  const doorFrame = new THREE.Mesh(
+    new THREE.BoxGeometry(DOOR_W + 0.4, DOOR_H + 0.3, 0.12),
+    doorFrameMat
+  );
+  doorFrame.position.set(centerX, DOOR_H / 2 + 0.05, doorFaceZ - 0.05);
+  doorFrame.castShadow = doorFrame.receiveShadow = true;
+  scene.add(doorFrame);
+
+  // two hinged panels, pivoting at their outer edges so they can swing open
+  function makeDoorPanel(sign) {
+    const pivot = new THREE.Group();
+    pivot.position.set(centerX + sign * panelW, DOOR_H / 2, doorFaceZ);
+
+    const panel = new THREE.Mesh(
+      new THREE.BoxGeometry(panelW - 0.04, DOOR_H - 0.1, 0.08),
+      doorPanelMat
+    );
+    panel.position.x = -sign * (panelW / 2);
+    panel.castShadow = panel.receiveShadow = true;
+    pivot.add(panel);
+
+    // a few decorative iron studs down the middle of the panel
+    for (let row = -1; row <= 1; row++) {
+      const stud = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 6), doorStudMat);
+      stud.position.set(-sign * (panelW / 2), row * (DOOR_H / 3.2), 0.05);
+      pivot.add(stud);
+    }
+
+    // ring handle near the inner edge
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.07, 0.015, 6, 12),
+      doorStudMat
+    );
+    ring.position.set(-sign * (panelW - 0.15), 0, 0.06);
+    pivot.add(ring);
+
+    scene.add(pivot);
+    return pivot;
+  }
+
+  const doorPanelLeft = makeDoorPanel(-1);
+  const doorPanelRight = makeDoorPanel(1);
+
+  // door state machine: closed -> opening (animated swing) -> open
+  let doorState = "closed";
+  let doorOpenT = 0;
+  const DOOR_OPEN_DURATION = 1.4; // seconds
+  const DOOR_OPEN_ANGLE = Math.PI * 0.6;
+
+  function openDoor() {
+    if (doorState !== "closed") return;
+    doorState = "opening";
+    window.dispatchEvent(new CustomEvent("game:win"));
+  }
+
+  engine.addInteractable(doorFrame, {
+    radius: 2.6,
+    prompt: "Open the door",
+    onInteract: openDoor,
+  });
+
   // ---------- ambient room lighting: dim, a quiet in-between space ----------
   const ambient = new THREE.AmbientLight(0x231e18, 1.0);
   scene.add(ambient);
@@ -111,6 +187,15 @@ export function createRoom16(scene, engine, doorZ, doorX) {
   function update(dt) {
     flickerT += dt;
     landingLight.intensity = 1.3 + Math.sin(flickerT * 6) * 0.25 + (Math.random() - 0.5) * 0.3;
+
+    // animate the door swinging open once the player has interacted with it
+    if (doorState === "opening") {
+      doorOpenT = Math.min(1, doorOpenT + dt / DOOR_OPEN_DURATION);
+      const eased = 1 - Math.pow(1 - doorOpenT, 3); // ease-out
+      doorPanelLeft.rotation.y = -eased * DOOR_OPEN_ANGLE;
+      doorPanelRight.rotation.y = eased * DOOR_OPEN_ANGLE;
+      if (doorOpenT >= 1) doorState = "open";
+    }
   }
 
   // eastDoorZ: the doorway sits in the middle of the east wall — bridging corridor to hall1 starts here.
