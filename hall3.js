@@ -2,7 +2,8 @@
 // (10x13m), reached via a corridor running north from room23's north doorway.
 // South wall has a doorway gap matching the corridor width (entrance from room23).
 // North wall also has a matching doorway gap (exit toward room24 via a corridor).
-// East/west walls remain solid, no window.
+// East wall now also has a doorway gap, leading via a bridging corridor to hall2.
+// West wall remains solid, no window.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -11,6 +12,10 @@ const ROOM_W = 10; // east-west — matches hall1/hall2
 const ROOM_D = 13; // north-south — matches hall1/hall2
 const ROOM_H = 3.4; // matches hall1/hall2
 const DOOR_GAP = 1.6; // must match corridor width
+// how far the new east doorway (to hall2) sits from the south wall — chosen to
+// land inside the z-band where hall3's east wall and hall2's west wall actually
+// overlap (see the matching offset in hall2.js)
+const EAST_DOOR_OFFSET_FROM_SOUTH = 1.75;
 
 // doorZ: the z coordinate where hall3's south wall (and doorway) sits —
 // this is corridor26.endZ, so the door lines up exactly with the passage.
@@ -75,8 +80,16 @@ export function createHall3(scene, engine, doorZ, doorX) {
   addWallBox(centerX, northZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
   // west wall — solid, no window
   addWallBox(centerX - ROOM_W / 2, centerZ, t, ROOM_D + t);
-  // east wall — solid, no window
-  addWallBox(centerX + ROOM_W / 2, centerZ, t, ROOM_D + t);
+  // east wall — doorway gap toward hall2 (previously fully solid, no window)
+  const eastDoorZ = southZ - EAST_DOOR_OFFSET_FROM_SOUTH;
+  const eastGapNorthZ = eastDoorZ - DOOR_GAP / 2;
+  const eastGapSouthZ = eastDoorZ + DOOR_GAP / 2;
+  const eastNorthSegLen = eastGapNorthZ - northZ;
+  const eastSouthSegLen = southZ - eastGapSouthZ;
+  const eastX = centerX + ROOM_W / 2;
+  addWallBox(eastX, northZ + eastNorthSegLen / 2, t, eastNorthSegLen);
+  addWallBox(eastX, eastGapSouthZ + eastSouthSegLen / 2, t, eastSouthSegLen);
+  addWallBox(eastX, eastDoorZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
   // south wall — doorway gap in the middle, aligned with the corridor from room23
   const southSideLen = (ROOM_W - DOOR_GAP) / 2;
@@ -115,5 +128,5 @@ export function createHall3(scene, engine, doorZ, doorX) {
   // createCorridorNorth starts here and runs further north toward room24.
   const northDoorX = centerX;
 
-  return { colliders, update, centerX, centerZ, northZ, southZ, northDoorX };
+  return { colliders, update, centerX, centerZ, northZ, southZ, northDoorX, eastX, eastDoorZ };
 }
