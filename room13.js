@@ -91,22 +91,9 @@ export function createRoom13(scene, engine, doorX, doorZ) {
   addWallBox(westX, centerZ + (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
   addWallBox(westX, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
-  // ---------- ambient room lighting: dim, cramped passage room ----------
-  const ambient = new THREE.AmbientLight(0x211c15, 1.0);
-  scene.add(ambient);
-
-  const fillLight = new THREE.HemisphereLight(0x3f362a, 0x120d09, 0.6);
-  scene.add(fillLight);
-
-  const flickerLight = new THREE.PointLight(0xffcf8a, 1.2, 6, 2);
-  flickerLight.position.set(centerX, ROOM_H - 0.3, centerZ);
-  scene.add(flickerLight);
-
-  // ---------- per-frame update: faint bulb flicker ----------
-  let flickerT = 0;
-  function update(dt) {
-    flickerT += dt;
-    flickerLight.intensity = 1.0 + Math.sin(flickerT * 6) * 0.2 + (Math.random() - 0.5) * 0.25;
+  // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
+  function update() {
+    // intentionally static
   }
 
   // eastDoorZ/westDoorZ: both doorways share the same z since the corridors on
