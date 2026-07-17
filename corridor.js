@@ -62,17 +62,19 @@ export function createCorridor(scene, engine, startZ) {
 // createCorridorWest — same short passage, but running west (negative x) instead
 // of north, to connect room2's west doorway to room4.
 // startX: the x coordinate of room2's west wall (doorway); z: the doorway's z coordinate.
-export function createCorridorWest(scene, engine, startX, z) {
+// length: optional override of the passage length (defaults to CORRIDOR_LEN) — used
+// for longer bridging passages, e.g. the hall2 <-> hall3 connector.
+export function createCorridorWest(scene, engine, startX, z, length = CORRIDOR_LEN) {
   const colliders = [];
   const wallMat = createWallMaterial();
 
-  const centerX = startX - CORRIDOR_LEN / 2;
-  const endX = startX - CORRIDOR_LEN;
+  const centerX = startX - length / 2;
+  const endX = startX - length;
 
   // ---------- floor: old, dirty tiles ----------
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(CORRIDOR_LEN, CORRIDOR_W),
-    createFloorMaterial(CORRIDOR_LEN, CORRIDOR_W)
+    new THREE.PlaneGeometry(length, CORRIDOR_W),
+    createFloorMaterial(length, CORRIDOR_W)
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(centerX, 0, z);
@@ -81,7 +83,7 @@ export function createCorridorWest(scene, engine, startX, z) {
 
   // ---------- ceiling ----------
   const ceiling = new THREE.Mesh(
-    new THREE.PlaneGeometry(CORRIDOR_LEN, CORRIDOR_W),
+    new THREE.PlaneGeometry(length, CORRIDOR_W),
     new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 1 })
   );
   ceiling.rotation.x = Math.PI / 2;
@@ -101,8 +103,8 @@ export function createCorridorWest(scene, engine, startX, z) {
     return mesh;
   }
 
-  addWallBox(centerX, z - CORRIDOR_W / 2 - t / 2, CORRIDOR_LEN + t, t);
-  addWallBox(centerX, z + CORRIDOR_W / 2 + t / 2, CORRIDOR_LEN + t, t);
+  addWallBox(centerX, z - CORRIDOR_W / 2 - t / 2, length + t, t);
+  addWallBox(centerX, z + CORRIDOR_W / 2 + t / 2, length + t, t);
 
   function update() {
     // intentionally static
