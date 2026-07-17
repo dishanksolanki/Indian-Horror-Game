@@ -177,43 +177,82 @@ export function createRoom1(scene, engine) {
   almirahBase.position.set(0, 0.04, 0);
   almirahGroup.add(almirahBase);
 
-  // two door panels, slightly proud of the carcass face, with a center seam
-  const doorW = ALM_W / 2 - 0.03;
+  // two hinged doors, built on pivot groups so they can actually swing open.
+  // The carcass front (the doors) faces -x — into the room, away from the
+  // east wall the almirah stands against.
+  const doorHalfW = ALM_W / 2 - 0.03;
   const doorH = ALM_H - 0.3;
-  const doorGeo = new THREE.BoxGeometry(0.04, doorH, doorW);
-  const doorL = new THREE.Mesh(doorGeo, almirahDoorMat);
-  doorL.position.set(ALM_D / 2 + 0.02, ALM_H / 2, -doorW / 2 - 0.015);
-  doorL.castShadow = true;
-  const doorR = doorL.clone();
-  doorR.position.z = doorW / 2 + 0.015;
-  almirahGroup.add(doorL, doorR);
-
-  // small carved panel inset on each door for a bit of haveli character
-  const panelGeo = new THREE.BoxGeometry(0.01, doorH * 0.55, doorW * 0.6);
-  const panelL = new THREE.Mesh(panelGeo, almirahTrimMat);
-  panelL.position.set(ALM_D / 2 + 0.045, ALM_H / 2, -doorW / 2 - 0.015);
-  const panelR = panelL.clone();
-  panelR.position.z = doorW / 2 + 0.015;
-  almirahGroup.add(panelL, panelR);
-
-  // brass-ish handles
+  const doorGeo = new THREE.BoxGeometry(0.04, doorH, doorHalfW);
+  const panelGeo = new THREE.BoxGeometry(0.01, doorH * 0.55, doorHalfW * 0.6);
   const handleGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.14, 8);
+  const FRONT_X = -(ALM_D / 2 + 0.02); // front face, proud of the carcass box
+
+  // left door — hinged on the south edge (z = -ALM_W/2), swings toward -x
+  const pivotL = new THREE.Group();
+  pivotL.position.set(FRONT_X, ALM_H / 2, -ALM_W / 2);
+  const doorL = new THREE.Mesh(doorGeo, almirahDoorMat);
+  doorL.position.set(0, 0, doorHalfW / 2);
+  doorL.castShadow = true;
+  const panelL = new THREE.Mesh(panelGeo, almirahTrimMat);
+  panelL.position.set(0.01, 0, doorHalfW / 2);
   const handleL = new THREE.Mesh(handleGeo, almirahHandleMat);
   handleL.rotation.z = Math.PI / 2;
-  handleL.position.set(ALM_D / 2 + 0.06, ALM_H / 2, -0.04);
+  handleL.position.set(-0.04, 0, doorHalfW - 0.06);
+  pivotL.add(doorL, panelL, handleL);
+  almirahGroup.add(pivotL);
+
+  // right door — hinged on the north edge (z = +ALM_W/2), swings toward -x
+  const pivotR = new THREE.Group();
+  pivotR.position.set(FRONT_X, ALM_H / 2, ALM_W / 2);
+  const doorR = new THREE.Mesh(doorGeo, almirahDoorMat);
+  doorR.position.set(0, 0, -doorHalfW / 2);
+  doorR.castShadow = true;
+  const panelR = new THREE.Mesh(panelGeo, almirahTrimMat);
+  panelR.position.set(0.01, 0, -doorHalfW / 2);
   const handleR = handleL.clone();
-  handleR.position.z = 0.04;
-  almirahGroup.add(handleL, handleR);
+  handleR.position.set(-0.04, 0, -(doorHalfW - 0.06));
+  pivotR.add(doorR, panelR, handleR);
+  almirahGroup.add(pivotR);
 
   // place flush against the east wall (inner face is at ROOM_W/2 - t/2),
   // south of the moonlight window shaft and clear of the charpai/puja corner
   almirahGroup.position.set(ROOM_W / 2 - t / 2 - ALM_D / 2, 0, 3.0);
+  almirahGroup.rotation.y = Math.PI; // doors were built facing -x locally; flip to face into the room
   almirahGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   scene.add(almirahGroup);
 
   const almirahBox = new THREE.Box3().setFromObject(almirahGroup);
+  // widen the box a touch on the open side so swung-open doors still block walking through
+  almirahBox.expandByVector(new THREE.Vector3(0.6, 0, 0));
   colliders.push(almirahBox);
   engine.addCollider(almirahBox);
+
+  // ---------- almirah open/close interaction ----------
+  const ALMIRAH_OPEN_ANGLE = Math.PI * 0.62; // ~112°, doors swing outward away from each other
+  let almirahOpen = false;
+  let almirahT = 0; // animated 0 (closed) -> 1 (open)
+
+  // almirahGroup is rotated 180° (doors were modeled facing local -x, then
+  // flipped to face into the room), so a local point in front of the doors
+  // lands at (group.x - localX, group.y + localY, group.z - localZ) in world
+  // space. Compute that once — the almirah doesn't move — and give the
+  // interactable a plain, already-in-world-space anchor object.
+  const almirahWorldAnchor = new THREE.Object3D();
+  almirahWorldAnchor.position.set(
+    almirahGroup.position.x - (FRONT_X - 0.3),
+    almirahGroup.position.y + ALM_H / 2,
+    almirahGroup.position.z
+  );
+  scene.add(almirahWorldAnchor);
+
+  const almirahInteractable = engine.addInteractable(almirahWorldAnchor, {
+    radius: 1.8,
+    prompt: "Open Almirah",
+    onInteract: () => {
+      almirahOpen = !almirahOpen;
+      almirahInteractable.prompt = almirahOpen ? "Close Almirah" : "Open Almirah";
+    },
+  });
 
   // ---------- ambient room lighting ----------
   const ambient = new THREE.AmbientLight(0x4a4536, 2.2);
@@ -241,6 +280,12 @@ export function createRoom1(scene, engine) {
     flickerT += dt;
     diyaFlameLight.intensity = 1.0 + Math.sin(flickerT * 11) * 0.15 + (Math.random() - 0.5) * 0.1;
     flame.scale.y = 1 + Math.sin(flickerT * 14) * 0.15;
+
+    // ease the almirah's door hinge angle toward open (1) or closed (0)
+    const almirahTarget = almirahOpen ? 1 : 0;
+    almirahT += (almirahTarget - almirahT) * Math.min(dt * 5, 1);
+    pivotL.rotation.y = -ALMIRAH_OPEN_ANGLE * almirahT;
+    pivotR.rotation.y = ALMIRAH_OPEN_ANGLE * almirahT;
   }
 
   // northDoorZ: z coordinate of the north wall (doorway) — corridor.js starts here
