@@ -1,10 +1,8 @@
 // room1.js — ROOM 1: an old Indian haveli room.
-// Pure map for now: floor, walls, charpai, diya light, puja corner.
-// North wall has a doorway gap that connects to the corridor -> room2.
+// Pure map for now: floor, walls, jharokha window, charpai, diya light, puja corner, almirah.
 // No jumpscares / mechanics yet — just the walkable space.
 
 import * as THREE from "three";
-import { createWallMaterial, createFloorMaterial } from "./materials.js";
 
 const ROOM_W = 7; // east-west
 const ROOM_D = 9; // north-south
@@ -17,10 +15,10 @@ export function createRoom1(scene, engine) {
   scene.fog = new THREE.FogExp2(0x000000, 0.035);
   scene.background = new THREE.Color(0x000000);
 
-  // ---------- floor: old, dirty tiles ----------
+  // ---------- floor: old stone ----------
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(ROOM_W, ROOM_D),
-    createFloorMaterial(ROOM_W / 2, ROOM_D / 2)
+    new THREE.MeshStandardMaterial({ color: 0x2a231a, roughness: 0.95 })
   );
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
@@ -43,8 +41,8 @@ export function createRoom1(scene, engine) {
     scene.add(beam);
   }
 
-  // ---------- walls: mud-plastered, old Indian haveli wall texture ----------
-  const wallMat = createWallMaterial();
+  // ---------- walls: mud-plastered, warm ochre ----------
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x6b4e33, roughness: 1 });
   const t = 0.2; // thickness
 
   function addWallBox(cx, cz, w, d, h = ROOM_H, cy = h / 2) {
@@ -63,15 +61,38 @@ export function createRoom1(scene, engine) {
   addWallBox(0, ROOM_D / 2, ROOM_W + t, t);
   // west wall — solid
   addWallBox(-ROOM_W / 2, 0, t, ROOM_D + t);
-  // east wall — solid (window removed)
-  addWallBox(ROOM_W / 2, 0, t, ROOM_D + t);
 
-  // north wall — doorway gap in the middle (connects to corridor -> room2)
-  const doorGap = 1.6;
+  // east wall — has the jharokha (lattice window) cut into it, built from two segments
+  const winW = 1.4, winH = 1.2;
+  const eastSideLen = (ROOM_D - winW) / 2;
+  addWallBox(ROOM_W / 2, -(winW / 2 + eastSideLen / 2), t, eastSideLen);
+  addWallBox(ROOM_W / 2, (winW / 2 + eastSideLen / 2), t, eastSideLen);
+  // lintel above and sill below the window opening
+  addWallBox(ROOM_W / 2, 0, t, winW, ROOM_H - winH - 0.9, ROOM_H - (ROOM_H - winH - 0.9) / 2);
+  addWallBox(ROOM_W / 2, 0, t, winW, 0.9, 0.45);
+
+  // north wall — doorway gap in the middle (exit for later rooms)
+  const doorGap = 1.3;
   const northSideLen = (ROOM_W - doorGap) / 2;
   addWallBox(-(doorGap / 2 + northSideLen / 2), -ROOM_D / 2, northSideLen, t);
   addWallBox((doorGap / 2 + northSideLen / 2), -ROOM_D / 2, northSideLen, t);
-  addWallBox(0, -ROOM_D / 2, doorGap, t, 0.4, ROOM_H - 0.2); // lintel
+  addWallBox(0, -ROOM_D / 2, doorGap, t, 0.5, ROOM_H - 0.25); // lintel
+
+  // ---------- jharokha lattice (jaali) — decorative, sits in the window opening ----------
+  const jaaliGroup = new THREE.Group();
+  const jaaliMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.8 });
+  const bars = 5;
+  for (let i = 0; i < bars; i++) {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.03, winH, 0.06), jaaliMat);
+    bar.position.set(ROOM_W / 2 - 0.02, ROOM_H - winH / 2 - 0.9, -winW / 2 + (i / (bars - 1)) * winW);
+    jaaliGroup.add(bar);
+  }
+  for (let i = 0; i < 3; i++) {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.06, winW), jaaliMat);
+    bar.position.set(ROOM_W / 2 - 0.02, ROOM_H - 0.9 - (i / 2) * winH, 0);
+    jaaliGroup.add(bar);
+  }
+  scene.add(jaaliGroup);
 
   // ---------- charpai (rope cot) ----------
   const woodMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
@@ -123,7 +144,7 @@ export function createRoom1(scene, engine) {
   diyaBase.position.set(-ROOM_W / 2 + 0.35, 1.145, -3.2);
   scene.add(diyaBase);
 
-  const diyaFlameLight = new THREE.PointLight(0xffb347, 3.2, 7, 2);
+  const diyaFlameLight = new THREE.PointLight(0xffb347, 2.2, 6, 2);
   diyaFlameLight.position.set(-ROOM_W / 2 + 0.35, 1.22, -3.2);
   diyaFlameLight.castShadow = false;
   scene.add(diyaFlameLight);
@@ -134,19 +155,69 @@ export function createRoom1(scene, engine) {
   flame.position.set(-ROOM_W / 2 + 0.35, 1.2, -3.2);
   scene.add(flame);
 
+  // ---------- wooden almirah (wardrobe) ----------
+  const almirahWoodMat = new THREE.MeshStandardMaterial({ color: 0x4a2f18, roughness: 0.75 });
+  const almirahTrimMat = new THREE.MeshStandardMaterial({ color: 0x2e1c0d, roughness: 0.8 });
+  const brassMat = new THREE.MeshStandardMaterial({ color: 0xb08d57, roughness: 0.4, metalness: 0.6 });
+
+  const almirahGroup = new THREE.Group();
+
+  // plinth (base)
+  const plinth = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.08, 0.55), almirahTrimMat);
+  plinth.position.set(0, 0.04, 0);
+  almirahGroup.add(plinth);
+
+  // main carcass
+  const almirahBody = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.85, 0.5), almirahWoodMat);
+  almirahBody.position.set(0, 0.08 + 1.85 / 2, 0);
+  almirahBody.castShadow = almirahBody.receiveShadow = true;
+  almirahGroup.add(almirahBody);
+
+  // top cornice
+  const cornice = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.08, 0.58), almirahTrimMat);
+  cornice.position.set(0, 0.08 + 1.85 + 0.04, 0);
+  almirahGroup.add(cornice);
+
+  // two front doors with center seam
+  const doorGeo = new THREE.BoxGeometry(0.47, 1.65, 0.03);
+  const doorL = new THREE.Mesh(doorGeo, almirahWoodMat);
+  doorL.position.set(-0.245, 0.08 + 1.85 / 2, -0.25 - 0.015);
+  const doorR = doorL.clone();
+  doorR.position.x = 0.245;
+  almirahGroup.add(doorL, doorR);
+
+  // brass handles
+  const handleGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.18, 8);
+  const handleL = new THREE.Mesh(handleGeo, brassMat);
+  handleL.rotation.z = Math.PI / 2;
+  handleL.position.set(-0.06, 0.08 + 1.85 / 2, -0.25 - 0.05);
+  const handleR = handleL.clone();
+  handleR.position.x = 0.06;
+  almirahGroup.add(handleL, handleR);
+
+  almirahGroup.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+
+  // south wall, east of the charpai, clear of the window
+  almirahGroup.position.set(1.8, 0, 4.05);
+  scene.add(almirahGroup);
+
+  const almirahBox = new THREE.Box3().setFromObject(almirahGroup);
+  colliders.push(almirahBox);
+  engine.addCollider(almirahBox);
+
   // ---------- ambient room lighting ----------
-  const ambient = new THREE.AmbientLight(0x4a4536, 2.2);
+  const ambient = new THREE.AmbientLight(0x3a352c, 1.1);
   scene.add(ambient);
 
-  const fillLight = new THREE.HemisphereLight(0x8a8070, 0x3a3122, 1.3);
+  const fillLight = new THREE.HemisphereLight(0x6b6152, 0x2a2318, 0.6);
   scene.add(fillLight);
 
-  const moonShaft = new THREE.SpotLight(0x8fa5c0, 2.2, 12, Math.PI / 6, 0.6, 1.5);
+  const moonShaft = new THREE.SpotLight(0x8fa5c0, 1.1, 10, Math.PI / 6, 0.6, 1.5);
   moonShaft.position.set(ROOM_W / 2 - 0.5, ROOM_H - 0.3, 0);
   moonShaft.target.position.set(-1, 0, 0.5);
   scene.add(moonShaft, moonShaft.target);
 
-  const entranceLight = new THREE.PointLight(0xffe0b0, 2.6, 8, 2);
+  const entranceLight = new THREE.PointLight(0xffe0b0, 1.4, 6, 2);
   entranceLight.position.set(0.5, 2.2, 3.5);
   scene.add(entranceLight);
 
@@ -162,8 +233,5 @@ export function createRoom1(scene, engine) {
     flame.scale.y = 1 + Math.sin(flickerT * 14) * 0.15;
   }
 
-  // northDoorZ: z coordinate of the north wall (doorway) — corridor.js starts here
-  const northDoorZ = -ROOM_D / 2;
-
-  return { spawnPoint, spawnYaw, update, colliders, northDoorZ };
+  return { spawnPoint, spawnYaw, update, colliders };
 }
