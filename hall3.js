@@ -106,27 +106,9 @@ export function createHall3(scene, engine, doorZ, doorX) {
     engine.addCollider(pillarBox);
   });
 
-  // ---------- ambient hall lighting ----------
-  const ambient = new THREE.AmbientLight(0x413c30, 1.6);
-  scene.add(ambient);
-
-  const fillLight = new THREE.HemisphereLight(0x7c7364, 0x2c2618, 1.0);
-  scene.add(fillLight);
-
-  const eerieLightA = new THREE.PointLight(0x9fb0c8, 1.6, 9, 2);
-  eerieLightA.position.set(centerX, ROOM_H - 0.4, centerZ - 3.5);
-  scene.add(eerieLightA);
-
-  const eerieLightB = new THREE.PointLight(0x9fb0c8, 1.6, 9, 2);
-  eerieLightB.position.set(centerX, ROOM_H - 0.4, centerZ + 3.5);
-  scene.add(eerieLightB);
-
-  // ---------- per-frame update: subtle eerie light pulse ----------
-  let pulseT = 0;
-  function update(dt) {
-    pulseT += dt;
-    eerieLightA.intensity = 1.4 + Math.sin(pulseT * 1.3) * 0.3;
-    eerieLightB.intensity = 1.4 + Math.sin(pulseT * 1.3 + 1.1) * 0.3;
+  // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
+  function update() {
+    // intentionally static
   }
 
   // northDoorX: the doorway sits in the middle of the north wall — corridor.js's
