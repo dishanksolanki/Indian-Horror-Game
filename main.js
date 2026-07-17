@@ -25,6 +25,9 @@
 // Room 24 continuing further north off Hall 3's north doorway, and bridged (west,
 // north, then west again — a three-segment jog, since both doorways face the
 // same way) into Room 16's west doorway,
+// and Hall 2 connected directly to Hall 3 via a straight westward corridor
+// bridging their previously dead-end walls (hall2's west doorway to hall3's
+// east doorway),
 // and drives the menu / pause UI.
 import { Engine } from "./engine.js";
 import { createRoom1 } from "./room1.js";
@@ -186,6 +189,18 @@ const corridor27 = createCorridorNorth(engine.scene, engine, hall3.northZ, hall3
 
 // room24 hangs its south doorway exactly on corridor27's far end.
 const room24 = createRoom24(engine.scene, engine, corridor27.endZ, corridor27.x);
+
+// twenty-ninth corridor: a direct bridge between hall2 and hall3 — hall2's west
+// doorway (previously a dead end) to hall3's east doorway (previously a dead
+// end). Both doorways were placed to line up exactly on the same z, so this is
+// a single straight westward passage, no bend needed.
+const corridor29 = createCorridorWest(
+  engine.scene,
+  engine,
+  hall2.westX,
+  hall2.westDoorZ,
+  hall2.westX - hall3.eastX
+);
 
 // fourth corridor starts at room2's east doorway and runs east to room5.
 const corridor4 = createCorridorEast(engine.scene, engine, room2.eastX, room2.eastDoorZ);
@@ -369,4 +384,5 @@ engine.start((dt, eng) => {
   room16.update(dt, eng);
   corridor18.update(dt, eng);
   corridor28.update(dt, eng);
+  corridor29.update(dt, eng);
 });
