@@ -69,17 +69,19 @@ export function createCorridor(scene, engine, startZ) {
 // createCorridorWest — same short passage, but running west (negative x) instead
 // of north, to connect room2's west doorway to room4.
 // startX: the x coordinate of room2's west wall (doorway); z: the doorway's z coordinate.
-export function createCorridorWest(scene, engine, startX, z) {
+// length: optional override of the passage length (defaults to CORRIDOR_LEN) — used
+// for longer bridging passages, e.g. the final leg into room24's east doorway.
+export function createCorridorWest(scene, engine, startX, z, length = CORRIDOR_LEN) {
   const colliders = [];
   const wallMat = createWallMaterial();
 
-  const centerX = startX - CORRIDOR_LEN / 2;
-  const endX = startX - CORRIDOR_LEN;
+  const centerX = startX - length / 2;
+  const endX = startX - length;
 
   // ---------- floor: old, dirty tiles ----------
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(CORRIDOR_LEN, CORRIDOR_W),
-    createFloorMaterial(CORRIDOR_LEN, CORRIDOR_W)
+    new THREE.PlaneGeometry(length, CORRIDOR_W),
+    createFloorMaterial(length, CORRIDOR_W)
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(centerX, 0, z);
@@ -88,7 +90,7 @@ export function createCorridorWest(scene, engine, startX, z) {
 
   // ---------- ceiling ----------
   const ceiling = new THREE.Mesh(
-    new THREE.PlaneGeometry(CORRIDOR_LEN, CORRIDOR_W),
+    new THREE.PlaneGeometry(length, CORRIDOR_W),
     new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 1 })
   );
   ceiling.rotation.x = Math.PI / 2;
@@ -108,18 +110,26 @@ export function createCorridorWest(scene, engine, startX, z) {
     return mesh;
   }
 
-  addWallBox(centerX, z - CORRIDOR_W / 2 - t / 2, CORRIDOR_LEN + t, t);
-  addWallBox(centerX, z + CORRIDOR_W / 2 + t / 2, CORRIDOR_LEN + t, t);
+  addWallBox(centerX, z - CORRIDOR_W / 2 - t / 2, length + t, t);
+  addWallBox(centerX, z + CORRIDOR_W / 2 + t / 2, length + t, t);
 
-  // ---------- flickering bulb light so the passage isn't pitch black ----------
-  const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
-  bulbLight.position.set(centerX, CORRIDOR_H - 0.3, z);
-  scene.add(bulbLight);
+  // ---------- flickering bulb light(s) so the passage isn't pitch black ----------
+  const bulbCount = Math.max(1, Math.round(length / CORRIDOR_LEN));
+  const bulbLights = [];
+  for (let i = 0; i < bulbCount; i++) {
+    const bx = startX - (length / bulbCount) * (i + 0.5);
+    const bulbLight = new THREE.PointLight(0xffcf8a, 1.6, 5, 2);
+    bulbLight.position.set(bx, CORRIDOR_H - 0.3, z);
+    scene.add(bulbLight);
+    bulbLights.push(bulbLight);
+  }
 
   let flickerT = 0;
   function update(dt) {
     flickerT += dt;
-    bulbLight.intensity = 1.3 + Math.sin(flickerT * 7) * 0.3 + (Math.random() - 0.5) * 0.4;
+    bulbLights.forEach((bulbLight, i) => {
+      bulbLight.intensity = 1.3 + Math.sin(flickerT * 7 + i) * 0.3 + (Math.random() - 0.5) * 0.4;
+    });
   }
 
   return { colliders, update, startX, endX, z };
