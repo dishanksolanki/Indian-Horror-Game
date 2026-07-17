@@ -22,8 +22,9 @@
 // Room 22 continuing further north off Room 21's north doorway,
 // Room 23 continuing further north off Room 22's north doorway,
 // Hall 3 continuing further north off Room 23's north doorway,
-// Room 24 continuing further north off Hall 3's north doorway, and bridged (east,
-// then south) via a second corridor into Room 16's west doorway,
+// Room 24 continuing further north off Hall 3's north doorway, and bridged (west,
+// north, then west again — a two-turn jog, since both doorways face the same
+// way) into Room 16's west doorway,
 // and drives the menu / pause UI.
 import { Engine } from "./engine.js";
 import { createRoom1 } from "./room1.js";
@@ -241,17 +242,38 @@ const corridor18 = createCorridorBendEastSouth(
   hall1.northZ
 );
 
-// twenty-eighth corridor: a single L-shaped bridging passage from room16's west
-// doorway — west, then turning north — down to room24's east doorway. Room24 was
-// previously a dead end reached only from hall3; this connects it onward into
-// room16, and by extension the rest of that wing of the haveli.
-const corridor28 = createCorridorBendWestNorth(
+// twenty-eighth corridor: bridges room16's west doorway to room24's east doorway.
+// Room24 was previously a dead end reached only from hall3; this connects it
+// onward into room16, and by extension the rest of that wing of the haveli.
+//
+// This is NOT a single L-bend, on purpose. Both room16's west doorway and
+// room24's east doorway are crossed by walking in X (they're both "east-west
+// facing" doors), and room24's doorway sits 4.5m further north than room16's.
+// A single bend (west, then north) would have to run its north leg straight up
+// room24's east wall to cover that offset — which means it runs along the same
+// wall for way more than the doorway's own 1.6m gap, so it slices straight
+// through the solid wall segments on either side of the door instead of passing
+// through the opening. That was the previous bug: the corridor looked fine but
+// there was no way to actually walk from room16 into room24.
+// Fixed by jogging the passage over in the open space between the two rooms:
+// west from room16's doorway to a turn point, north to match room24's doorway
+// z, then west again into room24's doorway — two open turns back-to-back, each
+// one a proper corridor-width approach into its doorway.
+const corridor28TurnX = -16; // x position, clear of both rooms, where the passage jogs down from room16's row to room24's row
+const corridor28a = createCorridorBendWestNorth(
   engine.scene,
   engine,
   room16.westX,
   room16.westDoorZ,
-  room24.eastX,
+  corridor28TurnX,
   room24.eastDoorZ
+);
+const corridor28b = createCorridorEast(
+  engine.scene,
+  engine,
+  room24.eastX,
+  room24.eastDoorZ,
+  corridor28TurnX - room24.eastX
 );
 
 const menu = document.getElementById("menu");
@@ -330,5 +352,6 @@ engine.start((dt, eng) => {
   corridor17.update(dt, eng);
   room16.update(dt, eng);
   corridor18.update(dt, eng);
-  corridor28.update(dt, eng);
+  corridor28a.update(dt, eng);
+  corridor28b.update(dt, eng);
 });
