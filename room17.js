@@ -84,7 +84,7 @@ export function createRoom17(scene, engine, doorZ, doorX) {
   // ---------- wooden table ----------
   // Placed against the south wall, off-center so it doesn't block the doorway
   // line-of-sight from the north entrance.
-  createWoodenTable(
+  const table = createWoodenTable(
     scene,
     engine,
     colliders,
@@ -92,6 +92,9 @@ export function createRoom17(scene, engine, doorZ, doorX) {
     southZ - 0.53,                  // z: tucked near the south wall (table half-depth + buffer)
     0                                // rotationY
   );
+
+  // ---------- hammer resting on the table ----------
+  createHammer(scene, engine, table);
 
   // ---------- ambient room lighting ----------
   const ambient = new THREE.AmbientLight(0x413c30, 1.6);
@@ -169,5 +172,90 @@ function createWoodenTable(scene, engine, colliders, x, z, rotationY = 0) {
   colliders.push(tableBox);
   engine.addCollider(tableBox);
 
-  return group;
+  return { group, x, z, rotationY, topY: TABLE_H };
+}
+
+// ---------- hammer prop (pickable) ----------
+// A small wooden-handled hammer resting on the table's surface.
+// Walking up to it and pressing E (engine's existing interact key) picks it
+// up: it disappears from the table and a held version attaches to the
+// camera so the player visibly carries it from then on.
+function createHammer(scene, engine, table) {
+  const handleMat = new THREE.MeshStandardMaterial({
+    color: 0x6b4425,
+    roughness: 0.8,
+    metalness: 0.05,
+  });
+  const headMat = new THREE.MeshStandardMaterial({
+    color: 0x8c8f92,
+    roughness: 0.35,
+    metalness: 0.75,
+  });
+
+  function buildHammerMesh() {
+    const group = new THREE.Group();
+
+    const handle = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.018, 0.022, 0.32, 8),
+      handleMat
+    );
+    handle.rotation.x = Math.PI / 2; // lay the handle's axis flat along Z
+    handle.castShadow = true;
+    group.add(handle);
+
+    const head = new THREE.Mesh(
+      new THREE.BoxGeometry(0.17, 0.06, 0.065),
+      headMat
+    );
+    head.position.set(0, 0.02, 0.185); // sits at the end of the handle
+    head.castShadow = true;
+    group.add(head);
+
+    return group;
+  }
+
+  // ----- hammer resting on the table -----
+  const restingHammer = buildHammerMesh();
+
+  // local offset on the tabletop (slightly off-center for a natural look),
+  // rotated into world space using the table's own rotation
+  const localOffset = new THREE.Vector3(0.15, 0, -0.05);
+  localOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), table.rotationY);
+
+  restingHammer.position.set(
+    table.x + localOffset.x,
+    table.topY + 0.025, // resting just above the tabletop surface
+    table.z + localOffset.z
+  );
+  restingHammer.rotation.y = table.rotationY + 0.5; // slight diagonal placement
+  scene.add(restingHammer);
+
+  function pickUpHammer() {
+    // remove from the world and from the interaction list so it can't be
+    // picked up again
+    scene.remove(restingHammer);
+    engine.interactables = engine.interactables.filter(
+      (item) => item.object3D !== restingHammer
+    );
+
+    engine.hasHammer = true;
+
+    // avoid attaching a second held hammer if this somehow fires twice
+    if (engine.heldHammer) return;
+
+    // ----- held version, attached to the camera -----
+    const heldHammer = buildHammerMesh();
+    heldHammer.rotation.set(-0.4, 0.6, 0.15); // held up in front, angled naturally
+    heldHammer.position.set(0.32, -0.28, -0.55); // lower-right of view, FPS-style
+    engine.camera.add(heldHammer);
+    engine.heldHammer = heldHammer;
+  }
+
+  engine.addInteractable(restingHammer, {
+    radius: 1.6,
+    prompt: "Pick up hammer",
+    onInteract: pickUpHammer,
+  });
+
+  return restingHammer;
 }
