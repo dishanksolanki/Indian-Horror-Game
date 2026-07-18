@@ -88,8 +88,8 @@ export function createRoom17(scene, engine, doorZ, doorX) {
     scene,
     engine,
     colliders,
-    centerX + 1.4,          // x: pushed toward the east side of the room
-    southZ - 0.9,           // z: a little out from the south wall
+    centerX,                 // x: dead center, directly in line with the doorway
+    centerZ,                 // z: room center — impossible to miss on entry
     0                        // rotationY
   );
 
@@ -124,7 +124,7 @@ function createWoodenTable(scene, engine, colliders, x, z, rotationY = 0) {
   group.rotation.y = rotationY;
 
   const woodMat = new THREE.MeshStandardMaterial({
-    color: 0x5a3a20,
+    color: 0x9c6b3e, // lighter oak tone — easier to spot against dark walls/floor
     roughness: 0.85,
     metalness: 0.05,
   });
