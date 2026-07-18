@@ -100,6 +100,10 @@ export function createRoom16(scene, engine, doorZ, doorX) {
   // above). This is a decorative double door mounted flush against the inside
   // face of that wall. Walking up to it and pressing [E] opens it and ends the
   // game — see the "game:win" event dispatched below, handled in main.js.
+  //
+  // It's nailed shut with wooden planks (see below): the "Open the door"
+  // interactable isn't registered at all until the planks are pried off, so
+  // there's no way to trigger the win condition while they're still up.
   const doorFrameMat = new THREE.MeshStandardMaterial({ color: 0x1c130a, roughness: 0.85 });
   const doorPanelMat = new THREE.MeshStandardMaterial({ color: 0x2b1c10, roughness: 0.7, metalness: 0.05 });
   const doorStudMat = new THREE.MeshStandardMaterial({ color: 0x8a7442, roughness: 0.4, metalness: 0.7 });
@@ -165,10 +169,85 @@ export function createRoom16(scene, engine, doorZ, doorX) {
     window.dispatchEvent(new CustomEvent("game:win"));
   }
 
-  engine.addInteractable(doorFrame, {
+  // ---------- plank barricade across the door ----------
+  // A few nailed wooden planks block the door until removed. Only a "Remove
+  // Plank" interactable exists at first; the door's own "Open the door"
+  // interactable is registered lazily inside the plank's onInteract, once it
+  // has actually been pried off — so the win condition is unreachable until then.
+  const plankMat = new THREE.MeshStandardMaterial({ color: 0x3b2a18, roughness: 0.95 });
+  const nailMat = new THREE.MeshStandardMaterial({ color: 0x555049, roughness: 0.6, metalness: 0.5 });
+
+  const plankWidth = DOOR_W + 0.3; // slight overlap onto the frame either side
+  const plankZ = doorFaceZ + 0.14; // just in front of the door, inside the room, blocking it
+
+  const plankGroup = new THREE.Group();
+  plankGroup.position.set(centerX, 0, plankZ);
+  scene.add(plankGroup);
+
+  // three roughly-nailed planks at different heights, each tilted slightly
+  // so they don't read as too clean/uniform
+  const plankDefs = [
+    { y: 0.6, tilt: 0.05 },
+    { y: 1.3, tilt: -0.06 },
+    { y: 2.0, tilt: 0.04 },
+  ];
+
+  const plankMeshes = [];
+  for (const def of plankDefs) {
+    const plank = new THREE.Mesh(new THREE.BoxGeometry(plankWidth, 0.24, 0.06), plankMat);
+    plank.position.set(0, def.y, 0);
+    plank.rotation.z = def.tilt;
+    plank.castShadow = true;
+    plank.receiveShadow = true;
+    plankGroup.add(plank);
+    plankMeshes.push(plank);
+
+    // crude nail heads at each end for detail
+    for (const nx of [-plankWidth / 2 + 0.15, plankWidth / 2 - 0.15]) {
+      const nail = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 6), nailMat);
+      nail.position.set(nx, def.y, 0.035);
+      plankGroup.add(nail);
+    }
+  }
+
+  let plankRemoved = false;
+  const plankInteractable = engine.addInteractable(plankGroup, {
     radius: 2.6,
-    prompt: "Open the door",
-    onInteract: openDoor,
+    prompt: "Remove Plank",
+    onInteract: () => {
+      if (plankRemoved) return;
+      plankRemoved = true;
+
+      // drop the plank interactable so it can't be re-triggered / re-focused
+      const ix = engine.interactables.indexOf(plankInteractable);
+      if (ix !== -1) engine.interactables.splice(ix, 1);
+
+      // now — and only now — does the door itself become interactable
+      engine.addInteractable(doorFrame, {
+        radius: 2.6,
+        prompt: "Open the door",
+        onInteract: openDoor,
+      });
+
+      // quick "pried loose and dropped" animation, then clean up the meshes
+      let t = 0;
+      const startRotations = plankMeshes.map((p) => p.rotation.z);
+      const startY = plankMeshes.map((p) => p.position.y);
+      function fall() {
+        const dt = 1 / 60;
+        t += dt;
+        for (let i = 0; i < plankMeshes.length; i++) {
+          plankMeshes[i].position.y = startY[i] - t * t * 2.2;
+          plankMeshes[i].rotation.z = startRotations[i] + t * 2.6 * (i % 2 === 0 ? 1 : -1);
+        }
+        if (t < 0.6) {
+          requestAnimationFrame(fall);
+        } else {
+          scene.remove(plankGroup);
+        }
+      }
+      fall();
+    },
   });
 
   // ---------- ambient room lighting: dim, a quiet in-between space ----------
