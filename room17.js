@@ -124,12 +124,16 @@ export function createRoom17(scene, engine, doorZ, doorX) {
     }
   }
 
-  // solid collider so the player can't walk through the table
-  const tableBox = new THREE.Box3().setFromObject(tabletop).union(
-    new THREE.Box3().setFromCenterAndSize(
-      new THREE.Vector3(tableX, TABLE_LEG_H / 2, tableZ),
-      new THREE.Vector3(TABLE_W, TABLE_LEG_H, TABLE_D)
-    )
+  // solid collider so the player can't walk through the table.
+  // Built directly from known world-space coordinates (tableX/tableZ are
+  // already world positions) rather than via Box3.setFromObject() on a mesh
+  // nested inside tableGroup — computing it from the object graph was
+  // returning a stray box anchored near the world origin before the group's
+  // matrixWorld had been updated, and the union() then produced one giant
+  // invisible collider stretching from the origin to the table.
+  const tableBox = new THREE.Box3().setFromCenterAndSize(
+    new THREE.Vector3(tableX, (TABLE_LEG_H + TABLE_TOP_H) / 2, tableZ),
+    new THREE.Vector3(TABLE_W, TABLE_LEG_H + TABLE_TOP_H, TABLE_D)
   );
   colliders.push(tableBox);
   engine.addCollider(tableBox);
