@@ -6,6 +6,12 @@
 // East wall also has a doorway gap, leading to the long bridging corridor to hall1.
 // West wall also has a doorway gap, leading to the long bridging corridor to room24.
 // North wall remains solid, no window.
+//
+// NEW: one doorway can be barricaded with nailed wooden planks (see addPlankedDoor
+// below). While boarded, a physical collider spans the doorway gap so the player
+// can't just walk through it — they have to look at the planks and press E to pry
+// them off first. Pick which doorway gets boarded with the `plankedDoor` argument
+// at the bottom of createRoom16 ('south' | 'east' | 'west' | null to leave clear).
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -18,7 +24,7 @@ const DOOR_GAP = 1.6; // must match corridor width
 // doorZ: the z coordinate where room16's south wall (and doorway) sits —
 // this is the corridor's endZ, so the door lines up exactly with the passage from room15.
 // doorX: the x coordinate of the doorway, matching the corridor's x (room15's north door).
-export function createRoom16(scene, engine, doorZ, doorX) {
+export function createRoom16(scene, engine, doorZ, doorX, plankedDoor = "south") {
   const colliders = [];
 
   // room center sits further north (more negative z) than its south doorway
@@ -95,81 +101,112 @@ export function createRoom16(scene, engine, doorZ, doorX) {
   addWallBox(centerX + (DOOR_GAP / 2 + southSideLen / 2), southZ, southSideLen, t);
   addWallBox(centerX, southZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
-  // ---------- the ancient door (north wall) — this is the win condition ----------
-  // NOT a passage: the north wall stays fully solid/collidable (see addWallBox
-  // above). This is a decorative double door mounted flush against the inside
-  // face of that wall. Walking up to it and pressing [E] opens it and ends the
-  // game — see the "game:win" event dispatched below, handled in main.js.
-  const doorFrameMat = new THREE.MeshStandardMaterial({ color: 0x1c130a, roughness: 0.85 });
-  const doorPanelMat = new THREE.MeshStandardMaterial({ color: 0x2b1c10, roughness: 0.7, metalness: 0.05 });
-  const doorStudMat = new THREE.MeshStandardMaterial({ color: 0x8a7442, roughness: 0.4, metalness: 0.7 });
-
-  const DOOR_W = 2.6;
-  const DOOR_H = 2.5;
-  const doorFaceZ = northZ + t / 2 + 0.03; // just off the interior face of the north wall
-  const panelW = DOOR_W / 2;
-
-  // frame
-  const doorFrame = new THREE.Mesh(
-    new THREE.BoxGeometry(DOOR_W + 0.4, DOOR_H + 0.3, 0.12),
-    doorFrameMat
-  );
-  doorFrame.position.set(centerX, DOOR_H / 2 + 0.05, doorFaceZ - 0.05);
-  doorFrame.castShadow = doorFrame.receiveShadow = true;
-  scene.add(doorFrame);
-
-  // two hinged panels, pivoting at their outer edges so they can swing open
-  function makeDoorPanel(sign) {
-    const pivot = new THREE.Group();
-    pivot.position.set(centerX + sign * panelW, DOOR_H / 2, doorFaceZ);
-
-    const panel = new THREE.Mesh(
-      new THREE.BoxGeometry(panelW - 0.04, DOOR_H - 0.1, 0.08),
-      doorPanelMat
-    );
-    panel.position.x = -sign * (panelW / 2);
-    panel.castShadow = panel.receiveShadow = true;
-    pivot.add(panel);
-
-    // a few decorative iron studs down the middle of the panel
-    for (let row = -1; row <= 1; row++) {
-      const stud = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 6), doorStudMat);
-      stud.position.set(-sign * (panelW / 2), row * (DOOR_H / 3.2), 0.05);
-      pivot.add(stud);
+  // ---------- planked / barricaded door ----------
+  // Nails a few rough wooden planks across a chosen doorway. A thin invisible
+  // collider spanning the whole gap keeps the player out until they interact
+  // with the planks (E) to remove them. Once removed, the doorway behaves like
+  // any other — nothing else about the room changes.
+  function addPlankedDoor(doorSide) {
+    let plankX, plankZ, rotationY;
+    if (doorSide === "south") {
+      plankX = centerX; plankZ = southZ; rotationY = 0;
+    } else if (doorSide === "east") {
+      plankX = eastX; plankZ = centerZ; rotationY = Math.PI / 2;
+    } else if (doorSide === "west") {
+      plankX = westX; plankZ = centerZ; rotationY = Math.PI / 2;
+    } else {
+      return; // no door boarded
     }
 
-    // ring handle near the inner edge
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(0.07, 0.015, 6, 12),
-      doorStudMat
+    const plankWidth = DOOR_GAP + 0.3; // slight overlap onto the frame either side
+    const plankMat = new THREE.MeshStandardMaterial({ color: 0x3b2a18, roughness: 0.95 });
+    const nailMat = new THREE.MeshStandardMaterial({ color: 0x555049, roughness: 0.6, metalness: 0.5 });
+
+    const plankGroup = new THREE.Group();
+    plankGroup.position.set(plankX, 0, plankZ);
+    plankGroup.rotation.y = rotationY;
+    scene.add(plankGroup);
+
+    // three roughly-nailed planks at different heights, each tilted slightly
+    // so they don't read as too clean/uniform
+    const plankDefs = [
+      { y: 0.55, tilt: 0.06 },
+      { y: 1.15, tilt: -0.05 },
+      { y: 1.75, tilt: 0.04 },
+    ];
+
+    const plankMeshes = [];
+    for (const def of plankDefs) {
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(plankWidth, 0.22, 0.06), plankMat);
+      plank.position.set(0, def.y, 0);
+      plank.rotation.z = def.tilt;
+      plank.castShadow = true;
+      plank.receiveShadow = true;
+      plankGroup.add(plank);
+      plankMeshes.push(plank);
+
+      // crude nail heads at each end for detail
+      for (const nx of [-plankWidth / 2 + 0.15, plankWidth / 2 - 0.15]) {
+        const nail = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 6), nailMat);
+        nail.position.set(nx, def.y, 0.035);
+        plankGroup.add(nail);
+      }
+    }
+
+    // physical barricade: an invisible collider spanning the full doorway gap
+    // (floor to lintel) — this is what actually stops the player, independent
+    // of the visible plank meshes above.
+    const barrierMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(DOOR_GAP, ROOM_H - 0.2, 0.12)
     );
-    ring.position.set(-sign * (panelW - 0.15), 0, 0.06);
-    pivot.add(ring);
+    barrierMesh.visible = false;
+    barrierMesh.position.set(0, (ROOM_H - 0.2) / 2, 0);
+    plankGroup.add(barrierMesh);
+    const barrierBox = new THREE.Box3().setFromObject(barrierMesh);
+    colliders.push(barrierBox);
+    engine.addCollider(barrierBox);
 
-    scene.add(pivot);
-    return pivot;
+    let removed = false;
+    const interactable = engine.addInteractable(plankGroup, {
+      radius: 1.8,
+      prompt: "Remove Plank",
+      onInteract: () => {
+        if (removed) return;
+        removed = true;
+
+        // remove the physical barrier immediately so the doorway is walkable
+        const idxLocal = colliders.indexOf(barrierBox);
+        if (idxLocal !== -1) colliders.splice(idxLocal, 1);
+        const idxEngine = engine.colliders.indexOf(barrierBox);
+        if (idxEngine !== -1) engine.colliders.splice(idxEngine, 1);
+
+        // this interactable has done its job — drop it so it can't be re-triggered
+        const ixInteract = engine.interactables.indexOf(interactable);
+        if (ixInteract !== -1) engine.interactables.splice(ixInteract, 1);
+
+        // quick "pried loose and dropped" animation, then clean up the meshes
+        let t = 0;
+        const startRotations = plankMeshes.map((p) => p.rotation.z);
+        const startY = plankMeshes.map((p) => p.position.y);
+        function fall() {
+          const dt = 1 / 60;
+          t += dt;
+          for (let i = 0; i < plankMeshes.length; i++) {
+            plankMeshes[i].position.y = startY[i] - t * t * 2.2;
+            plankMeshes[i].rotation.z = startRotations[i] + t * 2.6 * (i % 2 === 0 ? 1 : -1);
+          }
+          if (t < 0.6) {
+            requestAnimationFrame(fall);
+          } else {
+            scene.remove(plankGroup);
+          }
+        }
+        fall();
+      },
+    });
   }
 
-  const doorPanelLeft = makeDoorPanel(-1);
-  const doorPanelRight = makeDoorPanel(1);
-
-  // door state machine: closed -> opening (animated swing) -> open
-  let doorState = "closed";
-  let doorOpenT = 0;
-  const DOOR_OPEN_DURATION = 1.4; // seconds
-  const DOOR_OPEN_ANGLE = Math.PI * 0.6;
-
-  function openDoor() {
-    if (doorState !== "closed") return;
-    doorState = "opening";
-    window.dispatchEvent(new CustomEvent("game:win"));
-  }
-
-  engine.addInteractable(doorFrame, {
-    radius: 2.6,
-    prompt: "Open the door",
-    onInteract: openDoor,
-  });
+  addPlankedDoor(plankedDoor);
 
   // ---------- ambient room lighting: dim, a quiet in-between space ----------
   const ambient = new THREE.AmbientLight(0x231e18, 1.0);
@@ -187,15 +224,6 @@ export function createRoom16(scene, engine, doorZ, doorX) {
   function update(dt) {
     flickerT += dt;
     landingLight.intensity = 1.3 + Math.sin(flickerT * 6) * 0.25 + (Math.random() - 0.5) * 0.3;
-
-    // animate the door swinging open once the player has interacted with it
-    if (doorState === "opening") {
-      doorOpenT = Math.min(1, doorOpenT + dt / DOOR_OPEN_DURATION);
-      const eased = 1 - Math.pow(1 - doorOpenT, 3); // ease-out
-      doorPanelLeft.rotation.y = -eased * DOOR_OPEN_ANGLE;
-      doorPanelRight.rotation.y = eased * DOOR_OPEN_ANGLE;
-      if (doorOpenT >= 1) doorState = "open";
-    }
   }
 
   // eastDoorZ: the doorway sits in the middle of the east wall — bridging corridor to hall1 starts here.
