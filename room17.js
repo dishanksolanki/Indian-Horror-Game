@@ -168,7 +168,17 @@ export function createRoom17(scene, engine, doorZ, doorX) {
       hammerTaken = true;
 
       engine.inventory.hammer = true;
-      scene.remove(hammerGroup);
+
+      // Re-parent the hammer onto the camera instead of deleting it — this
+      // turns it into a simple first-person "held in hand" viewmodel that
+      // follows the player everywhere from now on. Object3D.add() auto-detaches
+      // it from its current parent (the scene), so no explicit scene.remove()
+      // is needed; we just have to give it a new local transform suited for
+      // hand placement instead of tabletop placement.
+      engine.camera.add(hammerGroup);
+      hammerGroup.position.set(0.32, -0.32, -0.55);
+      hammerGroup.rotation.set(-0.3, 0.7, 0.2);
+      hammerGroup.scale.setScalar(1.2);
 
       const ix = engine.interactables.indexOf(hammerInteractable);
       if (ix !== -1) engine.interactables.splice(ix, 1);
@@ -191,6 +201,13 @@ export function createRoom17(scene, engine, doorZ, doorX) {
   function update(dt) {
     pulseT += dt;
     eerieLight.intensity = 1.4 + Math.sin(pulseT * 1.3) * 0.3;
+
+    // once held, give the hammer a faint sway synced to the engine's walk
+    // headbob so it doesn't feel like a flat prop glued to the screen
+    if (hammerTaken && hammerGroup.parent === engine.camera) {
+      const bob = Math.sin(engine._bobT || 0) * 0.015;
+      hammerGroup.position.y = -0.32 + bob;
+    }
   }
 
   return { colliders, update, centerX, centerZ, northZ, southZ };
