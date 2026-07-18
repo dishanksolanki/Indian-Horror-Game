@@ -164,13 +164,18 @@ export class Engine {
     holdOffset = new THREE.Vector3(0.28, -0.22, -0.55),
     onPickup = null,
   } = {}) {
-    if (this.heldItem) return false;
+    console.log("[engine.js] pickupItem() called for:", id, "mesh:", mesh, "already holding:", this.heldItem);
+    if (this.heldItem) {
+      console.log("[engine.js] pickupItem() refused — already holding something");
+      return false;
+    }
 
     mesh.position.copy(holdOffset);
     mesh.rotation.set(0, 0, 0);
     this.camera.add(mesh);
 
     this.heldItem = { id, mesh, prompt, holdOffset };
+    console.log("[engine.js] pickupItem() succeeded — heldItem is now:", this.heldItem);
     if (onPickup) onPickup();
     return true;
   }
@@ -246,6 +251,7 @@ export class Engine {
   }
 
   _tryInteract() {
+    console.log("[engine.js] _tryInteract() — focused:", this._focusedInteractable ? this._focusedInteractable.prompt : null, "hiding:", this.hiding);
     if (this.hiding) {
       this.exitHide();
       return;
