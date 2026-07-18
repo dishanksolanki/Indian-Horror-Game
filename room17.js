@@ -11,61 +11,6 @@ const ROOM_D = 6.5; // north-south
 const ROOM_H = 2.9;
 const DOOR_GAP = 1.6; // must match corridor width
 
-// ---------- helper: simple wooden table (top + 4 legs) ----------
-function createWoodenTable(scene, engine, x, z, {
-  width = 1.4,
-  depth = 0.8,
-  height = 0.75,
-  topThickness = 0.06,
-  legThickness = 0.08,
-} = {}) {
-  const woodMat = new THREE.MeshStandardMaterial({
-    color: 0x6b4226, // medium wood brown
-    roughness: 0.75,
-    metalness: 0.05,
-  });
-
-  const group = new THREE.Group();
-
-  // tabletop
-  const top = new THREE.Mesh(
-    new THREE.BoxGeometry(width, topThickness, depth),
-    woodMat
-  );
-  top.position.set(0, height - topThickness / 2, 0);
-  top.castShadow = true;
-  top.receiveShadow = true;
-  group.add(top);
-
-  // legs, inset slightly from the edges
-  const legHeight = height - topThickness;
-  const legInsetX = width / 2 - legThickness / 2 - 0.05;
-  const legInsetZ = depth / 2 - legThickness / 2 - 0.05;
-  const legGeo = new THREE.BoxGeometry(legThickness, legHeight, legThickness);
-
-  [
-    [-legInsetX, -legInsetZ],
-    [legInsetX, -legInsetZ],
-    [-legInsetX, legInsetZ],
-    [legInsetX, legInsetZ],
-  ].forEach(([lx, lz]) => {
-    const leg = new THREE.Mesh(legGeo, woodMat);
-    leg.position.set(lx, legHeight / 2, lz);
-    leg.castShadow = true;
-    leg.receiveShadow = true;
-    group.add(leg);
-  });
-
-  group.position.set(x, 0, z);
-  scene.add(group);
-
-  // collider for the whole table (approximate as one box so player can't walk through it)
-  const box = new THREE.Box3().setFromObject(group);
-  engine.addCollider(box);
-
-  return group;
-}
-
 // doorZ: the z coordinate where room17's north wall (and doorway) sits —
 // this is corridor19.endZ, so the door lines up exactly with the passage.
 // doorX: the x coordinate of the doorway, matching the corridor's x (room4's south door).
@@ -124,10 +69,8 @@ export function createRoom17(scene, engine, doorZ, doorX) {
 
   // south wall — solid, dead end of this wing
   addWallBox(centerX, southZ, ROOM_W + t, t);
-
   // west wall — solid, no window
   addWallBox(centerX - ROOM_W / 2, centerZ, t, ROOM_D + t);
-
   // east wall — solid, no window
   addWallBox(centerX + ROOM_W / 2, centerZ, t, ROOM_D + t);
 
@@ -137,26 +80,10 @@ export function createRoom17(scene, engine, doorZ, doorX) {
   addWallBox(centerX + (DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
   addWallBox(centerX, northZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
-  // ---------- wooden table ----------
-  const table = createWoodenTable(scene, engine, centerX + 1.3, centerZ + 1.5);
-
-  // ---------- ambient room lighting ----------
-  const ambient = new THREE.AmbientLight(0x413c30, 1.6);
-  scene.add(ambient);
-
-  const fillLight = new THREE.HemisphereLight(0x7c7364, 0x2c2618, 1.0);
-  scene.add(fillLight);
-
-  const eerieLight = new THREE.PointLight(0x9fb0c8, 1.6, 7, 2);
-  eerieLight.position.set(centerX, ROOM_H - 0.35, centerZ);
-  scene.add(eerieLight);
-
-  // ---------- per-frame update: subtle eerie light pulse ----------
-  let pulseT = 0;
-  function update(dt) {
-    pulseT += dt;
-    eerieLight.intensity = 1.4 + Math.sin(pulseT * 1.3) * 0.3;
+  // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
+  function update() {
+    // intentionally static
   }
 
-  return { colliders, update, centerX, centerZ, northZ, southZ, table };
+  return { colliders, update, centerX, centerZ, northZ, southZ };
 }
