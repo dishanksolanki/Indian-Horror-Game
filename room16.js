@@ -21,6 +21,10 @@ const DOOR_GAP = 1.6; // must match corridor width
 export function createRoom16(scene, engine, doorZ, doorX) {
   const colliders = [];
 
+  // shared inventory bag lives on the engine so any room can read/write it.
+  // Guarded here in case room16 happens to load before room17 does.
+  if (!engine.inventory) engine.inventory = {};
+
   // room center sits further north (more negative z) than its south doorway
   const centerZ = doorZ - ROOM_D / 2;
   const centerX = doorX;
@@ -103,7 +107,9 @@ export function createRoom16(scene, engine, doorZ, doorX) {
   //
   // It's nailed shut with wooden planks (see below): the "Open the door"
   // interactable isn't registered at all until the planks are pried off, so
-  // there's no way to trigger the win condition while they're still up.
+  // there's no way to trigger the win condition while they're still up. And
+  // the planks themselves can only be removed once the player has picked up
+  // the hammer from the table in room17 (engine.inventory.hammer).
   const doorFrameMat = new THREE.MeshStandardMaterial({ color: 0x1c130a, roughness: 0.85 });
   const doorPanelMat = new THREE.MeshStandardMaterial({ color: 0x2b1c10, roughness: 0.7, metalness: 0.05 });
   const doorStudMat = new THREE.MeshStandardMaterial({ color: 0x8a7442, roughness: 0.4, metalness: 0.7 });
@@ -169,11 +175,15 @@ export function createRoom16(scene, engine, doorZ, doorX) {
     window.dispatchEvent(new CustomEvent("game:win"));
   }
 
-  // ---------- plank barricade across the door ----------
+  // ---------- plank barricade across the door (requires the hammer) ----------
   // A few nailed wooden planks block the door until removed. Only a "Remove
   // Plank" interactable exists at first; the door's own "Open the door"
   // interactable is registered lazily inside the plank's onInteract, once it
   // has actually been pried off — so the win condition is unreachable until then.
+  //
+  // Removing the plank requires engine.inventory.hammer to be true (picked up
+  // from the table in room17 — see room17.js). Without it, interacting with
+  // the plank does nothing except update the on-screen prompt to say so.
   const plankMat = new THREE.MeshStandardMaterial({ color: 0x3b2a18, roughness: 0.95 });
   const nailMat = new THREE.MeshStandardMaterial({ color: 0x555049, roughness: 0.6, metalness: 0.5 });
 
@@ -210,12 +220,17 @@ export function createRoom16(scene, engine, doorZ, doorX) {
     }
   }
 
+  const PLANK_PROMPT_LOCKED = "Nailed Shut — Need a Hammer";
+  const PLANK_PROMPT_READY = "Remove Plank";
+
   let plankRemoved = false;
   const plankInteractable = engine.addInteractable(plankGroup, {
     radius: 2.6,
-    prompt: "Remove Plank",
+    prompt: PLANK_PROMPT_LOCKED,
     onInteract: () => {
       if (plankRemoved) return;
+      if (!engine.inventory.hammer) return; // no hammer yet — plank won't budge
+
       plankRemoved = true;
 
       // drop the plank interactable so it can't be re-triggered / re-focused
@@ -266,6 +281,11 @@ export function createRoom16(scene, engine, doorZ, doorX) {
   function update(dt) {
     flickerT += dt;
     landingLight.intensity = 1.3 + Math.sin(flickerT * 6) * 0.25 + (Math.random() - 0.5) * 0.3;
+
+    // keep the plank prompt in sync with whether the player has the hammer yet
+    if (!plankRemoved) {
+      plankInteractable.prompt = engine.inventory.hammer ? PLANK_PROMPT_READY : PLANK_PROMPT_LOCKED;
+    }
 
     // animate the door swinging open once the player has interacted with it
     if (doorState === "opening") {
