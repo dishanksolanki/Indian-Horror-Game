@@ -80,9 +80,83 @@ export function createRoom17(scene, engine, doorZ, doorX) {
   addWallBox(centerX + (DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
   addWallBox(centerX, northZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
-  // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
-  function update() {
-    // intentionally static
+  // ---------- furniture: old wooden table ----------
+  // Tucked against the south wall (the dead end), off-center so it doesn't
+  // block the sightline straight in from the doorway.
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x3f2a17, roughness: 0.85 });
+  const woodMatDark = new THREE.MeshStandardMaterial({ color: 0x2c1c0f, roughness: 0.9 });
+
+  const tableGroup = new THREE.Group();
+  const tableX = centerX - 1.4;
+  const tableZ = southZ - 1.1;
+  tableGroup.position.set(tableX, 0, tableZ);
+  scene.add(tableGroup);
+
+  const TABLE_W = 1.3; // east-west
+  const TABLE_D = 0.75; // north-south
+  const TABLE_TOP_H = 0.75; // height of tabletop surface off the floor
+  const TOP_THICK = 0.06;
+  const LEG_SIZE = 0.07;
+  const LEG_H = TABLE_TOP_H - TOP_THICK;
+
+  function addTableBox(mat, w, h, d, x, y, z) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    tableGroup.add(mesh);
+    return mesh;
+  }
+
+  // tabletop
+  addTableBox(
+    woodMat,
+    TABLE_W,
+    TOP_THICK,
+    TABLE_D,
+    0,
+    TABLE_TOP_H - TOP_THICK / 2,
+    0
+  );
+
+  // four legs, inset slightly from the tabletop edges
+  const legInsetX = TABLE_W / 2 - LEG_SIZE / 2 - 0.05;
+  const legInsetZ = TABLE_D / 2 - LEG_SIZE / 2 - 0.05;
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      addTableBox(
+        woodMatDark,
+        LEG_SIZE,
+        LEG_H,
+        LEG_SIZE,
+        sx * legInsetX,
+        LEG_H / 2,
+        sz * legInsetZ
+      );
+    }
+  }
+
+  // register a single collider for the whole table (blocks walking through it)
+  const tableBox = new THREE.Box3().setFromObject(tableGroup);
+  colliders.push(tableBox);
+  engine.addCollider(tableBox);
+
+  // ---------- ambient room lighting ----------
+  const ambient = new THREE.AmbientLight(0x413c30, 1.6);
+  scene.add(ambient);
+
+  const fillLight = new THREE.HemisphereLight(0x7c7364, 0x2c2618, 1.0);
+  scene.add(fillLight);
+
+  const eerieLight = new THREE.PointLight(0x9fb0c8, 1.6, 7, 2);
+  eerieLight.position.set(centerX, ROOM_H - 0.35, centerZ);
+  scene.add(eerieLight);
+
+  // ---------- per-frame update: subtle eerie light pulse ----------
+  let pulseT = 0;
+  function update(dt) {
+    pulseT += dt;
+    eerieLight.intensity = 1.4 + Math.sin(pulseT * 1.3) * 0.3;
   }
 
   return { colliders, update, centerX, centerZ, northZ, southZ };
