@@ -56,7 +56,6 @@
     transition: all 0.25s ease;
   }
   #play-btn:hover { background: #6b1414; border-color: #6b1414; color: #fff; }
-  #play-btn:disabled { opacity: 0.4; cursor: default; }
   #controls-hint { margin-top: 30px; font-size: 12px; opacity: 0.4; letter-spacing: 1px; line-height: 1.8; }
   #hud {
     position: absolute; top: 16px; left: 16px; z-index: 5; color: #8a8070;
@@ -67,12 +66,6 @@
     pointer-events: none; transition: opacity 1.4s ease;
   }
   #fade.show { opacity: 1; }
-  #boot-error {
-    position: absolute; inset: 0; z-index: 50; display: none; align-items: center; justify-content: center;
-    background: rgba(0,0,0,0.92); color: #e08a8a; font-family: monospace; font-size: 14px;
-    text-align: left; padding: 40px; white-space: pre-wrap; line-height: 1.6;
-  }
-  #boot-error.show { display: flex; }
 </style>
 </head>
 <body>
@@ -101,8 +94,6 @@
         F — Flashlight &nbsp;|&nbsp; E — Interact &nbsp;|&nbsp; ESC — Pause
       </div>
     </div>
-
-    <div id="boot-error"></div>
   </div>
 
   <script type="importmap">
@@ -114,43 +105,8 @@
   }
   </script>
 
-  <!--
-    NOTE: engine.js and room1.js are NOT included here as separate
-    <script> tags. main.js imports them itself (import { Engine } from
-    "./engine.js"; import { createRoom1 } from "./room1.js";). Loading
-    them a second time as standalone module scripts was harmless in
-    theory (ES modules are cached per-URL) but redundant and a common
-    source of confusion when debugging — removed.
-
-    IMPORTANT: this page uses ES modules and must be served over
-    http(s), e.g. `python3 -m http.server` then http://localhost:8000 —
-    opening this file directly (file:///...) will silently fail to load
-    the modules in most browsers and the ENTER button will do nothing.
-  -->
-  <script type="module">
-    // Surface any startup error on-screen instead of it silently doing
-    // nothing when double-clicking ENTER (the most common symptom is a
-    // failed module load — usually from opening this file directly
-    // instead of via a local web server).
-    window.addEventListener("error", (e) => {
-      showBootError(`${e.message}\n${e.filename}:${e.lineno}`);
-    });
-    window.addEventListener("unhandledrejection", (e) => {
-      showBootError(String(e.reason));
-    });
-
-    function showBootError(msg) {
-      const el = document.getElementById("boot-error");
-      el.textContent =
-        "Something failed to load:\n\n" + msg +
-        "\n\nIf you opened this file directly (file:///...), that's almost " +
-        "certainly the cause — ES modules require a local web server. Try:\n" +
-        "  python3 -m http.server 8000\n" +
-        "then open http://localhost:8000 in your browser.";
-      el.classList.add("show");
-    }
-
-    import("./main.js").catch((err) => showBootError(err.message || String(err)));
-  </script>
+  <!-- main.js itself does: import { Engine } from "./engine.js"; import { createRoom1 } from "./room1.js";
+       so those two don't need their own <script> tags here — only main.js is loaded directly. -->
+  <script type="module" src="main.js"></script>
 </body>
 </html>
