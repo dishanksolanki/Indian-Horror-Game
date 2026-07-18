@@ -5,8 +5,7 @@
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
-import { createHammer } from "./hammer.js";
-import { gameState } from "./gameState.js";
+import { createHammer, gameState } from "./shared.js";
 
 const ROOM_W = 6; // east-west
 const ROOM_D = 6.5; // north-south
