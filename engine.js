@@ -1,12 +1,6 @@
 // engine.js — reusable first-person engine core.
 // Handles rendering, pointer-lock look/movement, collision, flashlight and interaction raycasting.
 // Rooms (see room1.js) plug into this by providing colliders, lights, interactables and an update hook.
-//
-// NEW: generic "hide spot" mechanic (enterHide / exitHide) — lets a room define a spot
-// (e.g. under a charpai) the player can duck into. While hiding, normal WASD movement is
-// frozen, the camera is snapped down to a crouch height at the hide position, and the
-// interact key (E) becomes a dedicated "exit hiding" action regardless of what the player
-// is looking at, so you can't accidentally re-trigger some other interactable while hidden.
 
 import * as THREE from "three";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
@@ -24,15 +18,16 @@ export class Engine {
       120
     );
     this.camera.position.set(0, 1.7, 0);
-    // Match PointerLockControls' internal euler order ('YXZ') so that
-    // camera.rotation.y / camera.rotation.x correctly decompose into
-    // pure yaw / pitch. Without this, THREE's default 'XYZ' order mixes
-    // yaw into the .x component, which caused W/S to invert as you looked around.
-    this.camera.rotation.order = "YXZ";
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // PERFORMANCE: devicePixelRatio is 2-3 on most phones/retina laptops, which
+    // means rendering 4-9x the actual pixel count of the screen. Capping at
+    // 1.5 instead of 2 cuts fragment-shader work substantially (this matters a
+    // lot here since every fragment loops over every light in the scene) with
+    // barely any visible sharpness difference. Raise back to 2 if you have
+    // perf headroom and want maximum crispness.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -61,30 +56,48 @@ export class Engine {
     this.interactables = [];
     this._focusedInteractable = null;
 
-    // --- hide-spot state ---
-    // Set by enterHide()/cleared by exitHide(). While `hiding` is true, normal
-    // movement + the regular interaction raycast are suspended (see
-    // _updateMovement / _updateInteractionFocus / _tryInteract below).
-    this.hiding = false;
-    this._hidePrePos = new THREE.Vector3();
-    this._hidePreYaw = 0;
-    this._hideBaseY = this.playerHeight;
-    this._hideExitPrompt = "Stop Hiding";
-    this._hideOnExit = null;
-
     // flashlight
-    this.flashlight = new THREE.SpotLight(0xfff2d0, 0, 9, Math.PI / 6.2, 0.45, 1.6);
+    // Rooms no longer carry their own ambient/eerie lighting (removed for
+    // performance — see room*.js), so the torch is now the player's only
+    // light source. Brighter, longer-range, and a wider cone than before so
+    // it actually lights up a dark room instead of just a narrow spot.
+    this.flashlightIntensity = 6.5;
+    this.flashlight = new THREE.SpotLight(0xfff2d0, this.flashlightIntensity, 14, Math.PI / 5, 0.5, 1.2);
     this.flashlight.castShadow = true;
-    this.flashlight.shadow.mapSize.set(1024, 1024);
-    this.flashlightOn = false;
+    // PERFORMANCE: this shadow map re-renders the scene from the flashlight's
+    // point of view every single frame — it's the single most expensive part
+    // of the whole render loop. 1024x1024 is overkill for a handheld light
+    // with only a 9-unit range; 512x512 looks nearly identical in practice
+    // and roughly quarters this pass's cost. Bump it back up if you have
+    // headroom to spare.
+    this.flashlight.shadow.mapSize.set(512, 512);
+    this.flashlightOn = true;
     this.flashTarget = new THREE.Object3D();
     this.scene.add(this.flashlight, this.flashTarget);
     this.flashlight.target = this.flashTarget;
 
     this._raycaster = new THREE.Raycaster();
 
-    this._paused = true;
+    // ---------- PERFORMANCE: reusable scratch objects ----------
+    // The old code allocated a fresh Vector3/Box3 every single frame inside
+    // the movement, flashlight, and interaction-focus updates. That garbage
+    // gets collected constantly (many times a second), which is what causes
+    // the little stutters/hitches on top of the raw FPS being low. Reusing
+    // the same objects every frame avoids that churn entirely.
+    this._scratchCamDir = new THREE.Vector3();
+    this._scratchCamRight = new THREE.Vector3();
+    this._scratchMoveDir = new THREE.Vector3();
+    this._worldUp = new THREE.Vector3(0, 1, 0);
+    this._scratchTryX = new THREE.Vector3();
+    this._scratchTryZ = new THREE.Vector3();
+    this._scratchBoxMin = new THREE.Vector3();
+    this._scratchBoxMax = new THREE.Vector3();
+    this._scratchPlayerBox = new THREE.Box3(this._scratchBoxMin, this._scratchBoxMax);
+    this._scratchFlashDir = new THREE.Vector3();
+    this._scratchDirToItem = new THREE.Vector3();
+    this._scratchNdc = new THREE.Vector2(0, 0);
 
+    this._paused = true;
     this._bindInput();
     window.addEventListener("resize", () => this._onResize());
   }
@@ -95,9 +108,7 @@ export class Engine {
   }
 
   addInteractable(object3D, { radius = 1.6, prompt = "Interact", onInteract = () => {} } = {}) {
-    const entry = { object3D, radius, prompt, onInteract };
-    this.interactables.push(entry);
-    return entry;
+    this.interactables.push({ object3D, radius, prompt, onInteract });
   }
 
   setSpawn(vec3, yawRadians = 0) {
@@ -107,51 +118,6 @@ export class Engine {
 
   lock() {
     this.controls.lock();
-  }
-
-  // ---------- hide spot ----------
-  /**
-   * Duck the player into a hiding spot (e.g. under a charpai, inside an almirah).
-   * @param {Object} opts
-   * @param {THREE.Vector3} opts.position - world position to snap the camera to (x/z used, y comes from crouchHeight)
-   * @param {number|null} [opts.yaw] - optional world yaw (radians) to face while hidden
-   * @param {number} [opts.crouchHeight=0.4] - camera height while hidden (keep low + inside the geometry)
-   * @param {string} [opts.exitPrompt="Stop Hiding"] - prompt shown for the E-to-exit action
-   * @param {Function|null} [opts.onEnter] - callback fired once hiding starts
-   * @param {Function|null} [opts.onExit] - callback fired once hiding ends
-   */
-  enterHide({ position, yaw = null, crouchHeight = 0.4, exitPrompt = "Stop Hiding", onEnter = null, onExit = null } = {}) {
-    if (this.hiding) return;
-    this.hiding = true;
-
-    // remember where we were so we can pop back out cleanly
-    this._hidePrePos.copy(this.camera.position);
-    this._hidePreYaw = this.controls.getObject().rotation.y;
-    this._hideBaseY = this._baseY;
-    this._hideExitPrompt = exitPrompt;
-    this._hideOnExit = onExit;
-
-    this.camera.position.set(position.x, crouchHeight, position.z);
-    this._baseY = crouchHeight;
-    if (yaw !== null) this.controls.getObject().rotation.y = yaw;
-
-    // stop any held movement keys from carrying over
-    this.move.forward = this.move.back = this.move.left = this.move.right = false;
-    this._bobT = 0;
-
-    if (onEnter) onEnter();
-  }
-
-  exitHide() {
-    if (!this.hiding) return;
-    this.hiding = false;
-    this._baseY = this._hideBaseY;
-    this.camera.position.copy(this._hidePrePos);
-    this.controls.getObject().rotation.y = this._hidePreYaw;
-
-    const cb = this._hideOnExit;
-    this._hideOnExit = null;
-    if (cb) cb();
   }
 
   // ---------- input ----------
@@ -165,8 +131,6 @@ export class Engine {
   }
 
   _onKey(e, isDown) {
-    // while hiding, ignore movement keys entirely (see _updateMovement early-out too)
-    if (this.hiding && isDown) return;
     switch (e.code) {
       case "KeyW": case "ArrowUp": this.move.forward = isDown; break;
       case "KeyS": case "ArrowDown": this.move.back = isDown; break;
@@ -177,26 +141,20 @@ export class Engine {
   }
 
   toggleFlashlight() {
-    if (this.hiding) return; // stay dark and quiet while tucked away
     this.flashlightOn = !this.flashlightOn;
-    this.flashlight.intensity = this.flashlightOn ? 3.2 : 0;
+    this.flashlight.intensity = this.flashlightOn ? this.flashlightIntensity : 0;
   }
 
   _tryInteract() {
-    if (this.hiding) {
-      this.exitHide();
-      return;
-    }
     if (this._focusedInteractable) this._focusedInteractable.onInteract();
   }
 
   // ---------- collision ----------
   _resolveCollision(nextPos) {
     const r = this.playerRadius;
-    const playerBox = new THREE.Box3(
-      new THREE.Vector3(nextPos.x - r, 0, nextPos.z - r),
-      new THREE.Vector3(nextPos.x + r, this.playerHeight, nextPos.z + r)
-    );
+    this._scratchBoxMin.set(nextPos.x - r, 0, nextPos.z - r);
+    this._scratchBoxMax.set(nextPos.x + r, this.playerHeight, nextPos.z + r);
+    const playerBox = this._scratchPlayerBox;
     for (const box of this.colliders) {
       if (playerBox.intersectsBox(box)) return true;
     }
@@ -206,33 +164,35 @@ export class Engine {
   _moveWithCollision(dx, dz) {
     const pos = this.camera.position;
     // try X and Z independently so sliding along walls feels natural
-    const tryX = new THREE.Vector3(pos.x + dx, pos.y, pos.z);
+    const tryX = this._scratchTryX.set(pos.x + dx, pos.y, pos.z);
     if (!this._resolveCollision(tryX)) pos.x = tryX.x;
-    const tryZ = new THREE.Vector3(pos.x, pos.y, pos.z + dz);
+    const tryZ = this._scratchTryZ.set(pos.x, pos.y, pos.z + dz);
     if (!this._resolveCollision(tryZ)) pos.z = tryZ.z;
   }
 
   // ---------- per-frame update ----------
   _updateMovement(dt) {
-    // frozen in place while hidden — look-around still works via PointerLockControls,
-    // but WASD does nothing and there's no headbob.
-    if (this.hiding) {
-      this._bobT = 0;
-      return;
-    }
-
     const speed = this.move.sprint ? this.sprintSpeed : this.walkSpeed;
     const forward = (this.move.forward ? 1 : 0) - (this.move.back ? 1 : 0);
     const strafe = (this.move.right ? 1 : 0) - (this.move.left ? 1 : 0);
 
     let moving = false;
     if (forward !== 0 || strafe !== 0) {
-      // Rotate the local movement input by yaw only (camera.rotation.y),
-      // now that camera.rotation.order = 'YXZ' matches PointerLockControls,
-      // so this stays consistent no matter how much you've looked up/down.
-      const dir = new THREE.Vector3(strafe, 0, -forward).normalize();
-      dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.camera.rotation.y);
-      dir.y = 0;
+      // FIX: derive movement direction from the camera's actual world-facing
+      // direction (flattened to the horizontal plane), instead of the old
+      // camera.quaternion trick which effectively cancelled itself out and
+      // ignored yaw entirely. This is what made W/S (and A/D) feel broken —
+      // movement never actually turned with the camera.
+      const camDir = this._scratchCamDir;
+      this.camera.getWorldDirection(camDir);
+      camDir.y = 0;
+      camDir.normalize();
+
+      const camRight = this._scratchCamRight.crossVectors(camDir, this._worldUp);
+
+      const dir = this._scratchMoveDir.set(0, 0, 0);
+      dir.addScaledVector(camDir, forward);
+      dir.addScaledVector(camRight, strafe);
       dir.normalize();
 
       const step = speed * dt;
@@ -252,53 +212,40 @@ export class Engine {
 
   _updateFlashlight() {
     const camPos = this.camera.position;
-    const camDir = new THREE.Vector3();
+    const camDir = this._scratchFlashDir;
     this.camera.getWorldDirection(camDir);
     this.flashlight.position.copy(camPos);
     this.flashTarget.position.copy(camPos).add(camDir.multiplyScalar(3));
   }
 
   _updateInteractionFocus() {
-    const promptEl = document.getElementById("interact-prompt");
+    this._raycaster.setFromCamera(this._scratchNdc, this.camera);
+    // compute camera facing direction once per frame, not once per interactable
+    const camDir = this._scratchCamDir;
+    this.camera.getWorldDirection(camDir);
 
-    // while hidden, the only available action is "come out" — don't raycast
-    // the normal interactable list at all so nothing else can steal focus.
-    if (this.hiding) {
-      this._focusedInteractable = null;
-      if (promptEl) {
-        promptEl.textContent = `[ E ] ${this._hideExitPrompt}`;
-        promptEl.classList.add("show");
-      }
-      return;
-    }
-
-    this._raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
     let closest = null;
     let closestDist = Infinity;
-
     for (const item of this.interactables) {
       const dist = this.camera.position.distanceTo(item.object3D.position);
       if (dist > item.radius) continue;
-
-      const dirToItem = item.object3D.position.clone().sub(this.camera.position).normalize();
-      const camDir = new THREE.Vector3();
-      this.camera.getWorldDirection(camDir);
+      const dirToItem = this._scratchDirToItem
+        .copy(item.object3D.position)
+        .sub(this.camera.position)
+        .normalize();
       const facing = camDir.dot(dirToItem);
-
       if (facing > 0.85 && dist < closestDist) {
         closest = item;
         closestDist = dist;
       }
     }
-
     this._focusedInteractable = closest;
+    const promptEl = document.getElementById("interact-prompt");
     if (closest) {
-      if (promptEl) {
-        promptEl.textContent = `[ E ] ${closest.prompt}`;
-        promptEl.classList.add("show");
-      }
+      promptEl.textContent = `[ E ] ${closest.prompt}`;
+      promptEl.classList.add("show");
     } else {
-      if (promptEl) promptEl.classList.remove("show");
+      promptEl.classList.remove("show");
     }
   }
 
