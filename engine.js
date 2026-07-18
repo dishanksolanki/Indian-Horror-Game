@@ -24,6 +24,11 @@ export class Engine {
       120
     );
     this.camera.position.set(0, 1.7, 0);
+    // Match PointerLockControls' internal euler order ('YXZ') so that
+    // camera.rotation.y / camera.rotation.x correctly decompose into
+    // pure yaw / pitch. Without this, THREE's default 'XYZ' order mixes
+    // yaw into the .x component, which caused W/S to invert as you looked around.
+    this.camera.rotation.order = "YXZ";
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -222,10 +227,11 @@ export class Engine {
 
     let moving = false;
     if (forward !== 0 || strafe !== 0) {
+      // Rotate the local movement input by yaw only (camera.rotation.y),
+      // now that camera.rotation.order = 'YXZ' matches PointerLockControls,
+      // so this stays consistent no matter how much you've looked up/down.
       const dir = new THREE.Vector3(strafe, 0, -forward).normalize();
-      dir.applyQuaternion(this.camera.quaternion.clone().multiply(
-        new THREE.Quaternion().setFromEuler(new THREE.Euler(-this.camera.rotation.x, 0, 0))
-      ));
+      dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.camera.rotation.y);
       dir.y = 0;
       dir.normalize();
 
