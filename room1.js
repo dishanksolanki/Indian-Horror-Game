@@ -1,5 +1,7 @@
 // room1.js — ROOM 1: an old Indian haveli room.
-// Pure map for now: floor, walls, charpai, diya light, puja corner, wooden almirah.
+// Pure map for now: floor, walls, charpai, diya light, puja corner, wooden almirah,
+// and a pickable hammer prop (E to pick up, G to drop — see engine.js's
+// pickupItem/dropHeldItem).
 // North wall has a doorway gap that connects to the corridor -> room2.
 // No jumpscares / mechanics yet — just the walkable space (+ the charpai hide spot below).
 
@@ -25,6 +27,8 @@ export function createRoom1(scene, engine) {
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
+
+  engine.floorY = 0; // room1's floor sits at world Y 0 — dropped items rest flush with it
 
   // ---------- ceiling: wooden beams look (flat for now, beams added below) ----------
   const ceiling = new THREE.Mesh(
@@ -240,6 +244,39 @@ export function createRoom1(scene, engine) {
   const flame = new THREE.Mesh(flameGeo, flameMat);
   flame.position.set(-ROOM_W / 2 + 0.35, 1.2, -3.2);
   scene.add(flame);
+
+  // ---------- hammer prop (pickable / droppable) ----------
+  // Built once and reused for both its held-viewmodel and world-fixture states —
+  // engine.pickupItem() parents it to the camera when picked up, and
+  // engine.dropHeldItem() puts it back in the scene wherever the player is
+  // standing when they drop it (G key).
+  // Placed on open floor near the middle of the room — clear of the charpai
+  // (~x -2.2..-3, z 1.8..3.8), the almirah (~x 2.8..3.5, z 2.5..3.5), the puja
+  // corner (~x -3.15, z -3.2), and the north doorway.
+  const hammerHeadMat = new THREE.MeshStandardMaterial({ color: 0x8a8378, roughness: 0.5, metalness: 0.65 });
+
+  const hammerGroup = new THREE.Group();
+  const hammerHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.02, 0.32, 8), woodMat);
+  hammerHandle.rotation.z = Math.PI / 2.1;
+  hammerHandle.position.set(0, 0.05, 0);
+  const hammerHead = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.05), hammerHeadMat);
+  hammerHead.position.set(0.15, 0.08, 0);
+  hammerGroup.add(hammerHandle, hammerHead);
+  hammerGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+
+  hammerGroup.position.set(0.8, 0, 0.4);
+  hammerGroup.rotation.y = 0.6;
+  scene.add(hammerGroup);
+
+  let hammerPickup = engine.addInteractable(hammerGroup, {
+    radius: 1.6,
+    prompt: "Pick Up Hammer",
+    onInteract: () => {
+      engine.removeInteractable(hammerPickup);
+      scene.remove(hammerGroup);
+      engine.pickupItem({ id: "hammer", mesh: hammerGroup, prompt: "Hammer" });
+    },
+  });
 
   // ---------- wooden almirah (old Indian wardrobe/cupboard) ----------
   // Stood flush against the east wall, south of the moonlight window shaft and
