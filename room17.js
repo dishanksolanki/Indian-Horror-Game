@@ -5,6 +5,8 @@
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
+import { createHammer } from "./hammer.js";
+import { gameState } from "./gameState.js";
 
 const ROOM_W = 6; // east-west
 const ROOM_D = 6.5; // north-south
@@ -140,6 +142,31 @@ export function createRoom17(scene, engine, doorZ, doorX) {
   const tableBox = new THREE.Box3().setFromObject(tableGroup);
   colliders.push(tableBox);
   engine.addCollider(tableBox);
+
+  // ---------- hammer: sits on the table, needed to break the plank off ----------
+  // room16's main door. engine.interactables track object3D.position in WORLD
+  // space (see engine.js _updateInteractionFocus), so the hammer is added
+  // directly to the scene at an absolute position rather than nested inside
+  // tableGroup, whose own position offset would otherwise throw the distance
+  // check off.
+  const hammer = createHammer();
+  const hammerX = tableX;
+  const hammerZ = tableZ;
+  hammer.position.set(hammerX, TABLE_TOP_H + 0.02, hammerZ);
+  hammer.rotation.y = 0.6;
+  scene.add(hammer);
+
+  engine.addInteractable(hammer, {
+    radius: 1.7,
+    prompt: "Pick up hammer",
+    onInteract: () => {
+      if (gameState.hasHammer) return;
+      gameState.hasHammer = true;
+      scene.remove(hammer);
+      const idx = engine.interactables.findIndex((i) => i.object3D === hammer);
+      if (idx !== -1) engine.interactables.splice(idx, 1);
+    },
+  });
 
   // ---------- ambient room lighting ----------
   const ambient = new THREE.AmbientLight(0x413c30, 1.6);
