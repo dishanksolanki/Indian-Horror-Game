@@ -88,9 +88,9 @@ export function createRoom17(scene, engine, doorZ, doorX) {
     scene,
     engine,
     colliders,
-    centerX,                 // x: dead center, directly in line with the doorway
-    centerZ,                 // z: room center — impossible to miss on entry
-    0                        // rotationY
+    centerX + (ROOM_W / 2 - 0.8),   // x: tucked near the east wall (table half-width + buffer)
+    southZ - 0.53,                  // z: tucked near the south wall (table half-depth + buffer)
+    0                                // rotationY
   );
 
   // ---------- ambient room lighting ----------
