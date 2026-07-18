@@ -1,12 +1,6 @@
 // engine.js — reusable first-person engine core.
 // Handles rendering, pointer-lock look/movement, collision, flashlight and interaction raycasting.
 // Rooms (see room1.js) plug into this by providing colliders, lights, interactables and an update hook.
-//
-// NEW: generic "hide spot" mechanic (enterHide / exitHide) — lets a room define a spot
-// (e.g. under a charpai) the player can duck into. While hiding, normal WASD movement is
-// frozen, the camera is snapped down to a crouch height at the hide position, and the
-// interact key (E) becomes a dedicated "exit hiding" action regardless of what the player
-// is looking at, so you can't accidentally re-trigger some other interactable while hidden.
 
 import * as THREE from "three";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
@@ -24,11 +18,6 @@ export class Engine {
       120
     );
     this.camera.position.set(0, 1.7, 0);
-    // Match PointerLockControls' internal euler order ('YXZ') so that
-    // camera.rotation.y / camera.rotation.x correctly decompose into
-    // pure yaw / pitch. Without this, THREE's default 'XYZ' order mixes
-    // yaw into the .x component, which caused W/S to invert as you looked around.
-    this.camera.rotation.order = "YXZ";
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -61,16 +50,8 @@ export class Engine {
     this.interactables = [];
     this._focusedInteractable = null;
 
-    // --- hide-spot state ---
-    // Set by enterHide()/cleared by exitHide(). While `hiding` is true, normal
-    // movement + the regular interaction raycast are suspended (see
-    // _updateMovement / _updateInteractionFocus / _tryInteract below).
-    this.hiding = false;
-    this._hidePrePos = new THREE.Vector3();
-    this._hidePreYaw = 0;
-    this._hideBaseY = this.playerHeight;
-    this._hideExitPrompt = "Stop Hiding";
-    this._hideOnExit = null;
+    // inventory: a Set of item name strings ("hammer", etc.)
+    this.inventory = new Set();
 
     // flashlight
     this.flashlight = new THREE.SpotLight(0xfff2d0, 0, 9, Math.PI / 6.2, 0.45, 1.6);
@@ -94,10 +75,53 @@ export class Engine {
     this.colliders.push(box3);
   }
 
+  removeCollider(box3) {
+    const idx = this.colliders.indexOf(box3);
+    if (idx !== -1) this.colliders.splice(idx, 1);
+  }
+
   addInteractable(object3D, { radius = 1.6, prompt = "Interact", onInteract = () => {} } = {}) {
-    const entry = { object3D, radius, prompt, onInteract };
-    this.interactables.push(entry);
-    return entry;
+    this.interactables.push({ object3D, radius, prompt, onInteract });
+  }
+
+  removeInteractable(object3D) {
+    this.interactables = this.interactables.filter((i) => i.object3D !== object3D);
+    if (this._focusedInteractable && this._focusedInteractable.object3D === object3D) {
+      this._focusedInteractable = null;
+    }
+  }
+
+  // ---------- inventory helpers used by rooms ----------
+  addToInventory(itemName) {
+    this.inventory.add(itemName);
+  }
+
+  hasItem(itemName) {
+    return this.inventory.has(itemName);
+  }
+
+  // short on-screen message toast, e.g. "I need a hammer for this"
+  showMessage(text, duration = 2200) {
+    let el = document.getElementById("toast-message");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "toast-message";
+      el.style.cssText = `
+        position: fixed; bottom: 16%; left: 50%; transform: translateX(-50%);
+        background: rgba(10,8,6,0.88); color: #e8d9b8; padding: 10px 20px;
+        font-family: inherit; font-size: 15px; border-radius: 4px;
+        border: 1px solid #4a3a24; letter-spacing: 0.3px; pointer-events: none;
+        opacity: 0; transition: opacity 0.25s ease; z-index: 50; max-width: 60%;
+        text-align: center;
+      `;
+      document.body.appendChild(el);
+    }
+    el.textContent = text;
+    el.style.opacity = "1";
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => {
+      el.style.opacity = "0";
+    }, duration);
   }
 
   setSpawn(vec3, yawRadians = 0) {
@@ -107,51 +131,6 @@ export class Engine {
 
   lock() {
     this.controls.lock();
-  }
-
-  // ---------- hide spot ----------
-  /**
-   * Duck the player into a hiding spot (e.g. under a charpai, inside an almirah).
-   * @param {Object} opts
-   * @param {THREE.Vector3} opts.position - world position to snap the camera to (x/z used, y comes from crouchHeight)
-   * @param {number|null} [opts.yaw] - optional world yaw (radians) to face while hidden
-   * @param {number} [opts.crouchHeight=0.4] - camera height while hidden (keep low + inside the geometry)
-   * @param {string} [opts.exitPrompt="Stop Hiding"] - prompt shown for the E-to-exit action
-   * @param {Function|null} [opts.onEnter] - callback fired once hiding starts
-   * @param {Function|null} [opts.onExit] - callback fired once hiding ends
-   */
-  enterHide({ position, yaw = null, crouchHeight = 0.4, exitPrompt = "Stop Hiding", onEnter = null, onExit = null } = {}) {
-    if (this.hiding) return;
-    this.hiding = true;
-
-    // remember where we were so we can pop back out cleanly
-    this._hidePrePos.copy(this.camera.position);
-    this._hidePreYaw = this.controls.getObject().rotation.y;
-    this._hideBaseY = this._baseY;
-    this._hideExitPrompt = exitPrompt;
-    this._hideOnExit = onExit;
-
-    this.camera.position.set(position.x, crouchHeight, position.z);
-    this._baseY = crouchHeight;
-    if (yaw !== null) this.controls.getObject().rotation.y = yaw;
-
-    // stop any held movement keys from carrying over
-    this.move.forward = this.move.back = this.move.left = this.move.right = false;
-    this._bobT = 0;
-
-    if (onEnter) onEnter();
-  }
-
-  exitHide() {
-    if (!this.hiding) return;
-    this.hiding = false;
-    this._baseY = this._hideBaseY;
-    this.camera.position.copy(this._hidePrePos);
-    this.controls.getObject().rotation.y = this._hidePreYaw;
-
-    const cb = this._hideOnExit;
-    this._hideOnExit = null;
-    if (cb) cb();
   }
 
   // ---------- input ----------
@@ -165,8 +144,6 @@ export class Engine {
   }
 
   _onKey(e, isDown) {
-    // while hiding, ignore movement keys entirely (see _updateMovement early-out too)
-    if (this.hiding && isDown) return;
     switch (e.code) {
       case "KeyW": case "ArrowUp": this.move.forward = isDown; break;
       case "KeyS": case "ArrowDown": this.move.back = isDown; break;
@@ -177,16 +154,11 @@ export class Engine {
   }
 
   toggleFlashlight() {
-    if (this.hiding) return; // stay dark and quiet while tucked away
     this.flashlightOn = !this.flashlightOn;
     this.flashlight.intensity = this.flashlightOn ? 3.2 : 0;
   }
 
   _tryInteract() {
-    if (this.hiding) {
-      this.exitHide();
-      return;
-    }
     if (this._focusedInteractable) this._focusedInteractable.onInteract();
   }
 
@@ -214,24 +186,16 @@ export class Engine {
 
   // ---------- per-frame update ----------
   _updateMovement(dt) {
-    // frozen in place while hidden — look-around still works via PointerLockControls,
-    // but WASD does nothing and there's no headbob.
-    if (this.hiding) {
-      this._bobT = 0;
-      return;
-    }
-
     const speed = this.move.sprint ? this.sprintSpeed : this.walkSpeed;
     const forward = (this.move.forward ? 1 : 0) - (this.move.back ? 1 : 0);
     const strafe = (this.move.right ? 1 : 0) - (this.move.left ? 1 : 0);
 
     let moving = false;
     if (forward !== 0 || strafe !== 0) {
-      // Rotate the local movement input by yaw only (camera.rotation.y),
-      // now that camera.rotation.order = 'YXZ' matches PointerLockControls,
-      // so this stays consistent no matter how much you've looked up/down.
       const dir = new THREE.Vector3(strafe, 0, -forward).normalize();
-      dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.camera.rotation.y);
+      dir.applyQuaternion(this.camera.quaternion.clone().multiply(
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(-this.camera.rotation.x, 0, 0))
+      ));
       dir.y = 0;
       dir.normalize();
 
@@ -259,20 +223,8 @@ export class Engine {
   }
 
   _updateInteractionFocus() {
-    const promptEl = document.getElementById("interact-prompt");
-
-    // while hidden, the only available action is "come out" — don't raycast
-    // the normal interactable list at all so nothing else can steal focus.
-    if (this.hiding) {
-      this._focusedInteractable = null;
-      if (promptEl) {
-        promptEl.textContent = `[ E ] ${this._hideExitPrompt}`;
-        promptEl.classList.add("show");
-      }
-      return;
-    }
-
     this._raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+
     let closest = null;
     let closestDist = Infinity;
 
@@ -292,13 +244,13 @@ export class Engine {
     }
 
     this._focusedInteractable = closest;
+
+    const promptEl = document.getElementById("interact-prompt");
     if (closest) {
-      if (promptEl) {
-        promptEl.textContent = `[ E ] ${closest.prompt}`;
-        promptEl.classList.add("show");
-      }
+      promptEl.textContent = `[ E ] ${closest.prompt}`;
+      promptEl.classList.add("show");
     } else {
-      if (promptEl) promptEl.classList.remove("show");
+      promptEl.classList.remove("show");
     }
   }
 
