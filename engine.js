@@ -30,6 +30,13 @@ export class Engine {
     // yaw into the .x component, which caused W/S to invert as you looked around.
     this.camera.rotation.order = "YXZ";
 
+    // Put the camera in the scene graph. renderer.render(scene, camera) only
+    // walks scene's children to find things to draw — the camera itself was
+    // otherwise standalone, so anything parented to it (e.g. a held-item
+    // viewmodel via camera.add(...)) would update its transform correctly but
+    // never actually get rendered, since it's unreachable from scene's root.
+    this.scene.add(this.camera);
+
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
