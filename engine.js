@@ -17,6 +17,13 @@
 import * as THREE from "three";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
+// Bump this string whenever you replace engine.js and want to visually confirm
+// in the browser console that the NEW file actually loaded, rather than a
+// cached copy from before (ES module scripts get cached aggressively — if
+// you don't see this line after a save, the browser is serving a stale
+// engine.js and a hard refresh / cache-busted script src is needed).
+console.log("[engine.js] loaded — build: held-item-drop-v2");
+
 export class Engine {
   constructor(canvas) {
     this.canvas = canvas;
@@ -176,6 +183,7 @@ export class Engine {
    * No-ops if nothing is held, or while hiding (can't fumble with items then).
    */
   dropHeldItem() {
+    console.log("[engine.js] dropHeldItem() called — heldItem:", this.heldItem, "hiding:", this.hiding);
     if (!this.heldItem || this.hiding) return;
     const { id, mesh, prompt } = this.heldItem;
 
