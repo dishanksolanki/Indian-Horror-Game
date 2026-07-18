@@ -7,6 +7,12 @@
 // frozen, the camera is snapped down to a crouch height at the hide position, and the
 // interact key (E) becomes a dedicated "exit hiding" action regardless of what the player
 // is looking at, so you can't accidentally re-trigger some other interactable while hidden.
+//
+// NEW: generic "held item" mechanic (pickupItem / dropHeldItem) — lets a room hand the
+// player a carryable object (e.g. a hammer). While held, the item's mesh rides along as
+// a viewmodel parented to the camera. Pressing G drops it: the mesh pops back into world
+// space in front of the player, rests on the floor as a fixture, and is re-registered as
+// a normal interactable so it can be picked back up later.
 
 import * as THREE from "three";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
@@ -79,6 +85,14 @@ export class Engine {
     this._hideExitPrompt = "Stop Hiding";
     this._hideOnExit = null;
 
+    // --- held-item state ---
+    // Set by pickupItem()/cleared by dropHeldItem(). Only one item can be
+    // held at a time — a room should hide/disable its own pickup interactable
+    // once picked up, and call pickupItem() again on that hammer's onInteract
+    // if you want it to be able to swap out an already-held item.
+    this.heldItem = null; // { id, mesh, prompt, holdOffset }
+    this.floorY = 0; // world Y the floor sits at, used to rest dropped items — override per room if your floor isn't at 0
+
     // flashlight
     this.flashlight = new THREE.SpotLight(0xfff2d0, 0, 9, Math.PI / 6.2, 0.45, 1.6);
     this.flashlight.castShadow = true;
@@ -107,6 +121,12 @@ export class Engine {
     return entry;
   }
 
+  removeInteractable(entry) {
+    const i = this.interactables.indexOf(entry);
+    if (i !== -1) this.interactables.splice(i, 1);
+    if (this._focusedInteractable === entry) this._focusedInteractable = null;
+  }
+
   setSpawn(vec3, yawRadians = 0) {
     this.camera.position.set(vec3.x, this.playerHeight, vec3.z);
     this.controls.getObject().rotation.y = yawRadians;
@@ -114,6 +134,115 @@ export class Engine {
 
   lock() {
     this.controls.lock();
+  }
+
+  // ---------- held item (pick up / drop) ----------
+  /**
+   * Give the player something to carry (e.g. a hammer). The mesh is parented
+   * to the camera as a viewmodel, so make sure its geometry is already
+   * roughly hand-sized/positioned around the origin before calling this —
+   * holdOffset just nudges it into the lower-right of the view.
+   * @param {Object} opts
+   * @param {string} opts.id - identifier for the item, useful if a room branches on what's held
+   * @param {THREE.Object3D} opts.mesh - the item's mesh (reused for both held + dropped states)
+   * @param {string} [opts.prompt="Item"] - display name used in "Pick Up X" prompts after dropping
+   * @param {THREE.Vector3} [opts.holdOffset] - local offset from the camera while held
+   * @param {Function|null} [opts.onPickup] - callback fired once picked up
+   * @returns {boolean} false if a swap is refused because something is already held
+   */
+  pickupItem({
+    id,
+    mesh,
+    prompt = "Item",
+    holdOffset = new THREE.Vector3(0.28, -0.22, -0.55),
+    onPickup = null,
+  } = {}) {
+    if (this.heldItem) return false;
+
+    mesh.position.copy(holdOffset);
+    mesh.rotation.set(0, 0, 0);
+    this.camera.add(mesh);
+
+    this.heldItem = { id, mesh, prompt, holdOffset };
+    if (onPickup) onPickup();
+    return true;
+  }
+
+  /**
+   * Drop whatever is currently held. The mesh comes off the camera and is
+   * placed on the floor a short distance in front of the player, facing a
+   * random yaw so it doesn't look robotically placed, then re-registered as
+   * a normal world interactable ("Pick Up Hammer") so it can be grabbed again.
+   * No-ops if nothing is held, or while hiding (can't fumble with items then).
+   */
+  dropHeldItem() {
+    if (!this.heldItem || this.hiding) return;
+    const { id, mesh, prompt } = this.heldItem;
+
+    // pull the mesh back out of camera-local space into world space
+    this.camera.remove(mesh);
+
+    const dropDir = new THREE.Vector3();
+    this.camera.getWorldDirection(dropDir);
+    dropDir.y = 0;
+    dropDir.normalize();
+
+    const dropPos = this.camera.position.clone().add(dropDir.multiplyScalar(0.9));
+    dropPos.y = this.floorY;
+
+    mesh.position.copy(dropPos);
+    mesh.rotation.set(0, Math.random() * Math.PI * 2, 0);
+    this.scene.add(mesh);
+
+    // becomes a normal fixture in the world again, pickable via the usual E-interact flow
+    const entry = this.addInteractable(mesh, {
+      radius: 1.6,
+      prompt: `Pick Up ${prompt}`,
+      onInteract: () => {
+        this.removeInteractable(entry);
+        this.scene.remove(mesh);
+        this.pickupItem({ id, mesh, prompt });
+      },
+    });
+
+    this.heldItem = null;
+  }
+
+  // ---------- input ----------
+  _bindInput() {
+    document.addEventListener("keydown", (e) => this._onKey(e, true));
+    document.addEventListener("keyup", (e) => this._onKey(e, false));
+    document.addEventListener("keydown", (e) => {
+      if (e.code === "KeyF") this.toggleFlashlight();
+      if (e.code === "KeyE") this._tryInteract();
+      if (e.code === "KeyG") this.dropHeldItem();
+    });
+  }
+
+  _onKey(e, isDown) {
+    // while hiding, ignore movement keys entirely (see _updateMovement early-out too)
+    if (this.hiding && isDown) return;
+    switch (e.code) {
+      case "KeyW": case "ArrowUp": this.move.forward = isDown; break;
+      case "KeyS": case "ArrowDown": this.move.back = isDown; break;
+      case "KeyA": case "ArrowLeft": this.move.left = isDown; break;
+      case "KeyD": case "ArrowRight": this.move.right = isDown; break;
+      case "ShiftLeft": case "ShiftRight": this.move.sprint = isDown; break;
+    }
+  }
+
+  toggleFlashlight() {
+    if (this.hiding) return; // stay dark and quiet while tucked away
+    this.flashlightOn = !this.flashlightOn;
+    this.flashlight.intensity = this.flashlightOn ? 3.2 : 0;
+  }
+
+  _tryInteract() {
+    if (this.hiding) {
+      this.exitHide();
+      return;
+    }
+    if (this._focusedInteractable) this._focusedInteractable.onInteract();
   }
 
   // ---------- hide spot ----------
@@ -159,42 +288,6 @@ export class Engine {
     const cb = this._hideOnExit;
     this._hideOnExit = null;
     if (cb) cb();
-  }
-
-  // ---------- input ----------
-  _bindInput() {
-    document.addEventListener("keydown", (e) => this._onKey(e, true));
-    document.addEventListener("keyup", (e) => this._onKey(e, false));
-    document.addEventListener("keydown", (e) => {
-      if (e.code === "KeyF") this.toggleFlashlight();
-      if (e.code === "KeyE") this._tryInteract();
-    });
-  }
-
-  _onKey(e, isDown) {
-    // while hiding, ignore movement keys entirely (see _updateMovement early-out too)
-    if (this.hiding && isDown) return;
-    switch (e.code) {
-      case "KeyW": case "ArrowUp": this.move.forward = isDown; break;
-      case "KeyS": case "ArrowDown": this.move.back = isDown; break;
-      case "KeyA": case "ArrowLeft": this.move.left = isDown; break;
-      case "KeyD": case "ArrowRight": this.move.right = isDown; break;
-      case "ShiftLeft": case "ShiftRight": this.move.sprint = isDown; break;
-    }
-  }
-
-  toggleFlashlight() {
-    if (this.hiding) return; // stay dark and quiet while tucked away
-    this.flashlightOn = !this.flashlightOn;
-    this.flashlight.intensity = this.flashlightOn ? 3.2 : 0;
-  }
-
-  _tryInteract() {
-    if (this.hiding) {
-      this.exitHide();
-      return;
-    }
-    if (this._focusedInteractable) this._focusedInteractable.onInteract();
   }
 
   // ---------- collision ----------
@@ -302,6 +395,12 @@ export class Engine {
     if (closest) {
       if (promptEl) {
         promptEl.textContent = `[ E ] ${closest.prompt}`;
+        promptEl.classList.add("show");
+      }
+    } else if (this.heldItem) {
+      // nothing focused, but still remind the player they can drop what they're carrying
+      if (promptEl) {
+        promptEl.textContent = `[ G ] Drop ${this.heldItem.prompt}`;
         promptEl.classList.add("show");
       }
     } else {
