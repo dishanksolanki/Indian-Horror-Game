@@ -237,14 +237,19 @@ export class Engine {
       return false;
     }
 
-    mesh.position.copy(holdOffset);
-    mesh.rotation.set(0, 0, 0);
-    this.camera.add(mesh);
+    try {
+      mesh.position.copy(holdOffset);
+      mesh.rotation.set(0, 0, 0);
+      this.camera.add(mesh);
 
-    this.heldItem = { id, mesh, prompt, holdOffset, throwable, noiseRadius };
-    console.log(`[engine.js#${this._instanceId}] pickupItem() succeeded — heldItem is now:`, this.heldItem);
-    if (onPickup) onPickup();
-    return true;
+      this.heldItem = { id, mesh, prompt, holdOffset, throwable, noiseRadius };
+      console.log(`[engine.js#${this._instanceId}] pickupItem() succeeded — heldItem is now:`, this.heldItem);
+      if (onPickup) onPickup();
+      return true;
+    } catch (err) {
+      console.error(`[engine.js#${this._instanceId}] pickupItem() THREW while picking up "${id}":`, err);
+      return false;
+    }
   }
 
   /**
@@ -370,7 +375,21 @@ export class Engine {
       return;
     }
     if (this._focusedInteractable) {
-      this._focusedInteractable.onInteract();
+      const target = this._focusedInteractable;
+      try {
+        target.onInteract();
+      } catch (err) {
+        // If onInteract() throws partway through (e.g. before it reaches
+        // pickupItem()), the browser can print this in a way that's easy to
+        // scroll past among a wall of other logs. Surface it loudly and
+        // unmissably instead, since a silent throw here is EXACTLY what
+        // produces "focused: X" followed by heldItem staying null forever.
+        console.error(
+          `[engine.js#${this._instanceId}] onInteract() THREW for "${target.prompt}" — ` +
+          `this is almost certainly why the pickup/interaction silently failed:`,
+          err
+        );
+      }
       return;
     }
     // Nothing focused — dump why, so a "pickupItem() never got called" report
