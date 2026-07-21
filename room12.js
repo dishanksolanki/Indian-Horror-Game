@@ -93,9 +93,110 @@ export function createRoom12(scene, engine, doorZ) {
   addWallBox(eastX, centerZ + (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
   addWallBox(eastX, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
+  // ---------- wooden door (north doorway) — swings open/closed, blocks the way to room15 while shut ----------
+  const doorFrameMat = new THREE.MeshStandardMaterial({ color: 0x1c130a, roughness: 0.85 });
+  const doorPanelMat = new THREE.MeshStandardMaterial({ color: 0x4a2e17, roughness: 0.75, metalness: 0.03 });
+  const doorHandleMat = new THREE.MeshStandardMaterial({ color: 0x8a7442, roughness: 0.4, metalness: 0.7 });
+
+  const DOOR_H = ROOM_H - 0.45; // clears the lintel above
+  const DOOR_THICK = 0.08;
+  const doorPanelW = DOOR_GAP - 0.1; // slight clearance either side of the frame
+  const doorFaceZ = northZ + t / 2 + 0.03; // flush against the interior (room12) face of the north wall
+  const hingeX = -DOOR_GAP / 2 + 0.03; // hinge sits at the west edge of the doorway
+
+  // simple frame trim around the opening — also used as the (static, world-positioned) interact target
+  const doorFrame = new THREE.Mesh(
+    new THREE.BoxGeometry(DOOR_GAP + 0.14, DOOR_H + 0.08, 0.1),
+    doorFrameMat
+  );
+  doorFrame.position.set(0, DOOR_H / 2, doorFaceZ - 0.04);
+  doorFrame.castShadow = doorFrame.receiveShadow = true;
+  scene.add(doorFrame);
+
+  // pivot group at the hinge — the panel is offset from it so it spans the doorway when closed
+  const doorPivot = new THREE.Group();
+  doorPivot.position.set(hingeX, DOOR_H / 2, doorFaceZ);
+  scene.add(doorPivot);
+
+  const doorPanel = new THREE.Mesh(
+    new THREE.BoxGeometry(doorPanelW, DOOR_H, DOOR_THICK),
+    doorPanelMat
+  );
+  doorPanel.position.set(doorPanelW / 2, 0, 0);
+  doorPanel.castShadow = doorPanel.receiveShadow = true;
+  doorPivot.add(doorPanel);
+
+  // a couple of horizontal ribs for a simple plank-door look
+  for (const ry of [DOOR_H * 0.28, -DOOR_H * 0.28]) {
+    const rib = new THREE.Mesh(
+      new THREE.BoxGeometry(doorPanelW - 0.08, 0.05, DOOR_THICK + 0.015),
+      doorPanelMat
+    );
+    rib.position.set(doorPanelW / 2, ry, 0);
+    doorPivot.add(rib);
+  }
+
+  // handle near the far (non-hinge) edge
+  const doorHandle = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), doorHandleMat);
+  doorHandle.position.set(doorPanelW - 0.1, 0, DOOR_THICK / 2 + 0.02);
+  doorPivot.add(doorHandle);
+
+  // ---------- door collider: blocks the doorway while closed, removed while open ----------
+  const doorClosedBox = new THREE.Box3(
+    new THREE.Vector3(hingeX - 0.05, 0, doorFaceZ - DOOR_THICK),
+    new THREE.Vector3(hingeX + doorPanelW + 0.05, DOOR_H, doorFaceZ + DOOR_THICK)
+  );
+  colliders.push(doorClosedBox);
+  engine.addCollider(doorClosedBox);
+
+  // door state machine: closed -> opening -> open -> closing -> closed
+  let doorState = "closed";
+  let doorT = 0;
+  const DOOR_ANIM_DURATION = 0.9; // seconds
+  const DOOR_OPEN_ANGLE = Math.PI * 0.55;
+
+  const doorInteractable = engine.addInteractable(doorFrame, {
+    radius: 2.2,
+    prompt: "Open Door",
+    onInteract: () => {
+      if (doorState === "closed") {
+        doorState = "opening";
+        doorT = 0;
+        // swinging clear of the opening — let the collider go so the player can walk through
+        const idx = engine.colliders.indexOf(doorClosedBox);
+        if (idx !== -1) engine.colliders.splice(idx, 1);
+        doorInteractable.prompt = "Close Door";
+      } else if (doorState === "open") {
+        doorState = "closing";
+        doorT = 0;
+        doorInteractable.prompt = "Open Door";
+      }
+      // interacts mid-swing ("opening"/"closing") are ignored — let the animation settle first
+    },
+  });
+
+  function updateDoor(dt) {
+    if (doorState === "opening") {
+      doorT = Math.min(1, doorT + dt / DOOR_ANIM_DURATION);
+      const eased = 1 - Math.pow(1 - doorT, 3); // ease-out
+      doorPivot.rotation.y = -eased * DOOR_OPEN_ANGLE;
+      if (doorT >= 1) doorState = "open";
+    } else if (doorState === "closing") {
+      doorT = Math.min(1, doorT + dt / DOOR_ANIM_DURATION);
+      const eased = 1 - Math.pow(1 - doorT, 3); // ease-out
+      doorPivot.rotation.y = -DOOR_OPEN_ANGLE + eased * DOOR_OPEN_ANGLE;
+      if (doorT >= 1) {
+        doorState = "closed";
+        doorPivot.rotation.y = 0;
+        // fully shut again — block the doorway once more
+        if (!engine.colliders.includes(doorClosedBox)) engine.addCollider(doorClosedBox);
+      }
+    }
+  }
+
   // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
-  function update() {
-    // intentionally static
+  function update(dt = 0) {
+    updateDoor(dt);
   }
 
   // westX/westDoorZ: the doorway sits in the middle of the west wall —
