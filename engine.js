@@ -2,24 +2,31 @@
 // Handles rendering, pointer-lock look/movement, collision, flashlight and interaction raycasting.
 // Rooms (see room1.js) plug into this by providing colliders, lights, interactables and an update hook.
 //
-// NEW: generic "hide spot" mechanic (enterHide / exitHide) — lets a room define a spot
-// (e.g. under a charpai) the player can duck into. While hiding, normal WASD movement is
-// frozen, the camera is snapped down to a crouch height at the hide position, and the
-// interact key (E) becomes a dedicated "exit hiding" action regardless of what the player
-// is looking at, so you can't accidentally re-trigger some other interactable while hidden.
+// "Hide spot" mechanic (enterHide / exitHide) — lets a room define a spot (e.g. under a
+// charpai) the player can duck into. While hiding, normal WASD movement is frozen, the
+// camera is snapped down to a crouch height at the hide position, and the interact key (E)
+// becomes a dedicated "exit hiding" action regardless of what the player is looking at.
 //
-// NEW: generic "held item" mechanic (pickupItem / dropHeldItem) — lets a room hand the
-// player a carryable object (e.g. a hammer). While held, the item's mesh rides along as
-// a viewmodel parented to the camera. Pressing G drops it: the mesh pops back into world
-// space in front of the player, rests on the floor as a fixture, and is re-registered as
-// a normal interactable so it can be picked back up later.
+// "Held item" mechanic (pickupItem / dropHeldItem / throwHeldItem) — lets a room hand the
+// player a carryable object (e.g. a hammer). While held, the item's mesh rides along as a
+// viewmodel parented to the camera.
+//   G — drop: mesh is placed gently on the floor a short distance in front of you.
+//   T — throw: mesh launches forward with velocity, arcs under gravity, and settles on
+//       the floor (or wherever it lands) — see _updateThrownItems().
+// Both re-register the item as a normal world interactable so it can be picked back up.
 //
-// FIX (held-item-drop-v3): the dropped item's "pick it back up" interactable used to
-// remove the mesh from the scene/interactables list BEFORE calling pickupItem(). If
-// pickupItem() ever failed (e.g. heldItem was already set), the mesh was gone — not in
-// the scene, not an interactable, not held. It just vanished. Now the removal only
-// happens once pickupItem() actually reports success; on failure the item stays exactly
-// where it was, still interactable.
+// build: held-item-throw-v4
+// Changelog vs v3:
+//   - Added an actual throw (T key): forward + upward impulse, simple gravity simulation,
+//     settles on the floor, becomes pickable again.
+//   - addInteractable() now accepts an optional `aimOffset` (THREE.Vector3) that shifts the
+//     point used for the "are you looking at this" check, without moving the actual mesh.
+//     Ground-level items (dropped/thrown) default to a +0.4 vertical offset so you don't
+//     have to aim almost straight down at your own feet to focus them.
+//   - Loosened the facing-check cone from a dot-product threshold of 0.85 to 0.72 (~44°
+//     half-angle instead of ~32°), which was the main reason pickup felt broken — you had
+//     to be aiming almost exactly at an object's raw (often floor-level) origin point.
+//   - Kept the v3 fix where a failed re-pickup no longer deletes the item from the world.
 
 import * as THREE from "three";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
@@ -29,7 +36,10 @@ import { PointerLockControls } from "three/addons/controls/PointerLockControls.j
 // cached copy from before (ES module scripts get cached aggressively — if
 // you don't see this line after a save, the browser is serving a stale
 // engine.js and a hard refresh / cache-busted script src is needed).
-console.log("[engine.js] loaded — build: held-item-drop-v3");
+console.log("[engine.js] loaded — build: held-item-throw-v4");
+
+const GRAVITY = 9.8;
+const FACING_DOT_THRESHOLD = 0.72; // was 0.85 — see changelog above
 
 export class Engine {
   constructor(canvas) {
@@ -84,14 +94,11 @@ export class Engine {
     // colliders: array of THREE.Box3
     this.colliders = [];
 
-    // interactables: array of { object3D, radius, onInteract(), prompt }
+    // interactables: array of { object3D, radius, aimOffset, onInteract(), prompt }
     this.interactables = [];
     this._focusedInteractable = null;
 
     // --- hide-spot state ---
-    // Set by enterHide()/cleared by exitHide(). While `hiding` is true, normal
-    // movement + the regular interaction raycast are suspended (see
-    // _updateMovement / _updateInteractionFocus / _tryInteract below).
     this.hiding = false;
     this._hidePrePos = new THREE.Vector3();
     this._hidePreYaw = 0;
@@ -100,12 +107,13 @@ export class Engine {
     this._hideOnExit = null;
 
     // --- held-item state ---
-    // Set by pickupItem()/cleared by dropHeldItem(). Only one item can be
-    // held at a time — a room should hide/disable its own pickup interactable
-    // once picked up, and call pickupItem() again on that hammer's onInteract
-    // if you want it to be able to swap out an already-held item.
     this.heldItem = null; // { id, mesh, prompt, holdOffset }
-    this.floorY = 0; // world Y the floor sits at, used to rest dropped items — override per room if your floor isn't at 0
+    this.floorY = 0; // world Y the floor sits at — override per room if your floor isn't at 0
+
+    // --- thrown-item state ---
+    // Items currently in the air after throwHeldItem(). Each entry:
+    // { id, mesh, prompt, velocity: THREE.Vector3, angularVelocity: THREE.Vector3 }
+    this._thrownItems = [];
 
     // flashlight
     this.flashlight = new THREE.SpotLight(0xfff2d0, 0, 9, Math.PI / 6.2, 0.45, 1.6);
@@ -129,8 +137,18 @@ export class Engine {
     this.colliders.push(box3);
   }
 
-  addInteractable(object3D, { radius = 1.6, prompt = "Interact", onInteract = () => {} } = {}) {
-    const entry = { object3D, radius, prompt, onInteract };
+  /**
+   * @param {THREE.Object3D} object3D
+   * @param {Object} opts
+   * @param {number} [opts.radius=1.6] - max distance the player can be from object3D.position to focus it
+   * @param {string} [opts.prompt="Interact"]
+   * @param {Function} [opts.onInteract]
+   * @param {THREE.Vector3|null} [opts.aimOffset] - shifts the point used for the "am I looking
+   *   at this" facing check, relative to object3D.position, WITHOUT moving the actual mesh.
+   *   Useful for ground-level items so the player doesn't have to aim almost straight down.
+   */
+  addInteractable(object3D, { radius = 1.6, prompt = "Interact", onInteract = () => {}, aimOffset = null } = {}) {
+    const entry = { object3D, radius, prompt, onInteract, aimOffset };
     this.interactables.push(entry);
     return entry;
   }
@@ -150,18 +168,12 @@ export class Engine {
     this.controls.lock();
   }
 
-  // ---------- held item (pick up / drop) ----------
+  // ---------- held item (pick up / drop / throw) ----------
   /**
    * Give the player something to carry (e.g. a hammer). The mesh is parented
    * to the camera as a viewmodel, so make sure its geometry is already
    * roughly hand-sized/positioned around the origin before calling this —
    * holdOffset just nudges it into the lower-right of the view.
-   * @param {Object} opts
-   * @param {string} opts.id - identifier for the item, useful if a room branches on what's held
-   * @param {THREE.Object3D} opts.mesh - the item's mesh (reused for both held + dropped states)
-   * @param {string} [opts.prompt="Item"] - display name used in "Pick Up X" prompts after dropping
-   * @param {THREE.Vector3} [opts.holdOffset] - local offset from the camera while held
-   * @param {Function|null} [opts.onPickup] - callback fired once picked up
    * @returns {boolean} false if a swap is refused because something is already held
    */
   pickupItem({
@@ -188,11 +200,37 @@ export class Engine {
   }
 
   /**
+   * Re-register a mesh that's now resting in the world (after a drop or a throw that
+   * settled) as a normal pickable interactable. Shared by dropHeldItem() and
+   * _updateThrownItems() so both paths behave identically once the item is on the ground.
+   * Only removes the fixture from the world once pickupItem() actually succeeds — if it's
+   * refused (e.g. already holding something else), the item stays exactly where it is
+   * instead of vanishing.
+   */
+  _registerGroundItem({ id, mesh, prompt }) {
+    const entry = this.addInteractable(mesh, {
+      radius: 1.6,
+      prompt: `Pick Up ${prompt}`,
+      aimOffset: new THREE.Vector3(0, 0.4, 0), // lift the aim point off the floor — see changelog
+      onInteract: () => {
+        const picked = this.pickupItem({ id, mesh, prompt });
+        if (picked) {
+          this.removeInteractable(entry);
+          this.scene.remove(mesh);
+        } else {
+          console.log("[engine.js] re-pickup of ground item failed — leaving it in place");
+        }
+      },
+    });
+    return entry;
+  }
+
+  /**
    * Drop whatever is currently held. The mesh comes off the camera and is
    * placed on the floor a short distance in front of the player, facing a
    * random yaw so it doesn't look robotically placed, then re-registered as
    * a normal world interactable ("Pick Up Hammer") so it can be grabbed again.
-   * No-ops if nothing is held, or while hiding (can't fumble with items then).
+   * No-ops if nothing is held, or while hiding.
    */
   dropHeldItem() {
     console.log("[engine.js] dropHeldItem() called — heldItem:", this.heldItem, "hiding:", this.hiding);
@@ -206,7 +244,6 @@ export class Engine {
     }
     const { id, mesh, prompt } = this.heldItem;
 
-    // pull the mesh back out of camera-local space into world space
     this.camera.remove(mesh);
 
     const dropDir = new THREE.Vector3();
@@ -222,24 +259,53 @@ export class Engine {
     this.scene.add(mesh);
     console.log("[engine.js] dropHeldItem() placed mesh at:", mesh.position.clone());
 
-    // becomes a normal fixture in the world again, pickable via the usual E-interact flow.
-    // IMPORTANT: only remove this fixture from the world once pickupItem() actually
-    // succeeds. Previously this removed the mesh from the scene/interactables list
-    // unconditionally and *then* tried to pick it up — if pickupItem() failed (e.g.
-    // something else was already held), the item vanished with no way to get it back.
-    const entry = this.addInteractable(mesh, {
-      radius: 1.6,
-      prompt: `Pick Up ${prompt}`,
-      onInteract: () => {
-        const picked = this.pickupItem({ id, mesh, prompt });
-        if (picked) {
-          this.removeInteractable(entry);
-          this.scene.remove(mesh);
-        } else {
-          console.log("[engine.js] re-pickup of dropped item failed — leaving it in place");
-        }
-      },
-    });
+    this._registerGroundItem({ id, mesh, prompt });
+    this.heldItem = null;
+  }
+
+  /**
+   * Throw whatever is currently held. The mesh comes off the camera and is launched
+   * forward + slightly upward from roughly where the player is looking, then simulated
+   * under gravity each frame (see _updateThrownItems) until it lands, at which point it's
+   * re-registered as a normal pickable interactable, same as dropHeldItem().
+   * No-ops if nothing is held, or while hiding.
+   * @param {number} [force=6.5] - forward launch speed in units/sec
+   */
+  throwHeldItem(force = 6.5) {
+    console.log("[engine.js] throwHeldItem() called — heldItem:", this.heldItem, "hiding:", this.hiding);
+    if (!this.heldItem) {
+      console.log("[engine.js] throwHeldItem() no-op — nothing is currently held");
+      return;
+    }
+    if (this.hiding) {
+      console.log("[engine.js] throwHeldItem() no-op — can't throw items while hiding");
+      return;
+    }
+    const { id, mesh, prompt } = this.heldItem;
+
+    this.camera.remove(mesh);
+
+    const lookDir = new THREE.Vector3();
+    this.camera.getWorldDirection(lookDir);
+
+    // spawn the item a little in front of the camera so it doesn't immediately
+    // clip through the player's own collision volume
+    const spawnPos = this.camera.position.clone().add(lookDir.clone().multiplyScalar(0.5));
+    mesh.position.copy(spawnPos);
+    mesh.rotation.set(0, Math.random() * Math.PI * 2, 0);
+    this.scene.add(mesh);
+
+    const velocity = lookDir.clone().multiplyScalar(force);
+    velocity.y += 2.4; // extra upward kick so it arcs instead of firing dead straight
+
+    const angularVelocity = new THREE.Vector3(
+      (Math.random() - 0.5) * 8,
+      (Math.random() - 0.5) * 8,
+      (Math.random() - 0.5) * 8
+    );
+
+    this._thrownItems.push({ id, mesh, prompt, velocity, angularVelocity });
+    console.log("[engine.js] throwHeldItem() launched:", id, "velocity:", velocity.clone());
 
     this.heldItem = null;
   }
@@ -252,6 +318,7 @@ export class Engine {
       if (e.code === "KeyF") this.toggleFlashlight();
       if (e.code === "KeyE") this._tryInteract();
       if (e.code === "KeyG") this.dropHeldItem();
+      if (e.code === "KeyT") this.throwHeldItem();
     });
   }
 
@@ -283,21 +350,10 @@ export class Engine {
   }
 
   // ---------- hide spot ----------
-  /**
-   * Duck the player into a hiding spot (e.g. under a charpai, inside an almirah).
-   * @param {Object} opts
-   * @param {THREE.Vector3} opts.position - world position to snap the camera to (x/z used, y comes from crouchHeight)
-   * @param {number|null} [opts.yaw] - optional world yaw (radians) to face while hidden
-   * @param {number} [opts.crouchHeight=0.4] - camera height while hidden (keep low + inside the geometry)
-   * @param {string} [opts.exitPrompt="Stop Hiding"] - prompt shown for the E-to-exit action
-   * @param {Function|null} [opts.onEnter] - callback fired once hiding starts
-   * @param {Function|null} [opts.onExit] - callback fired once hiding ends
-   */
   enterHide({ position, yaw = null, crouchHeight = 0.4, exitPrompt = "Stop Hiding", onEnter = null, onExit = null } = {}) {
     if (this.hiding) return;
     this.hiding = true;
 
-    // remember where we were so we can pop back out cleanly
     this._hidePrePos.copy(this.camera.position);
     this._hidePreYaw = this.controls.getObject().rotation.y;
     this._hideBaseY = this._baseY;
@@ -308,7 +364,6 @@ export class Engine {
     this._baseY = crouchHeight;
     if (yaw !== null) this.controls.getObject().rotation.y = yaw;
 
-    // stop any held movement keys from carrying over
     this.move.forward = this.move.back = this.move.left = this.move.right = false;
     this._bobT = 0;
 
@@ -342,7 +397,6 @@ export class Engine {
 
   _moveWithCollision(dx, dz) {
     const pos = this.camera.position;
-    // try X and Z independently so sliding along walls feels natural
     const tryX = new THREE.Vector3(pos.x + dx, pos.y, pos.z);
     if (!this._resolveCollision(tryX)) pos.x = tryX.x;
     const tryZ = new THREE.Vector3(pos.x, pos.y, pos.z + dz);
@@ -351,8 +405,6 @@ export class Engine {
 
   // ---------- per-frame update ----------
   _updateMovement(dt) {
-    // frozen in place while hidden — look-around still works via PointerLockControls,
-    // but WASD does nothing and there's no headbob.
     if (this.hiding) {
       this._bobT = 0;
       return;
@@ -364,9 +416,6 @@ export class Engine {
 
     let moving = false;
     if (forward !== 0 || strafe !== 0) {
-      // Rotate the local movement input by yaw only (camera.rotation.y),
-      // now that camera.rotation.order = 'YXZ' matches PointerLockControls,
-      // so this stays consistent no matter how much you've looked up/down.
       const dir = new THREE.Vector3(strafe, 0, -forward).normalize();
       dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.camera.rotation.y);
       dir.y = 0;
@@ -377,7 +426,6 @@ export class Engine {
       moving = true;
     }
 
-    // subtle headbob
     if (moving) {
       this._bobT += dt * (this.move.sprint ? 12 : 8);
       this.camera.position.y = this._baseY + Math.sin(this._bobT) * 0.035;
@@ -395,11 +443,38 @@ export class Engine {
     this.flashTarget.position.copy(camPos).add(camDir.multiplyScalar(3));
   }
 
+  /**
+   * Advance any items currently in flight from throwHeldItem(): integrate gravity +
+   * velocity, spin them a bit for visual interest, and once one reaches the floor, stop it,
+   * flatten its rotation to just a resting yaw, and register it as a pickable ground item.
+   * Deliberately simple — no wall/collider bouncing, just a straight arc down to the floor.
+   */
+  _updateThrownItems(dt) {
+    if (this._thrownItems.length === 0) return;
+
+    const stillFlying = [];
+    for (const item of this._thrownItems) {
+      item.velocity.y -= GRAVITY * dt;
+      item.mesh.position.addScaledVector(item.velocity, dt);
+      item.mesh.rotation.x += item.angularVelocity.x * dt;
+      item.mesh.rotation.y += item.angularVelocity.y * dt;
+      item.mesh.rotation.z += item.angularVelocity.z * dt;
+
+      if (item.mesh.position.y <= this.floorY) {
+        item.mesh.position.y = this.floorY;
+        item.mesh.rotation.set(0, item.mesh.rotation.y, 0); // land flat, keep resting yaw
+        console.log("[engine.js] thrown item settled:", item.id, "at:", item.mesh.position.clone());
+        this._registerGroundItem({ id: item.id, mesh: item.mesh, prompt: item.prompt });
+      } else {
+        stillFlying.push(item);
+      }
+    }
+    this._thrownItems = stillFlying;
+  }
+
   _updateInteractionFocus() {
     const promptEl = document.getElementById("interact-prompt");
 
-    // while hidden, the only available action is "come out" — don't raycast
-    // the normal interactable list at all so nothing else can steal focus.
     if (this.hiding) {
       this._focusedInteractable = null;
       if (promptEl) {
@@ -413,16 +488,21 @@ export class Engine {
     let closest = null;
     let closestDist = Infinity;
 
+    const camDir = new THREE.Vector3();
+    this.camera.getWorldDirection(camDir);
+
     for (const item of this.interactables) {
-      const dist = this.camera.position.distanceTo(item.object3D.position);
+      const aimPoint = item.aimOffset
+        ? item.object3D.position.clone().add(item.aimOffset)
+        : item.object3D.position;
+
+      const dist = this.camera.position.distanceTo(aimPoint);
       if (dist > item.radius) continue;
 
-      const dirToItem = item.object3D.position.clone().sub(this.camera.position).normalize();
-      const camDir = new THREE.Vector3();
-      this.camera.getWorldDirection(camDir);
+      const dirToItem = aimPoint.clone().sub(this.camera.position).normalize();
       const facing = camDir.dot(dirToItem);
 
-      if (facing > 0.85 && dist < closestDist) {
+      if (facing > FACING_DOT_THRESHOLD && dist < closestDist) {
         closest = item;
         closestDist = dist;
       }
@@ -435,9 +515,8 @@ export class Engine {
         promptEl.classList.add("show");
       }
     } else if (this.heldItem) {
-      // nothing focused, but still remind the player they can drop what they're carrying
       if (promptEl) {
-        promptEl.textContent = `[ G ] Drop ${this.heldItem.prompt}`;
+        promptEl.textContent = `[ G ] Drop  ·  [ T ] Throw ${this.heldItem.prompt}`;
         promptEl.classList.add("show");
       }
     } else {
@@ -467,6 +546,7 @@ export class Engine {
 
     this._updateMovement(dt);
     this._updateFlashlight();
+    this._updateThrownItems(dt);
     this._updateInteractionFocus();
 
     if (this._onFrame) this._onFrame(dt, this);
