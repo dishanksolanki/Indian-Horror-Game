@@ -96,6 +96,50 @@ export function createRoom17(scene, engine, doorZ, doorX) {
   eerieLight.position.set(centerX, ROOM_H - 0.35, centerZ);
   scene.add(eerieLight);
 
+  // ---------- wooden table (fixture the hammer spawns on) ----------
+  // A simple four-legged table so the hammer has somewhere to rest other than
+  // bare floor. Placed clear of the doorway and all four walls. Its top
+  // surface height (TABLE_TOP_Y) is what the hammer's spawn position below
+  // is built from, so if you resize the table, the hammer moves with it.
+  const TABLE_W = 0.9;   // x extent (east-west)
+  const TABLE_D = 0.6;   // z extent (north-south)
+  const TABLE_LEG_H = 0.72;
+  const TABLE_TOP_THICK = 0.05;
+  const TABLE_TOP_Y = TABLE_LEG_H + TABLE_TOP_THICK / 2;
+
+  const tableGroup = new THREE.Group();
+  const tableTopMat = new THREE.MeshStandardMaterial({ color: 0x4a3320, roughness: 0.75 });
+  const tableLegMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
+
+  const tableTop = new THREE.Mesh(
+    new THREE.BoxGeometry(TABLE_W, TABLE_TOP_THICK, TABLE_D),
+    tableTopMat
+  );
+  tableTop.position.set(0, TABLE_LEG_H, 0);
+  tableGroup.add(tableTop);
+
+  const legInsetX = TABLE_W / 2 - 0.06;
+  const legInsetZ = TABLE_D / 2 - 0.06;
+  [
+    [-legInsetX, -legInsetZ], [legInsetX, -legInsetZ],
+    [-legInsetX, legInsetZ], [legInsetX, legInsetZ],
+  ].forEach(([lx, lz]) => {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, TABLE_LEG_H, 0.06), tableLegMat);
+    leg.position.set(lx, TABLE_LEG_H / 2, lz);
+    tableGroup.add(leg);
+  });
+
+  tableGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+
+  // clear of the north doorway, and clear of all four walls
+  const tablePos = new THREE.Vector3(centerX - 1.6, 0, centerZ + 0.8);
+  tableGroup.position.copy(tablePos);
+  scene.add(tableGroup);
+
+  const tableBox = new THREE.Box3().setFromObject(tableGroup);
+  colliders.push(tableBox);
+  engine.addCollider(tableBox);
+
   // ---------- hammer prop (pickable / droppable / throwable) ----------
   // Built once and reused for its held-viewmodel, dropped-fixture, and
   // in-flight-projectile states — engine.pickupItem() parents it to the
@@ -103,8 +147,9 @@ export function createRoom17(scene, engine, doorZ, doorX) {
   // wherever the player is standing, and engine.throwHeldItem() (Q) launches
   // it as a real projectile that emits a noise event on landing —
   // throwable:true below is what makes it usable as a Granny/Kamla-style
-  // distraction tool, not just a carried prop. Placed on open floor near the
-  // room's center, clear of all four walls.
+  // distraction tool, not just a carried prop. Spawns resting on top of the
+  // table above (once dropped or thrown, it lands on the room floor instead,
+  // via engine.floorY — it doesn't try to land back on the table).
   const woodMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
   const hammerHeadMat = new THREE.MeshStandardMaterial({ color: 0x8a8378, roughness: 0.5, metalness: 0.65 });
 
@@ -117,7 +162,9 @@ export function createRoom17(scene, engine, doorZ, doorX) {
   hammerGroup.add(hammerHandle, hammerHead);
   hammerGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
 
-  hammerGroup.position.set(centerX + 0.6, 0, centerZ + 0.6);
+  // resting on the tabletop: table's world Y + tabletop surface height, small
+  // extra lift (+0.02) so the hammer's own geometry doesn't clip into the wood
+  hammerGroup.position.set(tablePos.x, TABLE_TOP_Y + 0.02, tablePos.z);
   hammerGroup.rotation.y = 0.6;
   scene.add(hammerGroup);
 
