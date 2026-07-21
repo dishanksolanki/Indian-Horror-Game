@@ -78,11 +78,6 @@ export function createRoom1(scene, engine) {
   addWallBox(0, -ROOM_D / 2, doorGap, t, 0.4, ROOM_H - 0.2); // lintel
 
   // ---------- charpai (rope cot) — rebuilt as a hide spot ----------
-  // Taller legs than a "real" charpai on purpose, so there's an obvious,
-  // readable gap underneath to crawl into, plus cloth skirts draped off the
-  // frame on three sides (west, east, head-end) to visually sell "tucked out
-  // of sight." The foot end (+z, facing into the room) is left open — that's
-  // the side the player approaches from and ducks in through.
   const woodMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
   const ropeMat = new THREE.MeshStandardMaterial({ color: 0x9c8256, roughness: 0.95 });
   const clothMat = new THREE.MeshStandardMaterial({
@@ -91,9 +86,9 @@ export function createRoom1(scene, engine) {
     side: THREE.DoubleSide,
   });
 
-  const COT_LEG_H = 0.52;   // taller than before — real crawl clearance underneath
-  const COT_W = 1.5;        // x extent of the frame (matches leg spread)
-  const COT_D = 2.04;       // z extent of the frame
+  const COT_LEG_H = 0.52;
+  const COT_W = 1.5;
+  const COT_D = 2.04;
 
   const cotGroup = new THREE.Group();
 
@@ -121,7 +116,6 @@ export function createRoom1(scene, engine) {
   weave.receiveShadow = true;
   cotGroup.add(weave);
 
-  // a lumpy, slept-in blanket on top, just for detail/atmosphere
   const blanket = new THREE.Mesh(
     new THREE.BoxGeometry(1.3, 0.08, 1.7),
     new THREE.MeshStandardMaterial({ color: 0x7a3a30, roughness: 1 })
@@ -131,12 +125,6 @@ export function createRoom1(scene, engine) {
   blanket.castShadow = true;
   cotGroup.add(blanket);
 
-  // cloth skirts hanging from the frame down toward the floor — west, east
-  // and foot-end (+z) sides. Head end (-z) is deliberately left uncovered:
-  // that's the approach/entry side for the hide spot. (The foot end sits
-  // right up against the south wall with barely any floor space to stand
-  // on, so the open side has to be the head end, which opens onto the
-  // room's clear floor instead.)
   function addSkirt(cx, cz, w, rotY) {
     const skirt = new THREE.Mesh(new THREE.PlaneGeometry(w, COT_LEG_H - 0.03), clothMat);
     skirt.position.set(cx, (COT_LEG_H - 0.03) / 2, cz);
@@ -145,20 +133,15 @@ export function createRoom1(scene, engine) {
     skirt.receiveShadow = true;
     cotGroup.add(skirt);
   }
-  addSkirt(-0.76, 0, COT_D, Math.PI / 2);       // west side
-  addSkirt(0.76, 0, COT_D, Math.PI / 2);        // east side
-  addSkirt(0, 1.03, COT_W, 0);                  // foot end (+z)
+  addSkirt(-0.76, 0, COT_D, Math.PI / 2);
+  addSkirt(0.76, 0, COT_D, Math.PI / 2);
+  addSkirt(0, 1.03, COT_W, 0);
 
   cotGroup.position.set(-2.2, 0, 2.8);
   cotGroup.rotation.y = 0.15;
   cotGroup.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   scene.add(cotGroup);
 
-  // Collider only covers the frame/blanket band near the top, NOT the empty
-  // space underneath — that's what makes the crawl space walkable/hideable
-  // instead of solid. Walking into the cot from any side still bumps into
-  // this band; only the deliberate hide interaction teleports the camera
-  // down into the gap below it.
   const cotBox = new THREE.Box3().setFromObject(cotGroup);
   cotBox.min.y = COT_LEG_H - 0.05;
   cotBox.max.y = COT_LEG_H + 0.2;
@@ -166,20 +149,6 @@ export function createRoom1(scene, engine) {
   engine.addCollider(cotBox);
 
   // ---------- charpai hide spot ----------
-  // Walk up to the open (head-end) side of the cot and press E to duck down
-  // into the gap underneath, below the skirts and out of sight. Press E
-  // again to pop back out to exactly where you were standing.
-  //
-  // NOTE: this used to anchor off the foot end (+z), but the cot sits at
-  // z=2.8 only ~1.7 units from the south wall (z=4.5) — that anchor landed
-  // almost exactly inside the wall, so the player could never actually
-  // stand close enough / face it correctly and the prompt never appeared.
-  // The head end (-z) opens onto the room's clear floor instead, so that's
-  // the side used for both the approach point and the facing skirts above.
-  //
-  // Both points are expressed in the cot's own local space and rotated by
-  // cotGroup.rotation.y so they stay correct if the cot's position/rotation
-  // above is ever tweaked.
   function cotLocalToWorld(localX, localY, localZ) {
     const v = new THREE.Vector3(localX, localY, localZ);
     v.applyAxisAngle(new THREE.Vector3(0, 1, 0), cotGroup.rotation.y);
@@ -187,15 +156,10 @@ export function createRoom1(scene, engine) {
     return v;
   }
 
-  // where the player stands to trigger the prompt — just outside the open head end (-z)
   const charpaiHideApproach = cotLocalToWorld(0, 1.3, -1.7);
-  // where the camera snaps to once hidden — centered under the cot, low, between the legs
   const charpaiHideSpot = cotLocalToWorld(0, 0, -0.15);
-  // camera's default forward is -Z at yaw 0, which already matches the local
-  // -z (open/head-end) direction once rotated by the cot's own yaw — so no
-  // extra +PI offset is needed here (unlike the old foot-end version).
   const charpaiHideYaw = cotGroup.rotation.y;
-  const charpaiCrouchHeight = COT_LEG_H * 0.6; // low enough to clear the frame, off the floor
+  const charpaiCrouchHeight = COT_LEG_H * 0.6;
 
   const charpaiHideAnchor = new THREE.Object3D();
   charpaiHideAnchor.position.copy(charpaiHideApproach);
@@ -245,14 +209,14 @@ export function createRoom1(scene, engine) {
   flame.position.set(-ROOM_W / 2 + 0.35, 1.2, -3.2);
   scene.add(flame);
 
-  // ---------- hammer prop (pickable / droppable) ----------
-  // Built once and reused for both its held-viewmodel and world-fixture states —
-  // engine.pickupItem() parents it to the camera when picked up, and
-  // engine.dropHeldItem() puts it back in the scene wherever the player is
-  // standing when they drop it (G key).
-  // Placed on open floor near the middle of the room — clear of the charpai
-  // (~x -2.2..-3, z 1.8..3.8), the almirah (~x 2.8..3.5, z 2.5..3.5), the puja
-  // corner (~x -3.15, z -3.2), and the north doorway.
+  // ---------- hammer prop (pickable / droppable / throwable) ----------
+  // Built once and reused for its held-viewmodel, dropped-fixture, and
+  // in-flight-projectile states — engine.pickupItem() parents it to the
+  // camera when picked up, engine.dropHeldItem() puts it back in the scene
+  // wherever the player is standing (G key), and engine.throwHeldItem()
+  // (Q key) launches it as a real projectile that emits a noise event on
+  // landing — marked throwable:true below so it can be used as a
+  // Granny/Kamla-style distraction tool, not just a carried prop.
   const hammerHeadMat = new THREE.MeshStandardMaterial({ color: 0x8a8378, roughness: 0.5, metalness: 0.65 });
 
   const hammerGroup = new THREE.Group();
@@ -274,15 +238,17 @@ export function createRoom1(scene, engine) {
     onInteract: () => {
       engine.removeInteractable(hammerPickup);
       scene.remove(hammerGroup);
-      engine.pickupItem({ id: "hammer", mesh: hammerGroup, prompt: "Hammer" });
+      engine.pickupItem({
+        id: "hammer",
+        mesh: hammerGroup,
+        prompt: "Hammer",
+        throwable: true,
+        noiseRadius: 7,
+      });
     },
   });
 
   // ---------- wooden almirah (old Indian wardrobe/cupboard) ----------
-  // Stood flush against the east wall, south of the moonlight window shaft and
-  // clear of the charpai and puja corner. Simple carcass + two hinged doors +
-  // a small cornice on top, in the same dark teak tone as the rest of the
-  // wood furniture in the room.
   const almirahBodyMat = new THREE.MeshStandardMaterial({ color: 0x2f1e10, roughness: 0.8 });
   const almirahDoorMat = new THREE.MeshStandardMaterial({ color: 0x3d2814, roughness: 0.7 });
   const almirahTrimMat = new THREE.MeshStandardMaterial({ color: 0x6b4a26, roughness: 0.6, metalness: 0.05 });
@@ -290,11 +256,10 @@ export function createRoom1(scene, engine) {
 
   const almirahGroup = new THREE.Group();
 
-  const ALM_W = 1.0;  // width (along room's z, since it's flush on the east wall)
-  const ALM_H = 2.05; // height
-  const ALM_D = 0.55; // depth (into the room, along x)
+  const ALM_W = 1.0;
+  const ALM_H = 2.05;
+  const ALM_D = 0.55;
 
-  // main carcass
   const almirahBody = new THREE.Mesh(
     new THREE.BoxGeometry(ALM_D, ALM_H, ALM_W),
     almirahBodyMat
@@ -304,7 +269,6 @@ export function createRoom1(scene, engine) {
   almirahBody.receiveShadow = true;
   almirahGroup.add(almirahBody);
 
-  // cornice / crown on top, slightly overhanging
   const almirahCornice = new THREE.Mesh(
     new THREE.BoxGeometry(ALM_D + 0.08, 0.08, ALM_W + 0.08),
     almirahTrimMat
@@ -313,7 +277,6 @@ export function createRoom1(scene, engine) {
   almirahCornice.castShadow = true;
   almirahGroup.add(almirahCornice);
 
-  // plinth/base
   const almirahBase = new THREE.Mesh(
     new THREE.BoxGeometry(ALM_D + 0.04, 0.08, ALM_W + 0.04),
     almirahTrimMat
@@ -321,23 +284,13 @@ export function createRoom1(scene, engine) {
   almirahBase.position.set(0, 0.04, 0);
   almirahGroup.add(almirahBase);
 
-  // Two hinged doors, built on pivot groups so they can actually swing open.
-  // almirahGroup is placed with its carcass BACK against the east wall
-  // (world x ~ ROOM_W/2) and its FRONT — the doors — facing toward -x,
-  // i.e. into the room. That front face sits at local x = FRONT_X, a
-  // negative number, which is exactly where we already want it: no extra
-  // group-level rotation is needed (a previous version of this file added
-  // `almirahGroup.rotation.y = Math.PI`, which flipped the doors around to
-  // the WALL side — that was the bug making the almirah impossible to
-  // reach/open).
   const doorHalfW = ALM_W / 2 - 0.03;
   const doorH = ALM_H - 0.3;
   const doorGeo = new THREE.BoxGeometry(0.04, doorH, doorHalfW);
   const panelGeo = new THREE.BoxGeometry(0.01, doorH * 0.55, doorHalfW * 0.6);
   const handleGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.14, 8);
-  const FRONT_X = -(ALM_D / 2 + 0.02); // front face, proud of the carcass box, facing -x (into the room)
+  const FRONT_X = -(ALM_D / 2 + 0.02);
 
-  // left door — hinged on the south edge (z = -ALM_W/2), swings toward -x
   const pivotL = new THREE.Group();
   pivotL.position.set(FRONT_X, ALM_H / 2, -ALM_W / 2);
   const doorL = new THREE.Mesh(doorGeo, almirahDoorMat);
@@ -351,7 +304,6 @@ export function createRoom1(scene, engine) {
   pivotL.add(doorL, panelL, handleL);
   almirahGroup.add(pivotL);
 
-  // right door — hinged on the north edge (z = +ALM_W/2), swings toward -x
   const pivotR = new THREE.Group();
   pivotR.position.set(FRONT_X, ALM_H / 2, ALM_W / 2);
   const doorR = new THREE.Mesh(doorGeo, almirahDoorMat);
@@ -364,31 +316,20 @@ export function createRoom1(scene, engine) {
   pivotR.add(doorR, panelR, handleR);
   almirahGroup.add(pivotR);
 
-  // place flush against the east wall (inner face is at ROOM_W/2 - t/2),
-  // south of the moonlight window shaft and clear of the charpai/puja corner.
-  // NOTE: no rotation.y here — see the comment above the doors.
   almirahGroup.position.set(ROOM_W / 2 - t / 2 - ALM_D / 2, 0, 3.0);
   almirahGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   scene.add(almirahGroup);
 
   const almirahBox = new THREE.Box3().setFromObject(almirahGroup);
-  // widen the box a touch on the open side so swung-open doors still block walking through
   almirahBox.expandByVector(new THREE.Vector3(0.6, 0, 0));
   colliders.push(almirahBox);
   engine.addCollider(almirahBox);
 
   // ---------- almirah open/close interaction ----------
-  const ALMIRAH_OPEN_ANGLE = Math.PI * 0.5; // 90°: 0 = closed, 90° = fully open, swinging outward
+  const ALMIRAH_OPEN_ANGLE = Math.PI * 0.5;
   let almirahOpen = false;
-  let almirahT = 0; // animated 0 (closed) -> 1 (open)
+  let almirahT = 0;
 
-  // almirahGroup is NOT rotated, so local axes line up with world axes
-  // directly: the interaction anchor just needs to sit a bit in front of the
-  // doors (further -x, deeper into the room) so the player can walk up to
-  // it and be within range/facing it. Height is placed near eye level so the
-  // engine's facing-dot-product check (which uses full 3D direction,
-  // including the vertical component) actually passes when a normal-height
-  // player looks at it head-on, instead of only working if you crouch/look down.
   const almirahWorldAnchor = new THREE.Object3D();
   almirahWorldAnchor.position.set(
     almirahGroup.position.x + FRONT_X - 0.35,
@@ -433,7 +374,6 @@ export function createRoom1(scene, engine) {
     diyaFlameLight.intensity = 1.0 + Math.sin(flickerT * 11) * 0.15 + (Math.random() - 0.5) * 0.1;
     flame.scale.y = 1 + Math.sin(flickerT * 14) * 0.15;
 
-    // ease the almirah's door hinge angle toward open (1) or closed (0)
     const almirahTarget = almirahOpen ? 1 : 0;
     almirahT += (almirahTarget - almirahT) * Math.min(dt * 5, 1);
     pivotL.rotation.y = -ALMIRAH_OPEN_ANGLE * almirahT;
