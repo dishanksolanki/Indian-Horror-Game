@@ -327,7 +327,7 @@ export class Engine {
    */
   _registerFixtureForPickup({ id, mesh, prompt, throwable, noiseRadius }) {
     const entry = this.addInteractable(mesh, {
-      radius: 1.6,
+      radius: 2.0,
       prompt: `Pick Up ${prompt}`,
       onInteract: () => {
         this.removeInteractable(entry);
@@ -406,15 +406,19 @@ export class Engine {
     }
     const camDir = new THREE.Vector3();
     this.camera.getWorldDirection(camDir);
+    camDir.y = 0;
+    camDir.normalize();
     console.log("[engine.js] _tryInteract() — nothing focused. Candidates:");
     for (const item of this.interactables) {
       const dist = this.camera.position.distanceTo(item.object3D.position);
-      const dirToItem = item.object3D.position.clone().sub(this.camera.position).normalize();
+      const dirToItem = item.object3D.position.clone().sub(this.camera.position);
+      dirToItem.y = 0;
+      dirToItem.normalize();
       const facing = camDir.dot(dirToItem);
       console.log(
         `  - "${item.prompt}" dist=${dist.toFixed(2)} (needs <= ${item.radius}) ` +
-        `facing=${facing.toFixed(2)} (needs > 0.85) -> ` +
-        `${dist <= item.radius && facing > 0.85 ? "SHOULD have matched (check for an earlier closer match stealing it)" : "too far / not looking at it closely enough"}`
+        `facing=${facing.toFixed(2)} (needs > 0.85, horizontal-only) -> ` +
+        `${dist <= item.radius && facing > 0.85 ? "SHOULD have matched (check for an earlier closer match stealing it)" : "too far / not facing its compass direction closely enough"}`
       );
     }
   }
@@ -600,13 +604,28 @@ export class Engine {
     let closest = null;
     let closestDist = Infinity;
 
+    // Facing is checked HORIZONTALLY only (y zeroed out on both vectors)
+    // before normalizing. Floor-level fixtures (a dropped/thrown hammer,
+    // e.g.) sit at y=0 while the camera is up at eye height, so a full 3D
+    // dot product would require the player to tilt the camera sharply
+    // downward just to "face" something at their own feet — which nobody
+    // does naturally when just walking up to an item. Comparing only the
+    // compass direction you're looking, regardless of pitch, matches how
+    // most first-person games actually let you interact with nearby ground
+    // clutter.
+    const camDir = new THREE.Vector3();
+    this.camera.getWorldDirection(camDir);
+    camDir.y = 0;
+    camDir.normalize();
+
     for (const item of this.interactables) {
       const dist = this.camera.position.distanceTo(item.object3D.position);
       if (dist > item.radius) continue;
 
-      const dirToItem = item.object3D.position.clone().sub(this.camera.position).normalize();
-      const camDir = new THREE.Vector3();
-      this.camera.getWorldDirection(camDir);
+      const dirToItem = item.object3D.position.clone().sub(this.camera.position);
+      dirToItem.y = 0;
+      dirToItem.normalize();
+
       const facing = camDir.dot(dirToItem);
 
       if (facing > 0.85 && dist < closestDist) {
