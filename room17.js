@@ -2,10 +2,9 @@
 // running south from room4's south doorway.
 // North wall has a doorway gap matching the corridor width (entrance from room4).
 // South/east/west walls remain solid, no window — this is the dead end of this wing.
-//
-// NEW: a small wooden table against the south wall holds a hammer. Picking it
-// up (E) sets a shared `engine.inventory.hammer` flag — this is what lets the
-// player remove the nailed-shut plank on room16's north door. See room16.js.
+// Now also holds the game's pickable hammer prop (moved here from room1) — E to
+// pick up, G to drop, Q to throw as a noise-making distraction (see engine.js's
+// pickupItem/dropHeldItem/throwHeldItem).
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -21,10 +20,6 @@ const DOOR_GAP = 1.6; // must match corridor width
 export function createRoom17(scene, engine, doorZ, doorX) {
   const colliders = [];
 
-  // shared inventory bag lives on the engine so any room can read/write it.
-  // Guarded here in case room17 happens to load before anything else touches it.
-  if (!engine.inventory) engine.inventory = {};
-
   // room center sits further south (more positive z) than its north doorway
   const centerZ = doorZ + ROOM_D / 2;
   const centerX = doorX;
@@ -38,6 +33,8 @@ export function createRoom17(scene, engine, doorZ, doorX) {
   floor.position.set(centerX, 0, centerZ);
   floor.receiveShadow = true;
   scene.add(floor);
+
+  engine.floorY = 0; // room17's floor sits at world Y 0 — dropped/thrown items rest flush with it
 
   // ---------- ceiling + beams ----------
   const ceiling = new THREE.Mesh(
@@ -77,10 +74,8 @@ export function createRoom17(scene, engine, doorZ, doorX) {
 
   // south wall — solid, dead end of this wing
   addWallBox(centerX, southZ, ROOM_W + t, t);
-
   // west wall — solid, no window
   addWallBox(centerX - ROOM_W / 2, centerZ, t, ROOM_D + t);
-
   // east wall — solid, no window
   addWallBox(centerX + ROOM_W / 2, centerZ, t, ROOM_D + t);
 
@@ -89,101 +84,6 @@ export function createRoom17(scene, engine, doorZ, doorX) {
   addWallBox(centerX - (DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
   addWallBox(centerX + (DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
   addWallBox(centerX, northZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
-
-  // ---------- table + hammer ----------
-  // A plain wooden table pushed against the south wall, a little off-center.
-  // A hammer rests on top and can be picked up.
-  const tableMat = new THREE.MeshStandardMaterial({ color: 0x3a2917, roughness: 0.85 });
-  const TABLE_W = 1.3;
-  const TABLE_D = 0.7;
-  const TABLE_TOP_H = 0.05;
-  const TABLE_LEG_H = 0.75;
-  const tableX = centerX - 1.5;
-  const tableZ = southZ - 0.7;
-
-  const tableGroup = new THREE.Group();
-  tableGroup.position.set(tableX, 0, tableZ);
-  scene.add(tableGroup);
-
-  const tabletop = new THREE.Mesh(
-    new THREE.BoxGeometry(TABLE_W, TABLE_TOP_H, TABLE_D),
-    tableMat
-  );
-  tabletop.position.set(0, TABLE_LEG_H + TABLE_TOP_H / 2, 0);
-  tabletop.castShadow = tabletop.receiveShadow = true;
-  tableGroup.add(tabletop);
-
-  const legOffsetX = TABLE_W / 2 - 0.08;
-  const legOffsetZ = TABLE_D / 2 - 0.08;
-  for (const lx of [-legOffsetX, legOffsetX]) {
-    for (const lz of [-legOffsetZ, legOffsetZ]) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.07, TABLE_LEG_H, 0.07), tableMat);
-      leg.position.set(lx, TABLE_LEG_H / 2, lz);
-      leg.castShadow = leg.receiveShadow = true;
-      tableGroup.add(leg);
-    }
-  }
-
-  // solid collider so the player can't walk through the table.
-  // Built directly from known world-space coordinates (tableX/tableZ are
-  // already world positions) rather than via Box3.setFromObject() on a mesh
-  // nested inside tableGroup — computing it from the object graph was
-  // returning a stray box anchored near the world origin before the group's
-  // matrixWorld had been updated, and the union() then produced one giant
-  // invisible collider stretching from the origin to the table.
-  const tableBox = new THREE.Box3().setFromCenterAndSize(
-    new THREE.Vector3(tableX, (TABLE_LEG_H + TABLE_TOP_H) / 2, tableZ),
-    new THREE.Vector3(TABLE_W, TABLE_LEG_H + TABLE_TOP_H, TABLE_D)
-  );
-  colliders.push(tableBox);
-  engine.addCollider(tableBox);
-
-  // hammer, resting on the tabletop
-  const hammerMat = new THREE.MeshStandardMaterial({ color: 0x4a3a24, roughness: 0.7 });
-  const hammerHeadMat = new THREE.MeshStandardMaterial({ color: 0x6b6b6b, roughness: 0.4, metalness: 0.75 });
-
-  const hammerGroup = new THREE.Group();
-  const hammerSurfaceY = TABLE_LEG_H + TABLE_TOP_H;
-  hammerGroup.position.set(tableX + 0.1, hammerSurfaceY, tableZ - 0.05);
-  hammerGroup.rotation.y = 0.4;
-  scene.add(hammerGroup);
-
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.42, 8), hammerMat);
-  handle.rotation.z = Math.PI / 2;
-  handle.position.set(0, 0.025, 0);
-  handle.castShadow = true;
-  hammerGroup.add(handle);
-
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.07, 0.07), hammerHeadMat);
-  head.position.set(0.19, 0.055, 0);
-  head.castShadow = true;
-  hammerGroup.add(head);
-
-  let hammerTaken = false;
-  const hammerInteractable = engine.addInteractable(hammerGroup, {
-    radius: 1.6,
-    prompt: "Pick up Hammer",
-    onInteract: () => {
-      if (hammerTaken) return;
-      hammerTaken = true;
-
-      engine.inventory.hammer = true;
-
-      // Re-parent the hammer onto the camera instead of deleting it — this
-      // turns it into a simple first-person "held in hand" viewmodel that
-      // follows the player everywhere from now on. Object3D.add() auto-detaches
-      // it from its current parent (the scene), so no explicit scene.remove()
-      // is needed; we just have to give it a new local transform suited for
-      // hand placement instead of tabletop placement.
-      engine.camera.add(hammerGroup);
-      hammerGroup.position.set(0.32, -0.32, -0.55);
-      hammerGroup.rotation.set(-0.3, 0.7, 0.2);
-      hammerGroup.scale.setScalar(1.2);
-
-      const ix = engine.interactables.indexOf(hammerInteractable);
-      if (ix !== -1) engine.interactables.splice(ix, 1);
-    },
-  });
 
   // ---------- ambient room lighting ----------
   const ambient = new THREE.AmbientLight(0x413c30, 1.6);
@@ -196,18 +96,52 @@ export function createRoom17(scene, engine, doorZ, doorX) {
   eerieLight.position.set(centerX, ROOM_H - 0.35, centerZ);
   scene.add(eerieLight);
 
+  // ---------- hammer prop (pickable / droppable / throwable) ----------
+  // Built once and reused for its held-viewmodel, dropped-fixture, and
+  // in-flight-projectile states — engine.pickupItem() parents it to the
+  // camera when picked up, engine.dropHeldItem() (G) puts it back down
+  // wherever the player is standing, and engine.throwHeldItem() (Q) launches
+  // it as a real projectile that emits a noise event on landing —
+  // throwable:true below is what makes it usable as a Granny/Kamla-style
+  // distraction tool, not just a carried prop. Placed on open floor near the
+  // room's center, clear of all four walls.
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x3a2717, roughness: 0.85 });
+  const hammerHeadMat = new THREE.MeshStandardMaterial({ color: 0x8a8378, roughness: 0.5, metalness: 0.65 });
+
+  const hammerGroup = new THREE.Group();
+  const hammerHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.02, 0.32, 8), woodMat);
+  hammerHandle.rotation.z = Math.PI / 2.1;
+  hammerHandle.position.set(0, 0.05, 0);
+  const hammerHead = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.05), hammerHeadMat);
+  hammerHead.position.set(0.15, 0.08, 0);
+  hammerGroup.add(hammerHandle, hammerHead);
+  hammerGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+
+  hammerGroup.position.set(centerX + 0.6, 0, centerZ + 0.6);
+  hammerGroup.rotation.y = 0.6;
+  scene.add(hammerGroup);
+
+  let hammerPickup = engine.addInteractable(hammerGroup, {
+    radius: 2.0,
+    prompt: "Pick Up Hammer",
+    onInteract: () => {
+      engine.removeInteractable(hammerPickup);
+      scene.remove(hammerGroup);
+      engine.pickupItem({
+        id: "hammer",
+        mesh: hammerGroup,
+        prompt: "Hammer",
+        throwable: true,
+        noiseRadius: 7,
+      });
+    },
+  });
+
   // ---------- per-frame update: subtle eerie light pulse ----------
   let pulseT = 0;
   function update(dt) {
     pulseT += dt;
     eerieLight.intensity = 1.4 + Math.sin(pulseT * 1.3) * 0.3;
-
-    // once held, give the hammer a faint sway synced to the engine's walk
-    // headbob so it doesn't feel like a flat prop glued to the screen
-    if (hammerTaken && hammerGroup.parent === engine.camera) {
-      const bob = Math.sin(engine._bobT || 0) * 0.015;
-      hammerGroup.position.y = -0.32 + bob;
-    }
   }
 
   return { colliders, update, centerX, centerZ, northZ, southZ };
