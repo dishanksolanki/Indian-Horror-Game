@@ -13,6 +13,13 @@
 // a viewmodel parented to the camera. Pressing G drops it: the mesh pops back into world
 // space in front of the player, rests on the floor as a fixture, and is re-registered as
 // a normal interactable so it can be picked back up later.
+//
+// FIX (held-item-drop-v3): the dropped item's "pick it back up" interactable used to
+// remove the mesh from the scene/interactables list BEFORE calling pickupItem(). If
+// pickupItem() ever failed (e.g. heldItem was already set), the mesh was gone — not in
+// the scene, not an interactable, not held. It just vanished. Now the removal only
+// happens once pickupItem() actually reports success; on failure the item stays exactly
+// where it was, still interactable.
 
 import * as THREE from "three";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
@@ -22,7 +29,7 @@ import { PointerLockControls } from "three/addons/controls/PointerLockControls.j
 // cached copy from before (ES module scripts get cached aggressively — if
 // you don't see this line after a save, the browser is serving a stale
 // engine.js and a hard refresh / cache-busted script src is needed).
-console.log("[engine.js] loaded — build: held-item-drop-v2");
+console.log("[engine.js] loaded — build: held-item-drop-v3");
 
 export class Engine {
   constructor(canvas) {
@@ -189,7 +196,14 @@ export class Engine {
    */
   dropHeldItem() {
     console.log("[engine.js] dropHeldItem() called — heldItem:", this.heldItem, "hiding:", this.hiding);
-    if (!this.heldItem || this.hiding) return;
+    if (!this.heldItem) {
+      console.log("[engine.js] dropHeldItem() no-op — nothing is currently held");
+      return;
+    }
+    if (this.hiding) {
+      console.log("[engine.js] dropHeldItem() no-op — can't drop items while hiding");
+      return;
+    }
     const { id, mesh, prompt } = this.heldItem;
 
     // pull the mesh back out of camera-local space into world space
@@ -206,15 +220,24 @@ export class Engine {
     mesh.position.copy(dropPos);
     mesh.rotation.set(0, Math.random() * Math.PI * 2, 0);
     this.scene.add(mesh);
+    console.log("[engine.js] dropHeldItem() placed mesh at:", mesh.position.clone());
 
-    // becomes a normal fixture in the world again, pickable via the usual E-interact flow
+    // becomes a normal fixture in the world again, pickable via the usual E-interact flow.
+    // IMPORTANT: only remove this fixture from the world once pickupItem() actually
+    // succeeds. Previously this removed the mesh from the scene/interactables list
+    // unconditionally and *then* tried to pick it up — if pickupItem() failed (e.g.
+    // something else was already held), the item vanished with no way to get it back.
     const entry = this.addInteractable(mesh, {
       radius: 1.6,
       prompt: `Pick Up ${prompt}`,
       onInteract: () => {
-        this.removeInteractable(entry);
-        this.scene.remove(mesh);
-        this.pickupItem({ id, mesh, prompt });
+        const picked = this.pickupItem({ id, mesh, prompt });
+        if (picked) {
+          this.removeInteractable(entry);
+          this.scene.remove(mesh);
+        } else {
+          console.log("[engine.js] re-pickup of dropped item failed — leaving it in place");
+        }
       },
     });
 
