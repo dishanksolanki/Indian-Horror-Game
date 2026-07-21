@@ -32,8 +32,31 @@ import { PointerLockControls } from "three/addons/controls/PointerLockControls.j
 // engine.js and a hard refresh / cache-busted script src is needed).
 console.log("[engine.js] loaded — build: throwable-noise-fixture-v1");
 
+// Counts how many Engine instances have been constructed this page load.
+// Multiple instances is the #1 cause of "heldItem was null" reports: each
+// instance binds its own document-level keydown listeners in _bindInput(),
+// so if a room/hot-reload path ever creates a second Engine without the
+// first one being torn down, BOTH sets of G/Q/E listeners fire on every
+// keypress — one against the engine that actually has the item, one against
+// a second engine whose heldItem has always been null.
+let _engineInstanceCount = 0;
+
 export class Engine {
   constructor(canvas) {
+    _engineInstanceCount += 1;
+    this._instanceId = _engineInstanceCount;
+    if (_engineInstanceCount > 1) {
+      console.warn(
+        `[engine.js] Engine instance #${this._instanceId} constructed — ` +
+        `${_engineInstanceCount} Engine instances now exist on this page. ` +
+        `Old instances' key listeners are still attached to document and will ` +
+        `keep firing. If items ever seem to "not be held" when they should be, ` +
+        `this is almost certainly why.`
+      );
+    } else {
+      console.log(`[engine.js] Engine instance #${this._instanceId} constructed`);
+    }
+
     this.canvas = canvas;
     this.scene = new THREE.Scene();
     this.clock = new THREE.Clock();
@@ -208,9 +231,9 @@ export class Engine {
     noiseRadius = 6,
     onPickup = null,
   } = {}) {
-    console.log("[engine.js] pickupItem() called for:", id, "mesh:", mesh, "already holding:", this.heldItem);
+    console.log(`[engine.js#${this._instanceId}] pickupItem() called for:`, id, "mesh:", mesh, "already holding:", this.heldItem);
     if (this.heldItem) {
-      console.log("[engine.js] pickupItem() refused — already holding something");
+      console.log(`[engine.js#${this._instanceId}] pickupItem() refused — already holding something`);
       return false;
     }
 
@@ -219,7 +242,7 @@ export class Engine {
     this.camera.add(mesh);
 
     this.heldItem = { id, mesh, prompt, holdOffset, throwable, noiseRadius };
-    console.log("[engine.js] pickupItem() succeeded — heldItem is now:", this.heldItem);
+    console.log(`[engine.js#${this._instanceId}] pickupItem() succeeded — heldItem is now:`, this.heldItem);
     if (onPickup) onPickup();
     return true;
   }
@@ -232,7 +255,7 @@ export class Engine {
    * No-ops if nothing is held, or while hiding (can't fumble with items then).
    */
   dropHeldItem() {
-    console.log("[engine.js] dropHeldItem() called — heldItem:", this.heldItem, "hiding:", this.hiding);
+    console.log(`[engine.js#${this._instanceId}] dropHeldItem() called — heldItem:`, this.heldItem, "hiding:", this.hiding);
     if (!this.heldItem || this.hiding) return;
     const { id, mesh, prompt, throwable, noiseRadius } = this.heldItem;
 
@@ -266,7 +289,7 @@ export class Engine {
    * throwable, or the player is currently hiding.
    */
   throwHeldItem() {
-    console.log("[engine.js] throwHeldItem() called — heldItem:", this.heldItem, "hiding:", this.hiding);
+    console.log(`[engine.js#${this._instanceId}] throwHeldItem() called — heldItem:`, this.heldItem, "hiding:", this.hiding);
     if (!this.heldItem || this.hiding) return;
     if (!this.heldItem.throwable) {
       console.log("[engine.js] throwHeldItem() ignored — held item is not marked throwable");
@@ -346,7 +369,35 @@ export class Engine {
       this.exitHide();
       return;
     }
-    if (this._focusedInteractable) this._focusedInteractable.onInteract();
+    if (this._focusedInteractable) {
+      this._focusedInteractable.onInteract();
+      return;
+    }
+    // Nothing focused — dump why, so a "pickupItem() never got called" report
+    // is diagnosable instead of a silent no-op. Shows every interactable's
+    // distance and facing-dot against this engine's own focus thresholds
+    // (radius check + facing > 0.85), so it's obvious whether the player is
+    // just out of range, not looking at it closely enough, or the
+    // interactable was never registered on this engine instance at all.
+    if (this.interactables.length === 0) {
+      console.log("[engine.js] _tryInteract() — nothing focused, and this.interactables is EMPTY. " +
+        "If a room registered one, this is almost certainly a duplicate Engine instance problem " +
+        "(e.g. hot reload / re-init created a second Engine and this key listener is bound to the old one).");
+      return;
+    }
+    const camDir = new THREE.Vector3();
+    this.camera.getWorldDirection(camDir);
+    console.log("[engine.js] _tryInteract() — nothing focused. Candidates:");
+    for (const item of this.interactables) {
+      const dist = this.camera.position.distanceTo(item.object3D.position);
+      const dirToItem = item.object3D.position.clone().sub(this.camera.position).normalize();
+      const facing = camDir.dot(dirToItem);
+      console.log(
+        `  - "${item.prompt}" dist=${dist.toFixed(2)} (needs <= ${item.radius}) ` +
+        `facing=${facing.toFixed(2)} (needs > 0.85) -> ` +
+        `${dist <= item.radius && facing > 0.85 ? "SHOULD have matched (check for an earlier closer match stealing it)" : "too far / not looking at it closely enough"}`
+      );
+    }
   }
 
   // ---------- hide spot ----------
