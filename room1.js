@@ -233,7 +233,7 @@ export function createRoom1(scene, engine) {
   scene.add(hammerGroup);
 
   let hammerPickup = engine.addInteractable(hammerGroup, {
-    radius: 1.6,
+    radius: 2.0,
     prompt: "Pick Up Hammer",
     onInteract: () => {
       engine.removeInteractable(hammerPickup);
