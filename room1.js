@@ -1,7 +1,7 @@
 // room1.js — ROOM 1: an old Indian haveli room.
 // Pure map for now: floor, walls, charpai, diya light, puja corner, wooden almirah,
-// and a pickable hammer prop (E to pick up, G to drop, T to throw — see engine.js's
-// pickupItem/dropHeldItem/throwHeldItem).
+// and a pickable hammer prop (E to pick up, G to drop — see engine.js's
+// pickupItem/dropHeldItem).
 // North wall has a doorway gap that connects to the corridor -> room2.
 // No jumpscares / mechanics yet — just the walkable space (+ the charpai hide spot below).
 
@@ -245,11 +245,11 @@ export function createRoom1(scene, engine) {
   flame.position.set(-ROOM_W / 2 + 0.35, 1.2, -3.2);
   scene.add(flame);
 
-  // ---------- hammer prop (pickable / droppable / throwable) ----------
+  // ---------- hammer prop (pickable / droppable) ----------
   // Built once and reused for both its held-viewmodel and world-fixture states —
   // engine.pickupItem() parents it to the camera when picked up, and
-  // engine.dropHeldItem() / engine.throwHeldItem() put it back in the scene
-  // wherever it ends up when dropped (G) or thrown (T).
+  // engine.dropHeldItem() puts it back in the scene wherever the player is
+  // standing when they drop it (G key).
   // Placed on open floor near the middle of the room — clear of the charpai
   // (~x -2.2..-3, z 1.8..3.8), the almirah (~x 2.8..3.5, z 2.5..3.5), the puja
   // corner (~x -3.15, z -3.2), and the north doorway.
@@ -268,19 +268,13 @@ export function createRoom1(scene, engine) {
   hammerGroup.rotation.y = 0.6;
   scene.add(hammerGroup);
 
-  // aimOffset lifts the point used for the "am I looking at this" check up off the
-  // floor without moving the actual mesh — without it, you have to aim almost
-  // straight down at your own feet to focus a floor-level object like this.
   let hammerPickup = engine.addInteractable(hammerGroup, {
     radius: 1.6,
     prompt: "Pick Up Hammer",
-    aimOffset: new THREE.Vector3(0, 0.4, 0),
     onInteract: () => {
-      const picked = engine.pickupItem({ id: "hammer", mesh: hammerGroup, prompt: "Hammer" });
-      if (picked) {
-        engine.removeInteractable(hammerPickup);
-        scene.remove(hammerGroup);
-      }
+      engine.removeInteractable(hammerPickup);
+      scene.remove(hammerGroup);
+      engine.pickupItem({ id: "hammer", mesh: hammerGroup, prompt: "Hammer" });
     },
   });
 
