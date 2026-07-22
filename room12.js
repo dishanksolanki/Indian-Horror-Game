@@ -104,14 +104,49 @@ export function createRoom12(scene, engine, doorZ) {
   const doorFaceZ = northZ + t / 2 + 0.03; // flush against the interior (room12) face of the north wall
   const hingeX = -DOOR_GAP / 2 + 0.03; // hinge sits at the west edge of the doorway
 
-  // simple frame trim around the opening — also used as the (static, world-positioned) interact target
-  const doorFrame = new THREE.Mesh(
-    new THREE.BoxGeometry(DOOR_GAP + 0.14, DOOR_H + 0.08, 0.1),
+  // ---------- frame trim around the opening ----------
+  // FIX: this used to be a single solid box almost exactly the size of the
+  // whole doorway (DOOR_GAP+0.14 wide x DOOR_H+0.08 tall), so it permanently
+  // blocked the view/passage regardless of whether the hinged panel was open
+  // or closed — that's what was showing up as a solid dark brown/black slab
+  // even with the door open. Now it's genuine trim: a left jamb, right jamb,
+  // and header strip around the *edges* of the opening only, leaving the
+  // DOOR_GAP x DOOR_H middle completely empty so you can actually see (and
+  // walk) through into room15 once the door swings clear.
+  const FRAME_T = 0.07; // trim thickness
+  const frameGroup = new THREE.Group();
+
+  const leftJamb = new THREE.Mesh(
+    new THREE.BoxGeometry(FRAME_T, DOOR_H + FRAME_T, 0.1),
     doorFrameMat
   );
-  doorFrame.position.set(0, DOOR_H / 2, doorFaceZ - 0.04);
-  doorFrame.castShadow = doorFrame.receiveShadow = true;
-  scene.add(doorFrame);
+  leftJamb.position.set(-DOOR_GAP / 2 - FRAME_T / 2, DOOR_H / 2, doorFaceZ - 0.04);
+  frameGroup.add(leftJamb);
+
+  const rightJamb = new THREE.Mesh(
+    new THREE.BoxGeometry(FRAME_T, DOOR_H + FRAME_T, 0.1),
+    doorFrameMat
+  );
+  rightJamb.position.set(DOOR_GAP / 2 + FRAME_T / 2, DOOR_H / 2, doorFaceZ - 0.04);
+  frameGroup.add(rightJamb);
+
+  const header = new THREE.Mesh(
+    new THREE.BoxGeometry(DOOR_GAP + FRAME_T * 2, FRAME_T, 0.1),
+    doorFrameMat
+  );
+  header.position.set(0, DOOR_H + FRAME_T / 2, doorFaceZ - 0.04);
+  frameGroup.add(header);
+
+  frameGroup.traverse((o) => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; } });
+  scene.add(frameGroup);
+
+  // static interact target for the door — kept as an invisible box the same
+  // footprint as the old solid frame so the "Open Door" prompt still triggers
+  // from roughly the same distance/position as before, but it's not rendered,
+  // so it can never visually block the opening.
+  const doorInteractTarget = new THREE.Object3D();
+  doorInteractTarget.position.set(0, DOOR_H / 2, doorFaceZ - 0.04);
+  scene.add(doorInteractTarget);
 
   // pivot group at the hinge — the panel is offset from it so it spans the doorway when closed
   const doorPivot = new THREE.Group();
@@ -155,7 +190,7 @@ export function createRoom12(scene, engine, doorZ) {
   const DOOR_ANIM_DURATION = 0.9; // seconds
   const DOOR_OPEN_ANGLE = Math.PI * 0.55;
 
-  const doorInteractable = engine.addInteractable(doorFrame, {
+  const doorInteractable = engine.addInteractable(doorInteractTarget, {
     radius: 2.2,
     prompt: "Open Door",
     onInteract: () => {
