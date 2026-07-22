@@ -20,6 +20,10 @@ const DOOR_GAP = 1.6; // must match corridor width
 export function createRoom17(scene, engine, doorZ, doorX) {
   const colliders = [];
 
+  // shared inventory bag lives on the engine so any room can read/write it.
+  // Guarded here in case room17 happens to load before room16 does.
+  if (!engine.inventory) engine.inventory = {};
+
   // room center sits further south (more positive z) than its north doorway
   const centerZ = doorZ + ROOM_D / 2;
   const centerX = doorX;
@@ -180,6 +184,15 @@ export function createRoom17(scene, engine, doorZ, doorX) {
         prompt: "Hammer",
         throwable: true,
         noiseRadius: 7,
+        // THIS was the missing piece: pickupItem() only manages the
+        // held-viewmodel state (engine.heldItem) — it never touched the
+        // shared inventory flag on its own. room16's plank checks
+        // engine.inventory.hammer, so without setting it here that flag
+        // stayed undefined forever, even after the hammer was in hand.
+        onPickup: () => {
+          engine.inventory.hammer = true;
+          console.log("[room17.js] hammer picked up — engine.inventory.hammer set to true");
+        },
       });
     },
   });
