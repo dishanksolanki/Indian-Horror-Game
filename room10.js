@@ -173,10 +173,23 @@ export function createRoom10(scene, engine, doorX, doorZ) {
   engine.addCollider(tableBox);
 
   // interaction: press E near the table to open/close the drawer
+  //
+  // IMPORTANT: engine.js's focus check uses camera.position.distanceTo(object3D.position),
+  // a full 3D distance. The camera sits at playerHeight (1.7). tableGroup itself sits at
+  // y = 0 (floor level), so using tableGroup directly as the interactable would mean the
+  // *minimum possible* distance (standing right next to the table) is ~1.7 from vertical
+  // offset alone — already bigger than a 1.6 radius, so it could never be focused. Instead
+  // we give the drawer its own anchor point at roughly chest height, positioned in world
+  // space (added straight to scene, not nested under tableGroup, since engine.js reads
+  // object3D.position directly rather than a computed world position).
+  const drawerAnchor = new THREE.Object3D();
+  drawerAnchor.position.set(tableX, 0.9, tableZ);
+  scene.add(drawerAnchor);
+
   let drawerOpen = false;
   let drawerT = 0; // 0 = closed, 1 = open — animated toward target each frame
-  engine.addInteractable(tableGroup, {
-    radius: 1.6,
+  engine.addInteractable(drawerAnchor, {
+    radius: 2.0,
     prompt: () => (drawerOpen ? "Close drawer" : "Open drawer"),
     onInteract: () => {
       drawerOpen = !drawerOpen;
