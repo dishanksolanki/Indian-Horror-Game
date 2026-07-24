@@ -8,10 +8,15 @@ import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
 // =========================================================
 // Shiv Ling (Shivling) builder — a smooth, aniconic stone form of Lord Shiva
-// resting in a circular yoni/pindika base, with a small spout, a coiled
-// stone naga (serpent), a trickle of water, bilva leaves, and bael/flower
-// offerings scattered around it. Self-contained: builds its own procedural
-// stone texture so it reads as one weathered, polished block of temple stone.
+// resting in an elongated yoni/pindika base, with a spout, a coiled stone
+// naga (serpent), a trickle of water, bilva leaves, and flower offerings
+// scattered around it. Self-contained: builds its own procedural stone
+// texture so it reads as one weathered, water-polished block of temple stone.
+//
+// The lingam itself is sculpted with a THREE.LatheGeometry profile rather
+// than a sphere stuck on a cylinder — this gives the gentle, continuous
+// taper-then-round-dome silhouette of a real carved lingam instead of a
+// "capsule" look.
 // =========================================================
 
 function buildStoneTextures() {
@@ -21,29 +26,33 @@ function buildStoneTextures() {
   canvas.height = size;
   const ctx = canvas.getContext("2d");
 
-  // base tone: dark, water-polished basalt
-  ctx.fillStyle = "#4a4844";
+  // base tone: dark, water-polished basalt (traditional black-stone lingam)
+  const baseGrad = ctx.createLinearGradient(0, 0, size, size);
+  baseGrad.addColorStop(0, "#403e3a");
+  baseGrad.addColorStop(0.5, "#4a4844");
+  baseGrad.addColorStop(1, "#39372f");
+  ctx.fillStyle = baseGrad;
   ctx.fillRect(0, 0, size, size);
 
   // layered speckle/grain noise for a carved, mineral-flecked stone look
-  for (let i = 0; i < 22000; i++) {
+  for (let i = 0; i < 26000; i++) {
     const x = Math.random() * size;
     const y = Math.random() * size;
-    const r = Math.random() * 1.6 + 0.2;
+    const r = Math.random() * 1.5 + 0.2;
     const shade = Math.random();
-    const c = shade < 0.5
-      ? `rgba(20,18,16,${0.05 + Math.random() * 0.12})`
-      : `rgba(150,146,132,${0.03 + Math.random() * 0.08})`;
+    const c = shade < 0.55
+      ? `rgba(18,16,14,${0.05 + Math.random() * 0.13})`
+      : `rgba(158,152,136,${0.02 + Math.random() * 0.07})`;
     ctx.fillStyle = c;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // faint veining
-  ctx.strokeStyle = "rgba(15,14,12,0.18)";
+  // faint mineral veining
+  ctx.strokeStyle = "rgba(14,13,11,0.16)";
   ctx.lineWidth = 1;
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 14; i++) {
     ctx.beginPath();
     let x = Math.random() * size;
     let y = Math.random() * size;
@@ -57,14 +66,27 @@ function buildStoneTextures() {
     ctx.stroke();
   }
 
-  // damp/wet sheen patches (a Shivling is traditionally kept wet from abhishekam)
-  for (let i = 0; i < 16; i++) {
+  // soft vertical polish streaks, as if worn smooth by generations of
+  // abhishekam (ritual bathing) pouring down the same faces of the stone
+  for (let i = 0; i < 8; i++) {
+    const x = Math.random() * size;
+    const w = 18 + Math.random() * 34;
+    const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+    grad.addColorStop(0, "rgba(200,200,196,0)");
+    grad.addColorStop(0.5, "rgba(200,200,196,0.05)");
+    grad.addColorStop(1, "rgba(200,200,196,0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, 0, w, size);
+  }
+
+  // damp/wet sheen patches (a Shivling is traditionally kept wet)
+  for (let i = 0; i < 18; i++) {
     const x = Math.random() * size;
     const y = Math.random() * size;
-    const r = 30 + Math.random() * 70;
+    const r = 26 + Math.random() * 70;
     const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, "rgba(210,215,220,0.06)");
-    grad.addColorStop(1, "rgba(210,215,220,0)");
+    grad.addColorStop(0, "rgba(214,220,224,0.07)");
+    grad.addColorStop(1, "rgba(214,220,224,0)");
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -98,9 +120,9 @@ function makeStoneMaterial(colorTex, bumpTex, tint = 0xffffff, extra = {}) {
   return new THREE.MeshStandardMaterial({
     map: colorTex,
     bumpMap: bumpTex,
-    bumpScale: 0.012,
+    bumpScale: 0.01,
     color: tint,
-    roughness: 0.5,
+    roughness: 0.45,
     metalness: 0.02,
     ...extra,
   });
@@ -124,6 +146,30 @@ function segmentBetween(p1, p2, rTop, rBottom, radialSegments, material) {
   return mesh;
 }
 
+// Builds the lathe profile (radius, height) of a realistic lingam:
+// a wide, near-cylindrical base (brahma-bhaga, hidden in the yoni), a soft
+// octagonal-reading mid shaft (vishnu-bhaga), and a smoothly rounded,
+// slightly asymmetric dome crown (rudra-bhaga) — the part devotees see.
+function buildLingamProfile(S) {
+  const pts = [
+    new THREE.Vector2(0.195 * S, 0.000 * S),
+    new THREE.Vector2(0.196 * S, 0.020 * S),
+    new THREE.Vector2(0.190 * S, 0.060 * S),
+    new THREE.Vector2(0.182 * S, 0.130 * S),
+    new THREE.Vector2(0.176 * S, 0.210 * S),
+    new THREE.Vector2(0.172 * S, 0.290 * S),
+    new THREE.Vector2(0.168 * S, 0.360 * S),
+    new THREE.Vector2(0.158 * S, 0.420 * S),
+    new THREE.Vector2(0.138 * S, 0.475 * S),
+    new THREE.Vector2(0.108 * S, 0.520 * S),
+    new THREE.Vector2(0.072 * S, 0.556 * S),
+    new THREE.Vector2(0.038 * S, 0.580 * S),
+    new THREE.Vector2(0.014 * S, 0.596 * S),
+    new THREE.Vector2(0.000 * S, 0.604 * S),
+  ];
+  return pts;
+}
+
 function createShivLing(scene, opts = {}) {
   const {
     x = 0,
@@ -137,11 +183,11 @@ function createShivLing(scene, opts = {}) {
   const S = scale;
 
   const { colorTex, bumpTex } = buildStoneTextures();
-  const stonePolished = makeStoneMaterial(colorTex, bumpTex, 0x3f3d3a, { roughness: 0.35, metalness: 0.05 });
-  const stoneMatte = makeStoneMaterial(colorTex, bumpTex, 0x5a564c, { roughness: 0.75 });
+  const stonePolished = makeStoneMaterial(colorTex, bumpTex, 0x3c3a37, { roughness: 0.3, metalness: 0.06 });
+  const stoneMatte = makeStoneMaterial(colorTex, bumpTex, 0x58544a, { roughness: 0.75 });
   const brassMat = new THREE.MeshStandardMaterial({ color: 0xb08d3e, roughness: 0.4, metalness: 0.7 });
   const leafMat = new THREE.MeshStandardMaterial({ color: 0x2e6b2e, roughness: 0.7 });
-  const waterMat = new THREE.MeshStandardMaterial({ color: 0xbcd8e0, roughness: 0.1, metalness: 0, transparent: true, opacity: 0.55 });
+  const waterMat = new THREE.MeshStandardMaterial({ color: 0xbcd8e0, roughness: 0.08, metalness: 0, transparent: true, opacity: 0.5 });
 
   const parts = [];
   function add(mesh) {
@@ -153,65 +199,84 @@ function createShivLing(scene, opts = {}) {
   }
 
   // =========================================================
-  // PEDESTAL: square/octagonal stone plinth the whole altar sits on
+  // PEDESTAL: octagonal stone plinth the whole altar sits on
   // =========================================================
   const plinth = new THREE.Mesh(new THREE.CylinderGeometry(0.5 * S, 0.56 * S, 0.1 * S, 8), stoneMatte);
   plinth.position.set(0, 0.05 * S, 0);
   add(plinth);
 
   // =========================================================
-  // YONI / PINDIKA: the circular base with a spout (pranala) on one side —
-  // this is the traditional platform the lingam rises from
+  // YONI / PINDIKA: the elongated, boat-shaped base with a spout (pranala)
+  // on one side — this is the traditional platform the lingam rises from.
+  // Built as a scaled cylinder (circle stretched into an oval) so it reads
+  // as the classic elongated yoni shape rather than a plain round dish.
   // =========================================================
   const yoniBaseY = 0.1 * S;
-  const yoniBase = new THREE.Mesh(new THREE.CylinderGeometry(0.42 * S, 0.46 * S, 0.16 * S, 24), stonePolished);
+  const yoniBase = new THREE.Mesh(new THREE.CylinderGeometry(0.46 * S, 0.5 * S, 0.16 * S, 28), stonePolished);
+  yoniBase.scale.set(1, 1, 0.82);
   yoniBase.position.set(0, yoniBaseY + 0.08 * S, 0);
   add(yoniBase);
 
-  // gentle rim lip around the top of the yoni base
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.42 * S, 0.03 * S, 10, 28), stonePolished);
+  // gentle rim lip around the top of the yoni base (also ovalized)
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.46 * S, 0.028 * S, 10, 32), stonePolished);
   rim.rotation.x = Math.PI / 2;
+  rim.scale.set(1, 0.82, 1);
   rim.position.set(0, yoniBaseY + 0.16 * S, 0);
   add(rim);
 
-  // the spout (pranala) — a small tapered channel projecting from one side,
-  // where water/milk offerings drain away
-  const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * S, 0.08 * S, 0.28 * S, 10), stonePolished);
+  // shallow ritual groove running around the top surface of the yoni,
+  // channelling offerings toward the spout
+  const groove = new THREE.Mesh(new THREE.TorusGeometry(0.34 * S, 0.012 * S, 6, 28), stoneMatte);
+  groove.rotation.x = Math.PI / 2;
+  groove.scale.set(1, 0.8, 1);
+  groove.position.set(0, yoniBaseY + 0.161 * S, 0);
+  add(groove);
+
+  // the spout (pranala) — a tapered channel projecting from one side,
+  // where water/milk offerings drain away, with a lipped end
+  const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.045 * S, 0.075 * S, 0.3 * S, 12), stonePolished);
   spout.rotation.z = Math.PI / 2;
-  spout.position.set(0.5 * S, yoniBaseY + 0.16 * S, 0);
+  spout.position.set(0.52 * S, yoniBaseY + 0.16 * S, 0);
   add(spout);
-  const spoutLip = new THREE.Mesh(new THREE.TorusGeometry(0.045 * S, 0.012 * S, 8, 12), stonePolished);
+  const spoutTop = new THREE.Mesh(new THREE.BoxGeometry(0.16 * S, 0.03 * S, 0.09 * S), stonePolished);
+  spoutTop.position.set(0.5 * S, yoniBaseY + 0.175 * S, 0);
+  add(spoutTop);
+  const spoutLip = new THREE.Mesh(new THREE.TorusGeometry(0.04 * S, 0.01 * S, 8, 12), stonePolished);
   spoutLip.rotation.y = Math.PI / 2;
-  spoutLip.position.set(0.64 * S, yoniBaseY + 0.16 * S, 0);
+  spoutLip.position.set(0.67 * S, yoniBaseY + 0.16 * S, 0);
   add(spoutLip);
 
   // =========================================================
-  // LINGAM: the smooth, rounded vertical stone form — the domed top is
-  // gently egg-shaped (a cylindrical shaft rising into a rounded crown)
+  // LINGAM: sculpted with a lathe profile for a genuinely rounded, tapering
+  // silhouette — brahma-bhaga base hidden in the yoni collar, an octagonal-
+  // reading vishnu-bhaga shaft, and a smoothly domed rudra-bhaga crown.
   // =========================================================
   const lingamBaseY = yoniBaseY + 0.16 * S;
-  const shaftH = 0.42 * S;
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.17 * S, 0.19 * S, shaftH, 24), stonePolished);
-  shaft.position.set(0, lingamBaseY + shaftH / 2, 0);
-  add(shaft);
+  const profile = buildLingamProfile(S);
+  const lingamGeo = new THREE.LatheGeometry(profile, 32);
+  const lingam = new THREE.Mesh(lingamGeo, stonePolished);
+  lingam.position.set(0, lingamBaseY, 0);
+  add(lingam);
 
-  // rounded dome crown, slightly egg-shaped rather than a perfect sphere
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.17 * S, 24, 20), stonePolished);
-  dome.scale.set(1, 1.25, 1);
-  dome.position.set(0, lingamBaseY + shaftH + 0.13 * S, 0);
-  add(dome);
-  const domeTip = new THREE.Mesh(new THREE.SphereGeometry(0.03 * S, 10, 10), stonePolished);
-  domeTip.position.set(0, lingamBaseY + shaftH + 0.32 * S, 0);
-  add(domeTip);
+  // subtle octagonal facet ring low on the shaft, hinting at the classic
+  // three-part division without literally carving flat facets (keeps the
+  // silhouette smooth while still reading as "sculpted" up close)
+  const facetRing = new THREE.Mesh(new THREE.CylinderGeometry(0.185 * S, 0.19 * S, 0.05 * S, 8), stoneMatte);
+  facetRing.position.set(0, lingamBaseY + 0.1 * S, 0);
+  add(facetRing);
 
-  // subtle horizontal facet lines low on the shaft (traditional three-part
-  // division: brahma-bhaga square base under the yoni, vishnu-bhaga octagonal
-  // middle, and rudra-bhaga rounded top which is the visible dome) — here we
-  // just suggest a soft ring where the shaft meets the yoni collar
-  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.19 * S, 0.02 * S, 8, 24), stoneMatte);
+  // soft collar where the shaft meets the yoni
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.196 * S, 0.018 * S, 8, 28), stoneMatte);
   collar.rotation.x = Math.PI / 2;
-  collar.position.set(0, lingamBaseY + 0.03 * S, 0);
+  collar.position.set(0, lingamBaseY + 0.02 * S, 0);
   add(collar);
+
+  // a faint horizontal "tilak"-style band near the top of the dome, as is
+  // common when a lingam is dressed for daily worship
+  const tilakBand = new THREE.Mesh(new THREE.TorusGeometry(0.09 * S, 0.008 * S, 6, 20), new THREE.MeshStandardMaterial({ color: 0xd8c48a, roughness: 0.6 }));
+  tilakBand.rotation.x = Math.PI / 2;
+  tilakBand.position.set(0, lingamBaseY + 0.5 * S, 0);
+  add(tilakBand);
 
   // =========================================================
   // NAGA: a small coiled stone serpent draped around the base of the lingam,
@@ -219,17 +284,17 @@ function createShivLing(scene, opts = {}) {
   // =========================================================
   const nagaGroup = new THREE.Group();
   const coilCurve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(0.19 * S, lingamBaseY + 0.05 * S, 0),
-    new THREE.Vector3(0.1 * S, lingamBaseY + 0.1 * S, 0.17 * S),
-    new THREE.Vector3(-0.12 * S, lingamBaseY + 0.18 * S, 0.12 * S),
-    new THREE.Vector3(-0.18 * S, lingamBaseY + 0.28 * S, -0.05 * S),
-    new THREE.Vector3(-0.05 * S, lingamBaseY + 0.36 * S, -0.16 * S),
-    new THREE.Vector3(0.08 * S, lingamBaseY + shaftH + 0.05 * S, -0.1 * S),
+    new THREE.Vector3(0.19 * S, lingamBaseY + 0.04 * S, 0),
+    new THREE.Vector3(0.11 * S, lingamBaseY + 0.09 * S, 0.17 * S),
+    new THREE.Vector3(-0.11 * S, lingamBaseY + 0.17 * S, 0.13 * S),
+    new THREE.Vector3(-0.18 * S, lingamBaseY + 0.27 * S, -0.04 * S),
+    new THREE.Vector3(-0.06 * S, lingamBaseY + 0.36 * S, -0.16 * S),
+    new THREE.Vector3(0.07 * S, lingamBaseY + 0.47 * S, -0.09 * S),
   ]);
-  const coilPts = coilCurve.getPoints(20);
+  const coilPts = coilCurve.getPoints(22);
   for (let i = 0; i < coilPts.length - 1; i++) {
     const t = i / (coilPts.length - 2);
-    const r = 0.028 * S * (1 - t * 0.55);
+    const r = 0.027 * S * (1 - t * 0.55);
     const seg = segmentBetween(coilPts[i], coilPts[i + 1], Math.max(r, 0.008 * S), Math.max(r * 0.9, 0.008 * S), 8, stoneMatte);
     nagaGroup.add(seg);
   }
@@ -238,7 +303,7 @@ function createShivLing(scene, opts = {}) {
   hood.rotation.x = Math.PI;
   hood.position.copy(coilPts[coilPts.length - 1]).add(new THREE.Vector3(0, 0.05 * S, 0));
   nagaGroup.add(hood);
-  const hoodHead = new THREE.Mesh(new THREE.SphereGeometry(0.025 * S, 8, 8), stoneMatte);
+  const hoodHead = new THREE.Mesh(new THREE.SphereGeometry(0.024 * S, 8, 8), stoneMatte);
   hoodHead.position.copy(coilPts[coilPts.length - 1]).add(new THREE.Vector3(0, 0.1 * S, 0.02 * S));
   nagaGroup.add(hoodHead);
   nagaGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
@@ -248,8 +313,9 @@ function createShivLing(scene, opts = {}) {
   // =========================================================
   // A thin trickle of water down one side of the lingam (abhishekam)
   // =========================================================
-  const trickle = new THREE.Mesh(new THREE.CylinderGeometry(0.012 * S, 0.008 * S, shaftH + 0.2 * S, 8), waterMat);
-  trickle.position.set(0.14 * S, lingamBaseY + (shaftH + 0.2 * S) / 2, 0.1 * S);
+  const trickleH = 0.42 * S + 0.2 * S;
+  const trickle = new THREE.Mesh(new THREE.CylinderGeometry(0.011 * S, 0.007 * S, trickleH, 8), waterMat);
+  trickle.position.set(0.14 * S, lingamBaseY + trickleH / 2, 0.1 * S);
   add(trickle);
   const puddle = new THREE.Mesh(new THREE.CircleGeometry(0.1 * S, 20), waterMat);
   puddle.rotation.x = -Math.PI / 2;
@@ -275,31 +341,31 @@ function createShivLing(scene, opts = {}) {
     group.add(leafGroup);
     parts.push(leafGroup);
   }
-  bilvaLeaf(-0.12 * S, -0.16 * S, 0.4);
-  bilvaLeaf(-0.22 * S, 0.05 * S, -0.6);
-  bilvaLeaf(0.02 * S, -0.28 * S, 1.1);
+  bilvaLeaf(-0.11 * S, -0.13 * S, 0.4);
+  bilvaLeaf(-0.2 * S, 0.04 * S, -0.6);
+  bilvaLeaf(0.02 * S, -0.23 * S, 1.1);
 
   const petalMat1 = new THREE.MeshStandardMaterial({ color: 0xf2a10c, roughness: 0.8 });
   const petalMat2 = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
   for (let i = 0; i < 10; i++) {
-    const petal = new THREE.Mesh(new THREE.SphereGeometry(0.018 * S + Math.random() * 0.012 * S, 6, 6), i % 2 === 0 ? petalMat1 : petalMat2);
+    const petal = new THREE.Mesh(new THREE.SphereGeometry(0.017 * S + Math.random() * 0.011 * S, 6, 6), i % 2 === 0 ? petalMat1 : petalMat2);
     petal.scale.y = 0.4;
     const ang = Math.random() * Math.PI * 2;
-    const rr = 0.2 * S + Math.random() * 0.2 * S;
-    petal.position.set(Math.cos(ang) * rr, yoniBaseY + 0.163 * S, Math.sin(ang) * rr);
+    const rr = 0.18 * S + Math.random() * 0.17 * S;
+    petal.position.set(Math.cos(ang) * rr, yoniBaseY + 0.163 * S, Math.sin(ang) * rr * 0.82);
     petal.rotation.y = Math.random() * Math.PI;
     add(petal);
   }
 
   // small brass diya resting on the pedestal edge
   const diya = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * S, 0.038 * S, 0.025 * S, 12), brassMat);
-  diya.position.set(-0.36 * S, 0.11 * S, 0.28 * S);
+  diya.position.set(-0.36 * S, 0.11 * S, 0.25 * S);
   add(diya);
   const flame = new THREE.Mesh(new THREE.ConeGeometry(0.016 * S, 0.05 * S, 8), new THREE.MeshStandardMaterial({ color: 0xffb347, emissive: 0xff8c1a, emissiveIntensity: 1.3 }));
-  flame.position.set(-0.36 * S, 0.135 * S, 0.28 * S);
+  flame.position.set(-0.36 * S, 0.135 * S, 0.25 * S);
   add(flame);
   const flameLight = new THREE.PointLight(0xffa64d, 0.5, 1.8, 2);
-  flameLight.position.set(-0.36 * S, 0.16 * S, 0.28 * S);
+  flameLight.position.set(-0.36 * S, 0.16 * S, 0.25 * S);
   group.add(flameLight);
 
   // =========================================================
@@ -479,7 +545,8 @@ export function createRoom7(scene, engine, doorX, doorZ) {
   canopyTrim.position.set(pillarX, platformH + pillarH - 0.02, platZ);
   scene.add(canopyTrim);
 
-  // ---- Shiv Ling: smooth stone lingam on a yoni/pindika base ----
+  // ---- Shiv Ling: smooth, lathe-sculpted stone lingam on an elongated
+  // yoni/pindika base ----
   // rotationY orients the spout; here it points toward the room's open side.
   const shivLing = createShivLing(scene, {
     x: pillarX + 0.6,
