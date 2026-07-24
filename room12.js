@@ -4,9 +4,16 @@
 // West wall also has a doorway gap, leading further out via a corridor to room13/Hall 2.
 // East wall also has a doorway gap, leading further out via a corridor to room14.
 // North wall now also has a doorway gap, leading further out via a corridor to room15.
+//
+// NEW: the north door is locked. It requires the brass key hidden in room10's table
+// drawer (see ROOM12_KEY_ID / engine.heldItem in room10.js) — the player must be
+// holding that exact item when interacting with the door for it to unlock. Once
+// unlocked it stays unlocked for the rest of the playthrough (no re-locking), and
+// then behaves exactly like the old open/close swing door.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
+import { ROOM12_KEY_ID } from "./room10.js";
 
 const ROOM_W = 4.5; // east-west
 const ROOM_D = 5; // north-south
@@ -93,7 +100,7 @@ export function createRoom12(scene, engine, doorZ) {
   addWallBox(eastX, centerZ + (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
   addWallBox(eastX, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
-  // ---------- wooden door (north doorway) — swings open/closed, blocks the way to room15 while shut ----------
+  // ---------- wooden door (north doorway) — locked, then swings open/closed once unlocked ----------
   const doorFrameMat = new THREE.MeshStandardMaterial({ color: 0x1c130a, roughness: 0.85 });
   const doorPanelMat = new THREE.MeshStandardMaterial({ color: 0x4a2e17, roughness: 0.75, metalness: 0.03 });
   const doorHandleMat = new THREE.MeshStandardMaterial({ color: 0x8a7442, roughness: 0.4, metalness: 0.7 });
@@ -105,14 +112,9 @@ export function createRoom12(scene, engine, doorZ) {
   const hingeX = -DOOR_GAP / 2 + 0.03; // hinge sits at the west edge of the doorway
 
   // ---------- frame trim around the opening ----------
-  // FIX: this used to be a single solid box almost exactly the size of the
-  // whole doorway (DOOR_GAP+0.14 wide x DOOR_H+0.08 tall), so it permanently
-  // blocked the view/passage regardless of whether the hinged panel was open
-  // or closed — that's what was showing up as a solid dark brown/black slab
-  // even with the door open. Now it's genuine trim: a left jamb, right jamb,
-  // and header strip around the *edges* of the opening only, leaving the
-  // DOOR_GAP x DOOR_H middle completely empty so you can actually see (and
-  // walk) through into room15 once the door swings clear.
+  // Genuine trim only (left jamb, right jamb, header strip) around the *edges*
+  // of the opening, leaving the DOOR_GAP x DOOR_H middle completely empty so
+  // you can actually see (and walk) through into room15 once the door swings clear.
   const FRAME_T = 0.07; // trim thickness
   const frameGroup = new THREE.Group();
 
@@ -140,13 +142,18 @@ export function createRoom12(scene, engine, doorZ) {
   frameGroup.traverse((o) => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; } });
   scene.add(frameGroup);
 
-  // static interact target for the door — kept as an invisible box the same
-  // footprint as the old solid frame so the "Open Door" prompt still triggers
-  // from roughly the same distance/position as before, but it's not rendered,
-  // so it can never visually block the opening.
+  // static interact target for the door — an invisible anchor at the doorway's
+  // position, so the "Open Door" / "Locked Door" prompt triggers from a sensible
+  // distance without rendering anything that could visually block the opening.
   const doorInteractTarget = new THREE.Object3D();
   doorInteractTarget.position.set(0, DOOR_H / 2, doorFaceZ - 0.04);
   scene.add(doorInteractTarget);
+
+  // ---------- small brass padlock/latch fixture on the door, visible only while locked ----------
+  const lockMat = new THREE.MeshStandardMaterial({ color: 0xa8873f, metalness: 0.75, roughness: 0.35 });
+  const lockFixture = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.03), lockMat);
+  lockFixture.position.set(doorPanelW - 0.14, -0.05, DOOR_THICK / 2 + 0.02);
+  lockFixture.castShadow = true;
 
   // pivot group at the hinge — the panel is offset from it so it spans the doorway when closed
   const doorPivot = new THREE.Group();
@@ -160,6 +167,7 @@ export function createRoom12(scene, engine, doorZ) {
   doorPanel.position.set(doorPanelW / 2, 0, 0);
   doorPanel.castShadow = doorPanel.receiveShadow = true;
   doorPivot.add(doorPanel);
+  doorPivot.add(lockFixture);
 
   // a couple of horizontal ribs for a simple plank-door look
   for (const ry of [DOOR_H * 0.28, -DOOR_H * 0.28]) {
@@ -176,7 +184,7 @@ export function createRoom12(scene, engine, doorZ) {
   doorHandle.position.set(doorPanelW - 0.1, 0, DOOR_THICK / 2 + 0.02);
   doorPivot.add(doorHandle);
 
-  // ---------- door collider: blocks the doorway while closed, removed while open ----------
+  // ---------- door collider: blocks the doorway while closed (locked or not), removed while open ----------
   const doorClosedBox = new THREE.Box3(
     new THREE.Vector3(hingeX - 0.05, 0, doorFaceZ - DOOR_THICK),
     new THREE.Vector3(hingeX + doorPanelW + 0.05, DOOR_H, doorFaceZ + DOOR_THICK)
@@ -184,33 +192,57 @@ export function createRoom12(scene, engine, doorZ) {
   colliders.push(doorClosedBox);
   engine.addCollider(doorClosedBox);
 
-  // door state machine: closed -> opening -> open -> closing -> closed
+  // ---------- lock + door state ----------
+  // locked: starts true, flips to false permanently once the player interacts
+  // with the door while holding the brass key from room10's drawer (ROOM12_KEY_ID).
+  // A locked door does not respond to E at all beyond that key check — no swinging.
+  let locked = true;
   let doorState = "closed";
   let doorT = 0;
   const DOOR_ANIM_DURATION = 0.9; // seconds
   const DOOR_OPEN_ANGLE = Math.PI * 0.55;
 
+  // brief "wrong/no key" feedback: true for a short window right after a failed
+  // attempt, so the prompt can flash something other than "Locked Door" without
+  // needing its own timer plumbing through engine.js.
+  let deniedFlashT = 0;
+  const DENIED_FLASH_DURATION = 1.4;
+
   const doorInteractable = engine.addInteractable(doorInteractTarget, {
     radius: 2.2,
-    prompt: "Open Door",
+    prompt: () => {
+      if (locked) {
+        return deniedFlashT > 0 ? "Locked — needs the brass key" : "Locked Door";
+      }
+      return doorState === "open" ? "Close Door" : "Open Door";
+    },
     onInteract: () => {
+      if (locked) {
+        if (engine.heldItem && engine.heldItem.id === ROOM12_KEY_ID) {
+          locked = false;
+          lockFixture.visible = false;
+        } else {
+          deniedFlashT = DENIED_FLASH_DURATION;
+        }
+        return; // whether just-unlocked or still locked, this press doesn't also swing the door
+      }
       if (doorState === "closed") {
         doorState = "opening";
         doorT = 0;
         // swinging clear of the opening — let the collider go so the player can walk through
         const idx = engine.colliders.indexOf(doorClosedBox);
         if (idx !== -1) engine.colliders.splice(idx, 1);
-        doorInteractable.prompt = "Close Door";
       } else if (doorState === "open") {
         doorState = "closing";
         doorT = 0;
-        doorInteractable.prompt = "Open Door";
       }
       // interacts mid-swing ("opening"/"closing") are ignored — let the animation settle first
     },
   });
 
   function updateDoor(dt) {
+    if (deniedFlashT > 0) deniedFlashT = Math.max(0, deniedFlashT - dt);
+
     if (doorState === "opening") {
       doorT = Math.min(1, doorT + dt / DOOR_ANIM_DURATION);
       const eased = 1 - Math.pow(1 - doorT, 3); // ease-out
