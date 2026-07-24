@@ -7,6 +7,12 @@
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
 
+// Shared identifier for the brass key hidden in this room's table drawer.
+// room12.js imports this to check engine.heldItem.id against the same string
+// rather than each file hardcoding its own copy that could drift apart.
+export const ROOM12_KEY_ID = "brass_key_room12";
+
+
 const ROOM_W = 5; // east-west
 const ROOM_D = 5.5; // north-south
 const ROOM_H = 2.7; // lowest ceiling yet — cramped and forgotten
@@ -163,6 +169,27 @@ export function createRoom10(scene, engine, doorX, doorZ) {
   handle.position.set(0, 0, -drawerD / 2 - 0.03);
   drawerGroup.add(handle);
 
+  // ---------- brass key resting inside the drawer — unlocks room12's north door ----------
+  const keyMat = new THREE.MeshStandardMaterial({ color: 0xb8933f, metalness: 0.75, roughness: 0.3 });
+  const keyMesh = new THREE.Group();
+  const keyShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.09, 8), keyMat);
+  keyShaft.rotation.z = Math.PI / 2;
+  keyMesh.add(keyShaft);
+  const keyBow = new THREE.Mesh(new THREE.TorusGeometry(0.02, 0.006, 8, 16), keyMat);
+  keyBow.position.x = -0.05;
+  keyMesh.add(keyBow);
+  const keyTooth = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.015, 0.008), keyMat);
+  keyTooth.position.x = 0.045;
+  keyMesh.add(keyTooth);
+  keyMesh.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
+
+  // rests near the front of the drawer's interior, so it rides along as the
+  // drawer slides open/closed (it's a child of drawerGroup, not the scene)
+  keyMesh.position.set(0.02, drawerH / 2 + 0.01, drawerD / 2 - 0.08);
+  keyMesh.rotation.y = 0.35;
+  drawerGroup.add(keyMesh);
+
+
   // collider — a simple static box covering the table footprint (drawer sliding out
   // a few cm doesn't meaningfully change the blocked area, so we keep this fixed)
   const tableBox = new THREE.Box3(
@@ -196,6 +223,50 @@ export function createRoom10(scene, engine, doorX, doorZ) {
     },
   });
 
+  // ---------- key pickup — only reachable once the drawer is open ----------
+  // Same reasoning as drawerAnchor above: keyAnchor is a standalone object
+  // added straight to the scene (not nested under drawerGroup), and its world
+  // position is copied from keyMesh every frame in update() so the pickup
+  // point tracks the key as the drawer slides. The interactable itself is
+  // only registered/removed as the drawer opens/closes or the key is taken,
+  // so you can't pick it up through a closed drawer, and can't "re-find" it
+  // once it's already in hand.
+  const keyAnchor = new THREE.Object3D();
+  scene.add(keyAnchor);
+  let keyTaken = false;
+  let keyInteractable = null;
+
+  function updateKeyAvailability() {
+    if (keyTaken) return;
+    const shouldBeAvailable = drawerOpen && drawerT > 0.6;
+    const isRegistered = keyInteractable !== null;
+
+    if (shouldBeAvailable && !isRegistered) {
+      keyInteractable = engine.addInteractable(keyAnchor, {
+        radius: 2.0,
+        prompt: "Take Brass Key",
+        onInteract: () => {
+          keyTaken = true;
+          engine.removeInteractable(keyInteractable);
+          keyInteractable = null;
+          // pickupItem() re-parents keyMesh from drawerGroup to the camera
+          // automatically (THREE's add() moves an object between parents),
+          // so it becomes a held viewmodel instead of sitting in the drawer.
+          engine.pickupItem({
+            id: ROOM12_KEY_ID,
+            mesh: keyMesh,
+            prompt: "Brass Key",
+            holdOffset: new THREE.Vector3(0.25, -0.2, -0.5),
+            throwable: false,
+          });
+        },
+      });
+    } else if (!shouldBeAvailable && isRegistered) {
+      engine.removeInteractable(keyInteractable);
+      keyInteractable = null;
+    }
+  }
+
   // ---------- ambient room lighting: dim, dusty, forgotten ----------
   const ambient = new THREE.AmbientLight(0x362f24, 1.3);
   scene.add(ambient);
@@ -216,6 +287,11 @@ export function createRoom10(scene, engine, doorX, doorZ) {
     const target = drawerOpen ? 1 : 0;
     drawerT += (target - drawerT) * Math.min(1, dt * 6);
     drawerGroup.position.z = drawerClosedZ + drawerT * drawerOpenZ;
+
+    if (!keyTaken) {
+      keyMesh.getWorldPosition(keyAnchor.position);
+      updateKeyAvailability();
+    }
   }
 
   return { colliders, update, centerX, centerZ, westX, eastX };
