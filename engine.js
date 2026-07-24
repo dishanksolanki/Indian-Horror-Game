@@ -109,6 +109,10 @@ export class Engine {
     this.colliders = [];
 
     // interactables: array of { object3D, radius, onInteract(), prompt }
+    // NOTE: `prompt` may be a plain string OR a zero-arg function returning a
+    // string — this lets an interactable's label change with its own state
+    // (e.g. a drawer showing "Open drawer" vs "Close drawer"). Always resolve
+    // it through _promptLabel() rather than reading `.prompt` directly.
     this.interactables = [];
     this._focusedInteractable = null;
 
@@ -176,6 +180,14 @@ export class Engine {
     const i = this.interactables.indexOf(entry);
     if (i !== -1) this.interactables.splice(i, 1);
     if (this._focusedInteractable === entry) this._focusedInteractable = null;
+  }
+
+  // Resolves an interactable's current display label. `prompt` can be a
+  // static string, or a zero-arg function returning a string so the label
+  // can reflect the interactable's own live state (open/closed, on/off, etc).
+  _promptLabel(entry) {
+    if (!entry) return "";
+    return typeof entry.prompt === "function" ? entry.prompt() : entry.prompt;
   }
 
   setSpawn(vec3, yawRadians = 0) {
@@ -369,7 +381,7 @@ export class Engine {
   }
 
   _tryInteract() {
-    console.log("[engine.js] _tryInteract() — focused:", this._focusedInteractable ? this._focusedInteractable.prompt : null, "hiding:", this.hiding);
+    console.log("[engine.js] _tryInteract() — focused:", this._focusedInteractable ? this._promptLabel(this._focusedInteractable) : null, "hiding:", this.hiding);
     if (this.hiding) {
       this.exitHide();
       return;
@@ -385,7 +397,7 @@ export class Engine {
         // unmissably instead, since a silent throw here is EXACTLY what
         // produces "focused: X" followed by heldItem staying null forever.
         console.error(
-          `[engine.js#${this._instanceId}] onInteract() THREW for "${target.prompt}" — ` +
+          `[engine.js#${this._instanceId}] onInteract() THREW for "${this._promptLabel(target)}" — ` +
           `this is almost certainly why the pickup/interaction silently failed:`,
           err
         );
@@ -416,7 +428,7 @@ export class Engine {
       dirToItem.normalize();
       const facing = camDir.dot(dirToItem);
       console.log(
-        `  - "${item.prompt}" dist=${dist.toFixed(2)} (needs <= ${item.radius}) ` +
+        `  - "${this._promptLabel(item)}" dist=${dist.toFixed(2)} (needs <= ${item.radius}) ` +
         `facing=${facing.toFixed(2)} (needs > 0.85, horizontal-only) -> ` +
         `${dist <= item.radius && facing > 0.85 ? "SHOULD have matched (check for an earlier closer match stealing it)" : "too far / not facing its compass direction closely enough"}`
       );
@@ -637,7 +649,7 @@ export class Engine {
     this._focusedInteractable = closest;
     if (closest) {
       if (promptEl) {
-        promptEl.textContent = `[ E ] ${closest.prompt}`;
+        promptEl.textContent = `[ E ] ${this._promptLabel(closest)}`;
         promptEl.classList.add("show");
       }
     } else if (this.heldItem) {
