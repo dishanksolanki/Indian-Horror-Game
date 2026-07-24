@@ -177,7 +177,7 @@ export function createRoom10(scene, engine, doorX, doorZ) {
   let drawerT = 0; // 0 = closed, 1 = open — animated toward target each frame
   engine.addInteractable(tableGroup, {
     radius: 1.6,
-    prompt: "Open drawer",
+    prompt: () => (drawerOpen ? "Close drawer" : "Open drawer"),
     onInteract: () => {
       drawerOpen = !drawerOpen;
     },
