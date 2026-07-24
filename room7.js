@@ -6,24 +6,14 @@
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
-
 // =========================================================
-// Lord Ganesh idol builder (detailed carved-stone murti)
-// Merged in from ganeshIdol.js so this room is a single self-contained file.
+// Shiv Ling (Shivling) builder — a smooth, aniconic stone form of Lord Shiva
+// resting in a circular yoni/pindika base, with a small spout, a coiled
+// stone naga (serpent), a trickle of water, bilva leaves, and bael/flower
+// offerings scattered around it. Self-contained: builds its own procedural
+// stone texture so it reads as one weathered, polished block of temple stone.
 // =========================================================
 
-// ganeshIdol.js — a detailed, carved-stone murti of Lord Ganesh.
-// Self-contained: generates its own procedural stone texture (canvas-based
-// noise used as a bump/roughness map) so every part of the idol reads as
-// one weathered block of temple stone rather than flat plastic-looking shapes.
-//
-// Usage:
-//   import { createGaneshIdol } from "./ganeshIdol.js";
-//   const ganesh = createGaneshIdol(scene, { x, y, z, scale: 1, rotationY: 0 });
-//   // ganesh.group   -> THREE.Group, already added to the scene
-//   // ganesh.dispose -> call if you ever need to tear it down
-//
-// ---------- procedural stone texture (shared by every part of the idol) ----------
 function buildStoneTextures() {
   const size = 512;
   const canvas = document.createElement("canvas");
@@ -31,29 +21,29 @@ function buildStoneTextures() {
   canvas.height = size;
   const ctx = canvas.getContext("2d");
 
-  // base tone: weathered grey-sandstone, slightly warm
-  ctx.fillStyle = "#7a7468";
+  // base tone: dark, water-polished basalt
+  ctx.fillStyle = "#4a4844";
   ctx.fillRect(0, 0, size, size);
 
-  // layered speckle/grain noise for a carved, granular stone look
+  // layered speckle/grain noise for a carved, mineral-flecked stone look
   for (let i = 0; i < 22000; i++) {
     const x = Math.random() * size;
     const y = Math.random() * size;
     const r = Math.random() * 1.6 + 0.2;
     const shade = Math.random();
     const c = shade < 0.5
-      ? `rgba(40,36,30,${0.05 + Math.random() * 0.12})`   // dark mineral fleck
-      : `rgba(200,192,172,${0.04 + Math.random() * 0.1})`; // light mineral fleck
+      ? `rgba(20,18,16,${0.05 + Math.random() * 0.12})`
+      : `rgba(150,146,132,${0.03 + Math.random() * 0.08})`;
     ctx.fillStyle = c;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // faint veining / hairline cracks
-  ctx.strokeStyle = "rgba(30,26,22,0.18)";
+  // faint veining
+  ctx.strokeStyle = "rgba(15,14,12,0.18)";
   ctx.lineWidth = 1;
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 12; i++) {
     ctx.beginPath();
     let x = Math.random() * size;
     let y = Math.random() * size;
@@ -67,15 +57,14 @@ function buildStoneTextures() {
     ctx.stroke();
   }
 
-  // soft dark patches near "ground level" areas (used for the base texture only,
-  // harmless elsewhere) to suggest damp/aged stone
-  for (let i = 0; i < 10; i++) {
+  // damp/wet sheen patches (a Shivling is traditionally kept wet from abhishekam)
+  for (let i = 0; i < 16; i++) {
     const x = Math.random() * size;
-    const y = size * 0.75 + Math.random() * size * 0.25;
-    const r = 20 + Math.random() * 50;
+    const y = Math.random() * size;
+    const r = 30 + Math.random() * 70;
     const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, "rgba(25,30,22,0.22)");
-    grad.addColorStop(1, "rgba(25,30,22,0)");
+    grad.addColorStop(0, "rgba(210,215,220,0.06)");
+    grad.addColorStop(1, "rgba(210,215,220,0)");
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -86,7 +75,6 @@ function buildStoneTextures() {
   colorTex.wrapS = colorTex.wrapT = THREE.RepeatWrapping;
   colorTex.repeat.set(2, 2);
 
-  // bump map: greyscale version of the same noise for surface micro-detail
   const bumpCanvas = document.createElement("canvas");
   bumpCanvas.width = size;
   bumpCanvas.height = size;
@@ -110,9 +98,9 @@ function makeStoneMaterial(colorTex, bumpTex, tint = 0xffffff, extra = {}) {
   return new THREE.MeshStandardMaterial({
     map: colorTex,
     bumpMap: bumpTex,
-    bumpScale: 0.015,
+    bumpScale: 0.012,
     color: tint,
-    roughness: 0.92,
+    roughness: 0.5,
     metalness: 0.02,
     ...extra,
   });
@@ -136,7 +124,7 @@ function segmentBetween(p1, p2, rTop, rBottom, radialSegments, material) {
   return mesh;
 }
 
-function createGaneshIdol(scene, opts = {}) {
+function createShivLing(scene, opts = {}) {
   const {
     x = 0,
     y = 0,
@@ -149,13 +137,13 @@ function createGaneshIdol(scene, opts = {}) {
   const S = scale;
 
   const { colorTex, bumpTex } = buildStoneTextures();
-  const stone = makeStoneMaterial(colorTex, bumpTex, 0x8a8272);
-  const stoneDark = makeStoneMaterial(colorTex, bumpTex, 0x625b4e, { roughness: 0.96 });
-  const stoneGilt = makeStoneMaterial(colorTex, bumpTex, 0xcaa646, { roughness: 0.55, metalness: 0.35 });
-  const ivory = makeStoneMaterial(colorTex, bumpTex, 0xe7ddc4, { roughness: 0.6 });
+  const stonePolished = makeStoneMaterial(colorTex, bumpTex, 0x3f3d3a, { roughness: 0.35, metalness: 0.05 });
+  const stoneMatte = makeStoneMaterial(colorTex, bumpTex, 0x5a564c, { roughness: 0.75 });
+  const brassMat = new THREE.MeshStandardMaterial({ color: 0xb08d3e, roughness: 0.4, metalness: 0.7 });
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x2e6b2e, roughness: 0.7 });
+  const waterMat = new THREE.MeshStandardMaterial({ color: 0xbcd8e0, roughness: 0.1, metalness: 0, transparent: true, opacity: 0.55 });
 
-  const parts = []; // for shadow flag pass
-
+  const parts = [];
   function add(mesh) {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -165,319 +153,154 @@ function createGaneshIdol(scene, opts = {}) {
   }
 
   // =========================================================
-  // BACKDROP: carved stone aureole (prabhavali) behind the idol
+  // PEDESTAL: square/octagonal stone plinth the whole altar sits on
   // =========================================================
-  const aureoleShape = new THREE.Shape();
-  aureoleShape.absellipse ? null : null; // no-op guard (kept simple, ellipse via curve below)
-  {
-    const outerCurve = new THREE.EllipseCurve(0, 0.15, 0.62, 0.78, 0, Math.PI * 2, false, 0);
-    const pts = outerCurve.getPoints(48);
-    aureoleShape.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) aureoleShape.lineTo(pts[i].x, pts[i].y);
-    const holePts = new THREE.EllipseCurve(0, 0.15, 0.5, 0.64, 0, Math.PI * 2, false, 0).getPoints(48);
-    const hole = new THREE.Path();
-    hole.moveTo(holePts[0].x, holePts[0].y);
-    for (let i = 1; i < holePts.length; i++) hole.lineTo(holePts[i].x, holePts[i].y);
-    aureoleShape.holes.push(hole);
-  }
-  const aureoleGeo = new THREE.ExtrudeGeometry(aureoleShape, { depth: 0.06, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelSegments: 2 });
-  const aureole = new THREE.Mesh(aureoleGeo, stoneDark);
-  aureole.scale.set(S, S, S);
-  aureole.position.set(0, 0.55 * S, -0.14 * S);
-  add(aureole);
-  // small flame-like points around the aureole rim
-  const flamePts = 12;
-  for (let i = 0; i < flamePts; i++) {
-    const ang = (i / flamePts) * Math.PI * 2;
-    if (Math.sin(ang) < -0.3) continue; // skip the bottom arc, hidden behind the idol
-    const rx = Math.cos(ang) * 0.62;
-    const ry = 0.15 + Math.sin(ang) * 0.78;
-    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.09, 6), stoneDark);
-    flame.position.set(rx * S, (0.55 * S) + ry * S, -0.13 * S);
-    flame.rotation.z = -ang + Math.PI / 2;
-    add(flame);
-  }
-
-  // =========================================================
-  // BASE: stepped stone plinth + double-lotus pedestal (padmasana)
-  // =========================================================
-  const plinth = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.08, 0.5), stoneDark);
-  plinth.scale.set(S, S, S);
-  plinth.position.set(0, 0.04 * S, 0);
+  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(0.5 * S, 0.56 * S, 0.1 * S, 8), stoneMatte);
+  plinth.position.set(0, 0.05 * S, 0);
   add(plinth);
 
-  const lotusBase = new THREE.Mesh(new THREE.CylinderGeometry(0.27 * S, 0.3 * S, 0.09 * S, 16), stone);
-  lotusBase.position.set(0, 0.13 * S, 0);
-  add(lotusBase);
+  // =========================================================
+  // YONI / PINDIKA: the circular base with a spout (pranala) on one side —
+  // this is the traditional platform the lingam rises from
+  // =========================================================
+  const yoniBaseY = 0.1 * S;
+  const yoniBase = new THREE.Mesh(new THREE.CylinderGeometry(0.42 * S, 0.46 * S, 0.16 * S, 24), stonePolished);
+  yoniBase.position.set(0, yoniBaseY + 0.08 * S, 0);
+  add(yoniBase);
 
-  function lotusRing(yPos, count, petalLen, petalR, upward) {
-    for (let i = 0; i < count; i++) {
-      const ang = (i / count) * Math.PI * 2;
-      const petal = new THREE.Mesh(new THREE.ConeGeometry(petalR * S, petalLen * S, 6), stone);
-      petal.position.set(Math.cos(ang) * 0.27 * S, yPos, Math.sin(ang) * 0.27 * S);
-      petal.rotation.x = upward ? Math.PI * 0.42 : -Math.PI * 0.42;
-      petal.rotation.y = -ang;
-      add(petal);
+  // gentle rim lip around the top of the yoni base
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.42 * S, 0.03 * S, 10, 28), stonePolished);
+  rim.rotation.x = Math.PI / 2;
+  rim.position.set(0, yoniBaseY + 0.16 * S, 0);
+  add(rim);
+
+  // the spout (pranala) — a small tapered channel projecting from one side,
+  // where water/milk offerings drain away
+  const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * S, 0.08 * S, 0.28 * S, 10), stonePolished);
+  spout.rotation.z = Math.PI / 2;
+  spout.position.set(0.5 * S, yoniBaseY + 0.16 * S, 0);
+  add(spout);
+  const spoutLip = new THREE.Mesh(new THREE.TorusGeometry(0.045 * S, 0.012 * S, 8, 12), stonePolished);
+  spoutLip.rotation.y = Math.PI / 2;
+  spoutLip.position.set(0.64 * S, yoniBaseY + 0.16 * S, 0);
+  add(spoutLip);
+
+  // =========================================================
+  // LINGAM: the smooth, rounded vertical stone form — the domed top is
+  // gently egg-shaped (a cylindrical shaft rising into a rounded crown)
+  // =========================================================
+  const lingamBaseY = yoniBaseY + 0.16 * S;
+  const shaftH = 0.42 * S;
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.17 * S, 0.19 * S, shaftH, 24), stonePolished);
+  shaft.position.set(0, lingamBaseY + shaftH / 2, 0);
+  add(shaft);
+
+  // rounded dome crown, slightly egg-shaped rather than a perfect sphere
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.17 * S, 24, 20), stonePolished);
+  dome.scale.set(1, 1.25, 1);
+  dome.position.set(0, lingamBaseY + shaftH + 0.13 * S, 0);
+  add(dome);
+  const domeTip = new THREE.Mesh(new THREE.SphereGeometry(0.03 * S, 10, 10), stonePolished);
+  domeTip.position.set(0, lingamBaseY + shaftH + 0.32 * S, 0);
+  add(domeTip);
+
+  // subtle horizontal facet lines low on the shaft (traditional three-part
+  // division: brahma-bhaga square base under the yoni, vishnu-bhaga octagonal
+  // middle, and rudra-bhaga rounded top which is the visible dome) — here we
+  // just suggest a soft ring where the shaft meets the yoni collar
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.19 * S, 0.02 * S, 8, 24), stoneMatte);
+  collar.rotation.x = Math.PI / 2;
+  collar.position.set(0, lingamBaseY + 0.03 * S, 0);
+  add(collar);
+
+  // =========================================================
+  // NAGA: a small coiled stone serpent draped around the base of the lingam,
+  // hood raised behind the crown — traditional guardian imagery
+  // =========================================================
+  const nagaGroup = new THREE.Group();
+  const coilCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0.19 * S, lingamBaseY + 0.05 * S, 0),
+    new THREE.Vector3(0.1 * S, lingamBaseY + 0.1 * S, 0.17 * S),
+    new THREE.Vector3(-0.12 * S, lingamBaseY + 0.18 * S, 0.12 * S),
+    new THREE.Vector3(-0.18 * S, lingamBaseY + 0.28 * S, -0.05 * S),
+    new THREE.Vector3(-0.05 * S, lingamBaseY + 0.36 * S, -0.16 * S),
+    new THREE.Vector3(0.08 * S, lingamBaseY + shaftH + 0.05 * S, -0.1 * S),
+  ]);
+  const coilPts = coilCurve.getPoints(20);
+  for (let i = 0; i < coilPts.length - 1; i++) {
+    const t = i / (coilPts.length - 2);
+    const r = 0.028 * S * (1 - t * 0.55);
+    const seg = segmentBetween(coilPts[i], coilPts[i + 1], Math.max(r, 0.008 * S), Math.max(r * 0.9, 0.008 * S), 8, stoneMatte);
+    nagaGroup.add(seg);
+  }
+  // raised hood behind the lingam's crown
+  const hood = new THREE.Mesh(new THREE.ConeGeometry(0.05 * S, 0.11 * S, 3), stoneMatte);
+  hood.rotation.x = Math.PI;
+  hood.position.copy(coilPts[coilPts.length - 1]).add(new THREE.Vector3(0, 0.05 * S, 0));
+  nagaGroup.add(hood);
+  const hoodHead = new THREE.Mesh(new THREE.SphereGeometry(0.025 * S, 8, 8), stoneMatte);
+  hoodHead.position.copy(coilPts[coilPts.length - 1]).add(new THREE.Vector3(0, 0.1 * S, 0.02 * S));
+  nagaGroup.add(hoodHead);
+  nagaGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  group.add(nagaGroup);
+  parts.push(nagaGroup);
+
+  // =========================================================
+  // A thin trickle of water down one side of the lingam (abhishekam)
+  // =========================================================
+  const trickle = new THREE.Mesh(new THREE.CylinderGeometry(0.012 * S, 0.008 * S, shaftH + 0.2 * S, 8), waterMat);
+  trickle.position.set(0.14 * S, lingamBaseY + (shaftH + 0.2 * S) / 2, 0.1 * S);
+  add(trickle);
+  const puddle = new THREE.Mesh(new THREE.CircleGeometry(0.1 * S, 20), waterMat);
+  puddle.rotation.x = -Math.PI / 2;
+  puddle.position.set(0.1 * S, yoniBaseY + 0.165 * S, 0.08 * S);
+  add(puddle);
+
+  // =========================================================
+  // OFFERINGS: bilva (bael) leaves and marigold petals scattered on the
+  // yoni base and around the pedestal, plus a small brass diya
+  // =========================================================
+  function bilvaLeaf(cx, cz, ang) {
+    const leafGroup = new THREE.Group();
+    for (let i = -1; i <= 1; i++) {
+      const leaflet = new THREE.Mesh(new THREE.ConeGeometry(0.02 * S, 0.075 * S, 6), leafMat);
+      leaflet.rotation.x = Math.PI;
+      leaflet.position.set(i * 0.022 * S, 0.038 * S, 0);
+      leafGroup.add(leaflet);
     }
+    leafGroup.rotation.x = -Math.PI / 2;
+    leafGroup.rotation.z = ang;
+    leafGroup.position.set(cx, yoniBaseY + 0.165 * S, cz);
+    leafGroup.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    group.add(leafGroup);
+    parts.push(leafGroup);
   }
-  lotusRing(0.09 * S, 14, 0.16, 0.055, false);
-  lotusRing(0.185 * S, 12, 0.13, 0.05, true);
+  bilvaLeaf(-0.12 * S, -0.16 * S, 0.4);
+  bilvaLeaf(-0.22 * S, 0.05 * S, -0.6);
+  bilvaLeaf(0.02 * S, -0.28 * S, 1.1);
 
-  // =========================================================
-  // TORSO: seated cross-legged, broad potbelly, draped dhoti + sash
-  // =========================================================
-  const hipY = 0.2 * S;
-
-  // crossed legs (seated padmasana silhouette, built from tapered segments)
-  const legMat = stone;
-  const legL1 = segmentBetween(
-    new THREE.Vector3(-0.02 * S, hipY, 0.03 * S),
-    new THREE.Vector3(-0.26 * S, hipY - 0.01 * S, 0.16 * S),
-    0.065 * S, 0.085 * S, 10, legMat
-  );
-  add(legL1);
-  const legR1 = segmentBetween(
-    new THREE.Vector3(0.02 * S, hipY, 0.03 * S),
-    new THREE.Vector3(0.26 * S, hipY - 0.01 * S, 0.16 * S),
-    0.065 * S, 0.085 * S, 10, legMat
-  );
-  add(legR1);
-  // feet soles peeking out
-  const footL = new THREE.Mesh(new THREE.SphereGeometry(0.06 * S, 10, 10), stone);
-  footL.scale.set(1.3, 0.7, 1.6);
-  footL.position.set(-0.28 * S, hipY - 0.02 * S, 0.22 * S);
-  add(footL);
-  const footR = footL.clone();
-  footR.position.x = 0.28 * S;
-  add(footR);
-
-  const dhoti = new THREE.Mesh(new THREE.CylinderGeometry(0.24 * S, 0.3 * S, 0.2 * S, 16), stone);
-  dhoti.position.set(0, hipY + 0.05 * S, 0);
-  add(dhoti);
-  // dhoti drape folds (a few vertical grooves suggested with thin boxes)
-  for (let i = 0; i < 8; i++) {
-    const ang = (i / 8) * Math.PI * 2;
-    const fold = new THREE.Mesh(new THREE.BoxGeometry(0.02 * S, 0.16 * S, 0.01 * S), stoneDark);
-    fold.position.set(Math.cos(ang) * 0.25 * S, hipY + 0.05 * S, Math.sin(ang) * 0.25 * S);
-    fold.rotation.y = -ang;
-    add(fold);
+  const petalMat1 = new THREE.MeshStandardMaterial({ color: 0xf2a10c, roughness: 0.8 });
+  const petalMat2 = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
+  for (let i = 0; i < 10; i++) {
+    const petal = new THREE.Mesh(new THREE.SphereGeometry(0.018 * S + Math.random() * 0.012 * S, 6, 6), i % 2 === 0 ? petalMat1 : petalMat2);
+    petal.scale.y = 0.4;
+    const ang = Math.random() * Math.PI * 2;
+    const rr = 0.2 * S + Math.random() * 0.2 * S;
+    petal.position.set(Math.cos(ang) * rr, yoniBaseY + 0.163 * S, Math.sin(ang) * rr);
+    petal.rotation.y = Math.random() * Math.PI;
+    add(petal);
   }
 
-  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.26 * S, 20, 16), stone);
-  belly.scale.set(1, 0.88, 0.92);
-  belly.position.set(0, hipY + 0.28 * S, 0.01 * S);
-  add(belly);
-  // navel
-  const navel = new THREE.Mesh(new THREE.SphereGeometry(0.015 * S, 8, 8), stoneDark);
-  navel.position.set(0, hipY + 0.24 * S, 0.24 * S);
-  add(navel);
-
-  // sacred thread (yagnopavita) draped diagonally across the chest
-  const threadCurve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(-0.16 * S, hipY + 0.52 * S, 0.16 * S),
-    new THREE.Vector3(0.05 * S, hipY + 0.4 * S, 0.22 * S),
-    new THREE.Vector3(0.2 * S, hipY + 0.2 * S, 0.14 * S),
-    new THREE.Vector3(0.14 * S, hipY + 0.02 * S, 0.06 * S),
-  ]);
-  const threadGeo = new THREE.TubeGeometry(threadCurve, 24, 0.012 * S, 8, false);
-  add(new THREE.Mesh(threadGeo, stoneDark));
-
-  // waist sash (kamarband) knot
-  const sashRing = new THREE.Mesh(new THREE.TorusGeometry(0.24 * S, 0.025 * S, 8, 20), stoneGilt);
-  sashRing.rotation.x = Math.PI / 2;
-  sashRing.position.set(0, hipY + 0.05 * S, 0);
-  add(sashRing);
-
-  // necklace / garland (haar) resting on the chest
-  const necklace = new THREE.Mesh(new THREE.TorusGeometry(0.19 * S, 0.018 * S, 8, 20, Math.PI * 1.3), stoneGilt);
-  necklace.rotation.x = Math.PI / 2.1;
-  necklace.position.set(0, hipY + 0.5 * S, 0.15 * S);
-  add(necklace);
-
-  // =========================================================
-  // ARMS: four arms with traditional attributes
-  // =========================================================
-  const shoulderY = hipY + 0.46 * S;
-  const upperArmMat = stone;
-
-  function buildArm(shoulderX, elbowOffset, handOffset, bend) {
-    const shoulder = new THREE.Vector3(shoulderX * S, shoulderY, 0.05 * S);
-    const elbow = shoulder.clone().add(new THREE.Vector3(elbowOffset.x * S, elbowOffset.y * S, elbowOffset.z * S));
-    const hand = elbow.clone().add(new THREE.Vector3(handOffset.x * S, handOffset.y * S, handOffset.z * S));
-    const upper = segmentBetween(shoulder, elbow, 0.05 * S, 0.058 * S, 8, upperArmMat);
-    add(upper);
-    const fore = segmentBetween(elbow, hand, 0.038 * S, 0.048 * S, 8, upperArmMat);
-    add(fore);
-    // armlet
-    const armlet = new THREE.Mesh(new THREE.TorusGeometry(0.056 * S, 0.012 * S, 6, 14), stoneGilt);
-    armlet.position.copy(shoulder.clone().lerp(elbow, 0.35));
-    const dir = new THREE.Vector3().subVectors(elbow, shoulder).normalize();
-    armlet.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
-    add(armlet);
-    // hand (simplified rounded palm)
-    const palm = new THREE.Mesh(new THREE.SphereGeometry(0.05 * S, 10, 10), upperArmMat);
-    palm.scale.set(1, 0.7, 0.5);
-    palm.position.copy(hand);
-    add(palm);
-    return { shoulder, elbow, hand };
-  }
-
-  // upper-right: holds a small parashu (axe)
-  const urArm = buildArm(0.24, { x: 0.14, y: 0.12, z: -0.02 }, { x: 0.1, y: 0.16, z: 0.02 }, true);
-  const axeHandle = segmentBetween(
-    urArm.hand.clone().add(new THREE.Vector3(0, -0.02 * S, 0)),
-    urArm.hand.clone().add(new THREE.Vector3(0.03 * S, 0.22 * S, 0)),
-    0.012 * S, 0.014 * S, 6, stoneDark
-  );
-  add(axeHandle);
-  const axeBlade = new THREE.Mesh(new THREE.ConeGeometry(0.05 * S, 0.09 * S, 4), stoneGilt);
-  axeBlade.position.copy(urArm.hand.clone().add(new THREE.Vector3(0.03 * S, 0.28 * S, 0)));
-  axeBlade.rotation.z = Math.PI / 2;
-  add(axeBlade);
-
-  // upper-left: holds a pasha (noose), simplified as a small ring
-  const ulArm = buildArm(-0.24, { x: -0.14, y: 0.12, z: -0.02 }, { x: -0.1, y: 0.16, z: 0.02 }, true);
-  const noose = new THREE.Mesh(new THREE.TorusGeometry(0.055 * S, 0.012 * S, 8, 16), stoneDark);
-  noose.position.copy(ulArm.hand.clone().add(new THREE.Vector3(-0.02 * S, 0.06 * S, 0)));
-  add(noose);
-
-  // lower-right: abhaya mudra (raised open palm, blessing gesture)
-  buildArm(0.22, { x: 0.1, y: -0.06, z: 0.16 }, { x: 0.06, y: 0.14, z: 0.1 }, false);
-
-  // lower-left: cupped palm holding a modak (sweet)
-  const llArm = buildArm(-0.22, { x: -0.1, y: -0.1, z: 0.18 }, { x: -0.02, y: -0.02, z: 0.12 }, false);
-  const modakBody = new THREE.Mesh(new THREE.SphereGeometry(0.045 * S, 10, 10), ivory);
-  modakBody.position.copy(llArm.hand.clone().add(new THREE.Vector3(0, 0.03 * S, 0.02 * S)));
-  add(modakBody);
-  const modakTip = new THREE.Mesh(new THREE.ConeGeometry(0.02 * S, 0.03 * S, 8), ivory);
-  modakTip.position.copy(modakBody.position.clone().add(new THREE.Vector3(0, 0.045 * S, 0)));
-  add(modakTip);
-
-  // the broken tusk, held (traditionally) — small ivory shard resting near the lower-right hand
-  const brokenTusk = new THREE.Mesh(new THREE.ConeGeometry(0.016 * S, 0.09 * S, 6), ivory);
-  brokenTusk.position.set(0.16 * S, hipY + 0.16 * S, 0.22 * S);
-  brokenTusk.rotation.z = -0.6;
-  brokenTusk.rotation.x = 0.3;
-  add(brokenTusk);
-
-  // =========================================================
-  // HEAD: elephant head, ears, trunk, tusk, third eye, crown
-  // =========================================================
-  const neckY = shoulderY + 0.06 * S;
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.09 * S, 0.11 * S, 0.08 * S, 12), stone);
-  neck.position.set(0, neckY, 0.02 * S);
-  add(neck);
-
-  const headY = neckY + 0.16 * S;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.17 * S, 20, 18), stone);
-  head.scale.set(1, 0.95, 1.05);
-  head.position.set(0, headY, 0.02 * S);
-  add(head);
-
-  // big fan-shaped ears
-  function buildEar(sign) {
-    const earShape = new THREE.Shape();
-    earShape.moveTo(0, 0);
-    earShape.quadraticCurveTo(0.14, 0.05, 0.16, 0.16);
-    earShape.quadraticCurveTo(0.15, 0.26, 0.02, 0.24);
-    earShape.quadraticCurveTo(-0.06, 0.14, 0, 0);
-    const earGeo = new THREE.ExtrudeGeometry(earShape, { depth: 0.02, bevelEnabled: true, bevelThickness: 0.006, bevelSize: 0.006, bevelSegments: 2 });
-    const ear = new THREE.Mesh(earGeo, stone);
-    ear.scale.set(sign * S, S, S);
-    ear.position.set(sign * 0.16 * S, headY - 0.02 * S, -0.02 * S);
-    ear.rotation.y = sign * 0.35;
-    add(ear);
-  }
-  buildEar(1);
-  buildEar(-1);
-
-  // gentle curling trunk built from a smooth curve, tapering from head to tip
-  const trunkCurve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(0, headY - 0.08 * S, 0.17 * S),
-    new THREE.Vector3(0.02 * S, headY - 0.2 * S, 0.2 * S),
-    new THREE.Vector3(0.05 * S, headY - 0.3 * S, 0.14 * S),
-    new THREE.Vector3(0.09 * S, headY - 0.34 * S, 0.02 * S),
-    new THREE.Vector3(0.1 * S, headY - 0.3 * S, -0.06 * S),
-    new THREE.Vector3(0.06 * S, headY - 0.24 * S, -0.08 * S),
-  ]);
-  const trunkPoints = trunkCurve.getPoints(24);
-  for (let i = 0; i < trunkPoints.length - 1; i++) {
-    const tAvg = i / (trunkPoints.length - 2);
-    const rTop = 0.05 * S * (1 - tAvg * 0.7);
-    const rBottom = 0.05 * S * (1 - (tAvg + 1 / trunkPoints.length) * 0.7);
-    const seg = segmentBetween(trunkPoints[i], trunkPoints[i + 1], Math.max(rTop, 0.008 * S), Math.max(rBottom, 0.01 * S), 8, stone);
-    add(seg);
-  }
-
-  // single (unbroken) tusk, curling gently from the mouth
-  const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.02 * S, 0.13 * S, 8), ivory);
-  tusk.position.set(-0.09 * S, headY - 0.1 * S, 0.15 * S);
-  tusk.rotation.x = Math.PI / 2 + 0.4;
-  tusk.rotation.z = 0.15;
-  add(tusk);
-
-  // eyes (softly carved almond shapes) + third eye tilak
-  function buildEye(sign) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.018 * S, 8, 8), stoneDark);
-    eye.scale.set(1.4, 0.7, 0.6);
-    eye.position.set(sign * 0.06 * S, headY + 0.02 * S, 0.155 * S);
-    add(eye);
-  }
-  buildEye(1);
-  buildEye(-1);
-  const tilak = new THREE.Mesh(new THREE.CircleGeometry(0.014 * S, 12), stoneGilt);
-  tilak.position.set(0, headY + 0.09 * S, 0.165 * S);
-  add(tilak);
-
-  // crown (kirita mukuta) with a jeweled finial
-  const crownBase = new THREE.Mesh(new THREE.CylinderGeometry(0.12 * S, 0.15 * S, 0.06 * S, 16), stoneGilt);
-  crownBase.position.set(0, headY + 0.15 * S, 0);
-  add(crownBase);
-  const crownCone = new THREE.Mesh(new THREE.ConeGeometry(0.1 * S, 0.16 * S, 14), stoneGilt);
-  crownCone.position.set(0, headY + 0.25 * S, 0);
-  add(crownCone);
-  const crownJewel = new THREE.Mesh(new THREE.SphereGeometry(0.03 * S, 10, 10), stoneGilt);
-  crownJewel.position.set(0, headY + 0.35 * S, 0);
-  add(crownJewel);
-  // small decorative studs around the crown base
-  for (let i = 0; i < 8; i++) {
-    const ang = (i / 8) * Math.PI * 2;
-    const stud = new THREE.Mesh(new THREE.SphereGeometry(0.012 * S, 6, 6), stoneGilt);
-    stud.position.set(Math.cos(ang) * 0.13 * S, headY + 0.15 * S, Math.sin(ang) * 0.13 * S);
-    add(stud);
-  }
-
-  // =========================================================
-  // VAHANA: small mouse (Mushika) carved at the base, facing forward
-  // =========================================================
-  const mouseGroup = new THREE.Group();
-  const mouseBody = new THREE.Mesh(new THREE.SphereGeometry(0.055 * S, 12, 10), stoneDark);
-  mouseBody.scale.set(1.4, 0.85, 1);
-  mouseGroup.add(mouseBody);
-  const mouseHead = new THREE.Mesh(new THREE.SphereGeometry(0.032 * S, 10, 10), stoneDark);
-  mouseHead.position.set(0.07 * S, 0.01 * S, 0);
-  mouseGroup.add(mouseHead);
-  const mouseSnout = new THREE.Mesh(new THREE.ConeGeometry(0.014 * S, 0.03 * S, 8), stoneDark);
-  mouseSnout.rotation.z = -Math.PI / 2;
-  mouseSnout.position.set(0.1 * S, 0.005 * S, 0);
-  mouseGroup.add(mouseSnout);
-  [1, -1].forEach((s) => {
-    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.016 * S, 8, 8), stoneDark);
-    ear.scale.set(1, 1, 0.4);
-    ear.position.set(0.06 * S, 0.035 * S, s * 0.025 * S);
-    mouseGroup.add(ear);
-  });
-  const mouseTail = segmentBetween(
-    new THREE.Vector3(-0.06 * S, 0, 0),
-    new THREE.Vector3(-0.18 * S, 0.01 * S, 0.02 * S),
-    0.004 * S, 0.008 * S, 6, stoneDark
-  );
-  mouseGroup.add(mouseTail);
-  mouseGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-  mouseGroup.position.set(0.3 * S, 0.1 * S, 0.24 * S);
-  mouseGroup.rotation.y = -0.5;
-  group.add(mouseGroup);
-  parts.push(mouseGroup);
+  // small brass diya resting on the pedestal edge
+  const diya = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * S, 0.038 * S, 0.025 * S, 12), brassMat);
+  diya.position.set(-0.36 * S, 0.11 * S, 0.28 * S);
+  add(diya);
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.016 * S, 0.05 * S, 8), new THREE.MeshStandardMaterial({ color: 0xffb347, emissive: 0xff8c1a, emissiveIntensity: 1.3 }));
+  flame.position.set(-0.36 * S, 0.135 * S, 0.28 * S);
+  add(flame);
+  const flameLight = new THREE.PointLight(0xffa64d, 0.5, 1.8, 2);
+  flameLight.position.set(-0.36 * S, 0.16 * S, 0.28 * S);
+  group.add(flameLight);
 
   // =========================================================
   // finalize
@@ -488,21 +311,21 @@ function createGaneshIdol(scene, opts = {}) {
 
   return {
     group,
+    flame: { flame, light: flameLight, baseIntensity: 0.5, phase: Math.random() * 10 },
     dispose() {
       scene.remove(group);
       parts.forEach((p) => {
         p.traverse ? p.traverse((o) => {
-          if (o.isMesh) {
-            o.geometry.dispose();
-          }
+          if (o.isMesh) o.geometry.dispose();
         }) : (p.geometry && p.geometry.dispose());
       });
       colorTex.dispose();
       bumpTex.dispose();
-      [stone, stoneDark, stoneGilt, ivory].forEach((m) => m.dispose());
+      [stonePolished, stoneMatte].forEach((m) => m.dispose());
     },
   };
 }
+
 
 const ROOM_W = 6;      // east-west
 const ROOM_D = 6.5;    // north-south
@@ -656,22 +479,23 @@ export function createRoom7(scene, engine, doorX, doorZ) {
   canopyTrim.position.set(pillarX, platformH + pillarH - 0.02, platZ);
   scene.add(canopyTrim);
 
-  // ---- Lord Ganesh: detailed carved-stone idol (see ganeshIdol.js) ----
-  // rotationY = -PI/2 turns the idol's front (its local +Z) to face west (-X),
-  // i.e. toward the doorway, so it looks at the player as they walk in.
-  const ganesh = createGaneshIdol(scene, {
+  // ---- Shiv Ling: smooth stone lingam on a yoni/pindika base ----
+  // rotationY orients the spout; here it points toward the room's open side.
+  const shivLing = createShivLing(scene, {
     x: pillarX + 0.6,
     y: platformH,
     z: platZ,
-    scale: 1.0,
+    scale: 1.1,
     rotationY: -Math.PI / 2,
   });
-  // the idol is decorative, but give it a collider so the player can't walk through it
+  // decorative, but give it a collider so the player can't walk through it
   {
-    const box = new THREE.Box3().setFromObject(ganesh.group);
+    const box = new THREE.Box3().setFromObject(shivLing.group);
     colliders.push(box);
     engine.addCollider(box);
   }
+  // let its little offering diya flicker along with the rest of the shrine's flames
+  flames.push(shivLing.flame);
 
   // Brass bell hanging from the middle beam, in front of the shrine
   bellNode = new THREE.Group();
