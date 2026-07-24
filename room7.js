@@ -179,8 +179,137 @@ export function createRoom7(scene, engine, doorX, doorZ) {
     g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     scene.add(g);
   }
-  addMurti(pillarX + 0.55, platZ - 0.5, 1.15);
-  addMurti(pillarX + 0.55, platZ + 0.5, 0.9);
+  // ---- Lord Ganesh idol: elephant head, big ears, single tusk, potbelly,
+  // four arms, seated cross-legged on a lotus base, with a small mouse (his vahana) ----
+  function addGaneshMurti(x, z, scale) {
+    const g = new THREE.Group();
+    const skinTone = new THREE.MeshStandardMaterial({ color: 0xd9954a, roughness: 0.55 });
+    const dhoti = new THREE.MeshStandardMaterial({ color: 0xd6482f, roughness: 0.8 }); // saffron/red cloth
+    const sash = new THREE.MeshStandardMaterial({ color: 0xf2b90c, roughness: 0.8 });
+
+    // lotus pedestal
+    const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.24 * scale, 0.26 * scale, 0.08 * scale, 12), marbleMat);
+    pedestal.position.y = 0.04 * scale;
+    g.add(pedestal);
+    const petalMat = new THREE.MeshStandardMaterial({ color: 0xf2b90c, roughness: 0.7 });
+    for (let i = 0; i < 10; i++) {
+      const ang = (i / 10) * Math.PI * 2;
+      const petal = new THREE.Mesh(new THREE.ConeGeometry(0.045 * scale, 0.1 * scale, 6), petalMat);
+      petal.position.set(Math.cos(ang) * 0.24 * scale, 0.04 * scale, Math.sin(ang) * 0.24 * scale);
+      petal.rotation.x = Math.PI / 2;
+      petal.rotation.z = -ang;
+      g.add(petal);
+    }
+
+    // seated potbelly torso
+    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.22 * scale, 16, 16), skinTone);
+    belly.position.y = 0.08 * scale + 0.2 * scale;
+    belly.scale.set(1, 0.85, 1);
+    g.add(belly);
+    const dhotiWrap = new THREE.Mesh(new THREE.CylinderGeometry(0.2 * scale, 0.24 * scale, 0.16 * scale, 16), dhoti);
+    dhotiWrap.position.y = 0.08 * scale + 0.08 * scale;
+    g.add(dhotiWrap);
+    const sashWrap = new THREE.Mesh(new THREE.TorusGeometry(0.2 * scale, 0.025 * scale, 8, 16), sash);
+    sashWrap.rotation.x = Math.PI / 2;
+    sashWrap.position.y = 0.08 * scale + 0.16 * scale;
+    g.add(sashWrap);
+
+    // crossed legs (seated) — simple flattened stacks in front of the belly
+    const legMat = skinTone;
+    const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.07 * scale, 0.08 * scale, 0.34 * scale, 10), legMat);
+    legL.rotation.z = Math.PI / 2;
+    legL.position.set(-0.02 * scale, 0.1 * scale, 0.12 * scale);
+    g.add(legL);
+    const legR = new THREE.Mesh(new THREE.CylinderGeometry(0.07 * scale, 0.08 * scale, 0.34 * scale, 10), legMat);
+    legR.rotation.z = Math.PI / 2;
+    legR.position.set(0.02 * scale, 0.1 * scale, -0.05 * scale);
+    g.add(legR);
+
+    // four arms (simplified as slim cylinders radiating from the shoulders)
+    const armMat = skinTone;
+    const armPoses = [
+      { x: -0.24, y: 0.34, z: 0.02, rz: 0.9, ry: 0 },   // upper-left, raised
+      { x: 0.24, y: 0.34, z: 0.02, rz: -0.9, ry: 0 },   // upper-right, raised
+      { x: -0.22, y: 0.2, z: 0.1, rz: 0.35, ry: 0 },    // lower-left, resting
+      { x: 0.22, y: 0.2, z: 0.1, rz: -0.35, ry: 0 },    // lower-right, holding a modak
+    ];
+    armPoses.forEach((p) => {
+      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.035 * scale, 0.04 * scale, 0.26 * scale, 8), armMat);
+      arm.rotation.z = p.rz;
+      arm.position.set(p.x * scale, p.y * scale, p.z * scale);
+      g.add(arm);
+    });
+    // modak (sweet) held in the lower-right hand
+    const modak = new THREE.Mesh(new THREE.ConeGeometry(0.035 * scale, 0.05 * scale, 8), new THREE.MeshStandardMaterial({ color: 0xe8c877, roughness: 0.7 }));
+    modak.position.set(0.32 * scale, 0.1 * scale, 0.16 * scale);
+    g.add(modak);
+
+    // elephant head
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.15 * scale, 16, 16), skinTone);
+    head.position.y = 0.08 * scale + 0.42 * scale;
+    g.add(head);
+    // big ears (flattened spheres)
+    const earMat = skinTone;
+    const earL = new THREE.Mesh(new THREE.SphereGeometry(0.11 * scale, 12, 12), earMat);
+    earL.scale.set(1, 1, 0.25);
+    earL.position.set(-0.16 * scale, head.position.y + 0.02 * scale, -0.02 * scale);
+    earL.rotation.y = 0.5;
+    g.add(earL);
+    const earR = earL.clone();
+    earR.position.x = 0.16 * scale;
+    earR.rotation.y = -0.5;
+    g.add(earR);
+    // trunk — a gently curving series of tapered segments
+    const trunkMat = skinTone;
+    const trunkSegs = 5;
+    let ty = head.position.y - 0.05 * scale;
+    let tx = 0;
+    for (let i = 0; i < trunkSegs; i++) {
+      const segLen = 0.09 * scale;
+      const segR = 0.045 * scale * (1 - i * 0.12);
+      const seg = new THREE.Mesh(new THREE.CylinderGeometry(segR, segR * 0.9, segLen, 8), trunkMat);
+      const curl = i * 0.35;
+      seg.position.set(tx, ty, 0.12 * scale + i * 0.01 * scale);
+      seg.rotation.x = -0.3 - curl * 0.4;
+      seg.rotation.z = Math.sin(i) * 0.15;
+      g.add(seg);
+      ty -= segLen * Math.cos(0.3 + curl * 0.4);
+      tx += Math.sin(curl * 0.4) * segLen * 0.5;
+    }
+    // single tusk
+    const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.018 * scale, 0.1 * scale, 6), new THREE.MeshStandardMaterial({ color: 0xf5eddc, roughness: 0.4 }));
+    tusk.position.set(0.07 * scale, head.position.y - 0.06 * scale, 0.13 * scale);
+    tusk.rotation.x = Math.PI / 2 + 0.5;
+    g.add(tusk);
+    // crown
+    const crown = new THREE.Mesh(new THREE.ConeGeometry(0.09 * scale, 0.13 * scale, 10), goldMat);
+    crown.position.y = head.position.y + 0.17 * scale;
+    g.add(crown);
+    const crownTip = new THREE.Mesh(new THREE.SphereGeometry(0.025 * scale, 8, 8), goldMat);
+    crownTip.position.y = head.position.y + 0.25 * scale;
+    g.add(crownTip);
+
+    // small mouse (Mushika, his vahana) at the base of the pedestal
+    const mouseMat = new THREE.MeshStandardMaterial({ color: 0x6b6560, roughness: 0.8 });
+    const mouseBody = new THREE.Mesh(new THREE.SphereGeometry(0.045 * scale, 10, 10), mouseMat);
+    mouseBody.scale.set(1.3, 0.9, 1);
+    mouseBody.position.set(0.3 * scale, 0.045 * scale, 0.28 * scale);
+    g.add(mouseBody);
+    const mouseEarL = new THREE.Mesh(new THREE.SphereGeometry(0.014 * scale, 6, 6), mouseMat);
+    mouseEarL.position.set(0.32 * scale, 0.075 * scale, 0.3 * scale);
+    g.add(mouseEarL);
+    const mouseTail = new THREE.Mesh(new THREE.CylinderGeometry(0.004 * scale, 0.006 * scale, 0.12 * scale, 5), mouseMat);
+    mouseTail.rotation.z = Math.PI / 2.2;
+    mouseTail.position.set(0.24 * scale, 0.04 * scale, 0.34 * scale);
+    g.add(mouseTail);
+
+    g.position.set(x, platformH, z);
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    scene.add(g);
+  }
+
+  addGaneshMurti(pillarX + 0.55, platZ, 1.2);
+  addMurti(pillarX + 0.5, platZ + 0.85, 0.7);
 
   // Brass bell hanging from the middle beam, in front of the shrine
   bellNode = new THREE.Group();
