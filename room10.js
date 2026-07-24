@@ -183,11 +183,22 @@ export function createRoom10(scene, engine, doorX, doorZ) {
   keyMesh.add(keyTooth);
   keyMesh.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
 
-  // rests near the front of the drawer's interior, so it rides along as the
-  // drawer slides open/closed (it's a child of drawerGroup, not the scene)
-  keyMesh.position.set(0.02, drawerH / 2 + 0.01, drawerD / 2 - 0.08);
+  // rests near the FRONT of the drawer's interior (the handle/opening side —
+  // local -z, matching drawerOpenZ's direction and the handle's own -z
+  // position above). This matters: once the drawer is open, its world z is
+  // drawerGroup.position.z (negative, toward the player) plus this local
+  // offset. Placing the key toward the BACK (+z, the wall side) instead — as
+  // an earlier version of this file did — keeps it within the tabletop's
+  // horizontal footprint even at full extension, so the solid tabletop slab
+  // sitting directly above it always blocks the view straight down onto it
+  // and it's never actually visible. Putting it at the front means that once
+  // the drawer is open enough, it slides out past the tabletop's front edge
+  // into open air, in plain view.
+  keyMesh.position.set(0.02, drawerH / 2 + 0.025, -drawerD / 2 + 0.06);
   keyMesh.rotation.y = 0.35;
+  keyMesh.scale.setScalar(1.4); // physically-accurate key size reads as an almost invisible sliver at this scale — scaled up so it's actually noticeable
   drawerGroup.add(keyMesh);
+
 
 
   // collider — a simple static box covering the table footprint (drawer sliding out
