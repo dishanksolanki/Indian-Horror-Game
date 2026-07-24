@@ -102,9 +102,107 @@ export function createRoom10(scene, engine, doorX, doorZ) {
   colliders.push(trunkBox);
   engine.addCollider(trunkBox);
 
-  // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
-  function update() {
-    // intentionally static
+  // ---------- furnishing: wooden table with a drawer, against the south wall ----------
+  const tableMat = new THREE.MeshStandardMaterial({ color: 0x3b2414, roughness: 0.75 });
+  const drawerMat = new THREE.MeshStandardMaterial({ color: 0x241708, roughness: 0.85 });
+  const handleMat = new THREE.MeshStandardMaterial({ color: 0x8a7550, metalness: 0.5, roughness: 0.4 });
+
+  const tableW = 1.1; // east-west
+  const tableD = 0.6; // north-south
+  const tableH = 0.78; // floor to tabletop
+  const topThick = 0.06;
+  const legSize = 0.06;
+
+  // south-west corner of the room, clear of the doorway and the trunk stack
+  const tableX = centerX - 1.5;
+  const tableZ = centerZ + ROOM_D / 2 - 0.6;
+
+  const tableGroup = new THREE.Group();
+  tableGroup.position.set(tableX, 0, tableZ);
+  scene.add(tableGroup);
+
+  // tabletop
+  const top = new THREE.Mesh(new THREE.BoxGeometry(tableW, topThick, tableD), tableMat);
+  top.position.set(0, tableH - topThick / 2, 0);
+  top.castShadow = top.receiveShadow = true;
+  tableGroup.add(top);
+
+  // four legs
+  const legH = tableH - topThick;
+  const legOffsetX = tableW / 2 - legSize / 2 - 0.03;
+  const legOffsetZ = tableD / 2 - legSize / 2 - 0.03;
+  [
+    [-1, -1],
+    [1, -1],
+    [-1, 1],
+    [1, 1],
+  ].forEach(([sx, sz]) => {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(legSize, legH, legSize), tableMat);
+    leg.position.set(sx * legOffsetX, legH / 2, sz * legOffsetZ);
+    leg.castShadow = leg.receiveShadow = true;
+    tableGroup.add(leg);
+  });
+
+  // drawer — sits just under the tabletop, slides out toward the room (north, +z is away from wall here)
+  const drawerW = tableW - 0.25;
+  const drawerH = 0.16;
+  const drawerD = tableD - 0.06;
+  const drawerClosedZ = 0;
+  const drawerOpenZ = -(drawerD * 0.65); // slides toward the player, away from the wall
+
+  const drawerGroup = new THREE.Group();
+  drawerGroup.position.set(0, tableH - topThick - drawerH / 2 - 0.02, drawerClosedZ);
+  tableGroup.add(drawerGroup);
+
+  const drawerBox = new THREE.Mesh(new THREE.BoxGeometry(drawerW, drawerH, drawerD), drawerMat);
+  drawerBox.castShadow = drawerBox.receiveShadow = true;
+  drawerGroup.add(drawerBox);
+
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.14, 8), handleMat);
+  handle.rotation.z = Math.PI / 2;
+  handle.position.set(0, 0, -drawerD / 2 - 0.03);
+  drawerGroup.add(handle);
+
+  // collider — a simple static box covering the table footprint (drawer sliding out
+  // a few cm doesn't meaningfully change the blocked area, so we keep this fixed)
+  const tableBox = new THREE.Box3(
+    new THREE.Vector3(tableX - tableW / 2, 0, tableZ - tableD / 2 + drawerOpenZ),
+    new THREE.Vector3(tableX + tableW / 2, tableH, tableZ + tableD / 2)
+  );
+  colliders.push(tableBox);
+  engine.addCollider(tableBox);
+
+  // interaction: press E near the table to open/close the drawer
+  let drawerOpen = false;
+  let drawerT = 0; // 0 = closed, 1 = open — animated toward target each frame
+  engine.addInteractable(tableGroup, {
+    radius: 1.6,
+    prompt: "Open drawer",
+    onInteract: () => {
+      drawerOpen = !drawerOpen;
+    },
+  });
+
+  // ---------- ambient room lighting: dim, dusty, forgotten ----------
+  const ambient = new THREE.AmbientLight(0x362f24, 1.3);
+  scene.add(ambient);
+
+  const fillLight = new THREE.HemisphereLight(0x6a6152, 0x241d12, 0.8);
+  scene.add(fillLight);
+
+  const dustyLight = new THREE.PointLight(0xc9a35f, 1.3, 6, 2);
+  dustyLight.position.set(centerX, ROOM_H - 0.3, centerZ);
+  scene.add(dustyLight);
+
+  // ---------- per-frame update: dying-bulb flicker + drawer slide animation ----------
+  let flickerT = 0;
+  function update(dt) {
+    flickerT += dt;
+    dustyLight.intensity = 1.0 + Math.sin(flickerT * 3.1) * 0.15 + (Math.random() - 0.5) * 0.2;
+
+    const target = drawerOpen ? 1 : 0;
+    drawerT += (target - drawerT) * Math.min(1, dt * 6);
+    drawerGroup.position.z = drawerClosedZ + drawerT * drawerOpenZ;
   }
 
   return { colliders, update, centerX, centerZ, westX, eastX };
