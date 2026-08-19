@@ -823,7 +823,7 @@ export function createRoom7(scene, engine, doorX, doorZ) {
     y: platformH,
     z: platZ - 0.55,
     scale: 0.85,
-    rotationY: Math.PI * 0.15,
+    rotationY: -Math.PI / 2, // face the flat blades toward the west doorway/entrance
     tilt: -0.06,
   });
   {
