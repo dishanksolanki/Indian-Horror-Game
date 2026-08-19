@@ -826,11 +826,31 @@ export function createRoom7(scene, engine, doorX, doorZ) {
     rotationY: -Math.PI / 2, // face the flat blades toward the west doorway/entrance
     tilt: -0.06,
   });
-  {
-    const box = new THREE.Box3().setFromObject(trishul.group);
-    colliders.push(box);
-    engine.addCollider(box);
-  }
+  const trishulBox = new THREE.Box3().setFromObject(trishul.group);
+  colliders.push(trishulBox);
+  engine.addCollider(trishulBox);
+
+  // Player can pick the trishul up (E), carry it as a hand-held viewmodel
+  // (shrunk down via holdScale so it doesn't look absurd up close), and
+  // drop it again (G) — dropping pops it back to full size and re-registers
+  // it as a normal world pickup, same pattern as every other held item.
+  const trishulEntry = engine.addInteractable(trishul.group, {
+    radius: 2.2,
+    prompt: "Pick Up Trishul",
+    onInteract: () => {
+      engine.removeInteractable(trishulEntry);
+      engine.removeCollider(trishulBox);
+      scene.remove(trishul.group);
+      engine.pickupItem({
+        id: "trishul",
+        mesh: trishul.group,
+        prompt: "Trishul",
+        holdOffset: new THREE.Vector3(0.32, -0.3, -0.6),
+        holdScale: 0.32,
+        throwable: false,
+      });
+    },
+  });
 
   // Brass bell hanging from the middle beam, in front of the shrine
   bellNode = new THREE.Group();
