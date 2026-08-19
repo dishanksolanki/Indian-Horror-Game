@@ -392,6 +392,115 @@ function createShivLing(scene, opts = {}) {
   };
 }
 
+// =========================================================
+// Trishul (Shiva's trident) builder — a tall brass-tipped staff with three
+// curved prongs (representing creation/preservation/destruction), planted
+// upright in a small stone/brass stand beside the Shiv Ling. Self-contained,
+// using the shrine's brass/stone palette so it reads as belonging there.
+// =========================================================
+function createTrishul(scene, opts = {}) {
+  const {
+    x = 0,
+    y = 0,
+    z = 0,
+    scale = 1,
+    rotationY = 0,
+    tilt = 0, // slight lean, radians
+  } = opts;
+
+  const group = new THREE.Group();
+  const S = scale;
+
+  const brassMat = new THREE.MeshStandardMaterial({ color: 0xb08d3e, roughness: 0.35, metalness: 0.75 });
+  const darkBrassMat = new THREE.MeshStandardMaterial({ color: 0x7a5f28, roughness: 0.45, metalness: 0.65 });
+  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x4a4844, roughness: 0.7 });
+  const clothMat = new THREE.MeshStandardMaterial({ color: 0xd6482f, roughness: 0.85 });
+
+  const parts = [];
+  function add(mesh) {
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    parts.push(mesh);
+    return mesh;
+  }
+
+  // ---- small stone/brass stand the staff is planted in ----
+  const standH = 0.14 * S;
+  const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.11 * S, 0.14 * S, standH, 12), stoneMat);
+  stand.position.set(0, standH / 2, 0);
+  add(stand);
+  const standCollar = new THREE.Mesh(new THREE.TorusGeometry(0.055 * S, 0.012 * S, 8, 16), brassMat);
+  standCollar.rotation.x = Math.PI / 2;
+  standCollar.position.set(0, standH + 0.005 * S, 0);
+  add(standCollar);
+
+  // ---- long staff (danda) ----
+  const staffH = 1.55 * S;
+  const staff = new THREE.Mesh(new THREE.CylinderGeometry(0.018 * S, 0.024 * S, staffH, 10), darkBrassMat);
+  staff.position.set(0, standH + staffH / 2 - 0.02 * S, 0);
+  add(staff);
+
+  // decorative brass rings along the staff
+  [0.3, 0.65].forEach((f) => {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.026 * S, 0.006 * S, 6, 14), brassMat);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.set(0, standH + staffH * f, 0);
+    add(ring);
+  });
+
+  const staffTopY = standH + staffH - 0.02 * S;
+
+  // ---- small cloth binding just below the prongs ----
+  const bindCloth = new THREE.Mesh(new THREE.CylinderGeometry(0.032 * S, 0.028 * S, 0.05 * S, 10), clothMat);
+  bindCloth.position.set(0, staffTopY - 0.02 * S, 0);
+  add(bindCloth);
+
+  // ---- three prongs (trishul tines): one straight center, two curving outward ----
+  function buildProng(tipOffsetX, tipOffsetZ) {
+    const base = new THREE.Vector3(0, staffTopY, 0);
+    const mid = new THREE.Vector3(tipOffsetX * 0.5, staffTopY + 0.16 * S, tipOffsetZ * 0.5);
+    const tip = new THREE.Vector3(tipOffsetX, staffTopY + 0.34 * S, tipOffsetZ);
+    const curve = new THREE.CatmullRomCurve3([base, mid, tip]);
+    const pts = curve.getPoints(6);
+    const prongGroup = new THREE.Group();
+    for (let i = 0; i < pts.length - 1; i++) {
+      const t = i / (pts.length - 2);
+      const r = 0.014 * S * (1 - t * 0.75);
+      const seg = segmentBetween(pts[i], pts[i + 1], Math.max(r, 0.003 * S), Math.max(r * 1.1, 0.003 * S), 7, brassMat);
+      prongGroup.add(seg);
+    }
+    // sharp tip point, aligned with the final segment direction
+    const tipCone = new THREE.Mesh(new THREE.ConeGeometry(0.012 * S, 0.1 * S, 7), brassMat);
+    const dir = new THREE.Vector3().subVectors(pts[pts.length - 1], pts[pts.length - 2]).normalize();
+    tipCone.position.copy(tip).add(dir.clone().multiplyScalar(0.05 * S));
+    tipCone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    prongGroup.add(tipCone);
+    prongGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    group.add(prongGroup);
+    parts.push(prongGroup);
+  }
+  buildProng(0, 0);                    // center prong, straight up
+  buildProng(0.11 * S, 0.045 * S);     // right prong, curves outward
+  buildProng(-0.11 * S, 0.045 * S);    // left prong, curves outward
+
+  // ---- finalize ----
+  group.position.set(x, y, z);
+  group.rotation.y = rotationY;
+  group.rotation.z = tilt;
+  scene.add(group);
+
+  return {
+    group,
+    dispose() {
+      scene.remove(group);
+      parts.forEach((p) => {
+        p.traverse ? p.traverse((o) => { if (o.isMesh) o.geometry.dispose(); }) : (p.geometry && p.geometry.dispose());
+      });
+    },
+  };
+}
+
 
 const ROOM_W = 6;      // east-west
 const ROOM_D = 6.5;    // north-south
@@ -563,6 +672,22 @@ export function createRoom7(scene, engine, doorX, doorZ) {
   }
   // let its little offering diya flicker along with the rest of the shrine's flames
   flames.push(shivLing.flame);
+
+  // ---- Trishul: Shiva's trident, planted beside the Shiv Ling on the
+  // platform, angled slightly toward the room as if leaning to greet visitors ----
+  const trishul = createTrishul(scene, {
+    x: pillarX + 0.62,
+    y: platformH,
+    z: platZ - 0.55,
+    scale: 0.85,
+    rotationY: Math.PI * 0.15,
+    tilt: -0.06,
+  });
+  {
+    const box = new THREE.Box3().setFromObject(trishul.group);
+    colliders.push(box);
+    engine.addCollider(box);
+  }
 
   // Brass bell hanging from the middle beam, in front of the shrine
   bellNode = new THREE.Group();
