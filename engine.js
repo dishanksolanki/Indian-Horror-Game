@@ -12,7 +12,10 @@
 // player a carryable object (e.g. a hammer). While held, the item's mesh rides along as
 // a viewmodel parented to the camera. Pressing G drops it: the mesh pops back into world
 // space in front of the player, rests on the floor as a fixture, and is re-registered as
-// a normal interactable so it can be picked back up later.
+// a normal interactable so it can be picked back up later. Held items can optionally be
+// shown at a different scale than their world size via holdScale (e.g. a room-sized prop
+// like a trishul shrinks down to a sensible viewmodel size while carried, then pops back
+// to full size the moment it's dropped/thrown).
 //
 // NEW: generic "throwable / noise fixture" mechanic (throwHeldItem + onNoise) — a Granny /
 // Kamla-style distraction tool. Any held item can be thrown (Q) instead of just dropped (G).
@@ -30,7 +33,7 @@ import { PointerLockControls } from "three/addons/controls/PointerLockControls.j
 // cached copy from before (ES module scripts get cached aggressively — if
 // you don't see this line after a save, the browser is serving a stale
 // engine.js and a hard refresh / cache-busted script src is needed).
-console.log("[engine.js] loaded — build: throwable-noise-fixture-v1");
+console.log("[engine.js] loaded — build: held-item-scale-v1");
 
 // Counts how many Engine instances have been constructed this page load.
 // Multiple instances is the #1 cause of "heldItem was null" reports: each
@@ -132,7 +135,7 @@ export class Engine {
     // item can be held at a time — a room should hide/disable its own pickup
     // interactable once picked up, and call pickupItem() again on that item's
     // onInteract if you want it to be able to swap out an already-held item.
-    this.heldItem = null; // { id, mesh, prompt, holdOffset, throwable }
+    this.heldItem = null; // { id, mesh, prompt, holdOffset, throwable, originalScale }
     this.floorY = 0; // world Y the floor sits at, used to rest dropped/thrown items — override per room if your floor isn't at 0
 
     // --- thrown / noise-fixture state ---
@@ -168,6 +171,16 @@ export class Engine {
   // ---------- setup helpers used by rooms ----------
   addCollider(box3) {
     this.colliders.push(box3);
+  }
+
+  /**
+   * Removes a previously-added collider (e.g. because the fixture it belonged
+   * to — a picked-up prop, an opened door, etc — no longer blocks movement).
+   * No-ops silently if the box isn't currently registered.
+   */
+  removeCollider(box3) {
+    const i = this.colliders.indexOf(box3);
+    if (i !== -1) this.colliders.splice(i, 1);
   }
 
   addInteractable(object3D, { radius = 1.6, prompt = "Interact", onInteract = () => {} } = {}) {
@@ -220,10 +233,11 @@ export class Engine {
 
   // ---------- held item (pick up / drop / throw) ----------
   /**
-   * Give the player something to carry (e.g. a hammer, a bottle). The mesh is
-   * parented to the camera as a viewmodel, so make sure its geometry is already
-   * roughly hand-sized/positioned around the origin before calling this —
-   * holdOffset just nudges it into the lower-right of the view.
+   * Give the player something to carry (e.g. a hammer, a bottle, a room prop
+   * like a trishul). The mesh is parented to the camera as a viewmodel, so
+   * make sure its geometry is already roughly hand-sized/positioned around
+   * the origin before calling this — holdOffset just nudges it into the
+   * lower-right of the view.
    * @param {Object} opts
    * @param {string} opts.id - identifier for the item, useful if a room branches on what's held
    * @param {THREE.Object3D} opts.mesh - the item's mesh (reused for held/dropped/thrown states)
@@ -231,6 +245,9 @@ export class Engine {
    * @param {THREE.Vector3} [opts.holdOffset] - local offset from the camera while held
    * @param {boolean} [opts.throwable=false] - if true, this item can be thrown with Q to make noise
    * @param {number} [opts.noiseRadius=6] - radius (world units) the landing noise reaches, passed to onNoise listeners
+   * @param {number|null} [opts.holdScale=null] - if set, uniformly scales the mesh to this value while
+   *   held (handy for a full room-sized prop that should look like a sensible viewmodel in hand). The
+   *   mesh's scale at the moment of pickup is remembered and restored automatically on drop/throw.
    * @param {Function|null} [opts.onPickup] - callback fired once picked up
    * @returns {boolean} false if a swap is refused because something is already held
    */
@@ -241,6 +258,7 @@ export class Engine {
     holdOffset = new THREE.Vector3(0.28, -0.22, -0.55),
     throwable = false,
     noiseRadius = 6,
+    holdScale = null,
     onPickup = null,
   } = {}) {
     console.log(`[engine.js#${this._instanceId}] pickupItem() called for:`, id, "mesh:", mesh, "already holding:", this.heldItem);
@@ -250,11 +268,13 @@ export class Engine {
     }
 
     try {
+      const originalScale = mesh.scale.clone();
       mesh.position.copy(holdOffset);
       mesh.rotation.set(0, 0, 0);
+      if (holdScale !== null) mesh.scale.setScalar(holdScale);
       this.camera.add(mesh);
 
-      this.heldItem = { id, mesh, prompt, holdOffset, throwable, noiseRadius };
+      this.heldItem = { id, mesh, prompt, holdOffset, throwable, noiseRadius, holdScale, originalScale };
       console.log(`[engine.js#${this._instanceId}] pickupItem() succeeded — heldItem is now:`, this.heldItem);
       if (onPickup) onPickup();
       return true;
@@ -265,19 +285,21 @@ export class Engine {
   }
 
   /**
-   * Drop whatever is currently held. The mesh comes off the camera and is
-   * placed on the floor a short distance in front of the player, facing a
-   * random yaw so it doesn't look robotically placed, then re-registered as
-   * a normal world interactable ("Pick Up Hammer") so it can be grabbed again.
-   * No-ops if nothing is held, or while hiding (can't fumble with items then).
+   * Drop whatever is currently held. The mesh comes off the camera, is
+   * restored to its original (pre-pickup) scale, and is placed on the floor
+   * a short distance in front of the player, facing a random yaw so it
+   * doesn't look robotically placed, then re-registered as a normal world
+   * interactable ("Pick Up Hammer") so it can be grabbed again. No-ops if
+   * nothing is held, or while hiding (can't fumble with items then).
    */
   dropHeldItem() {
     console.log(`[engine.js#${this._instanceId}] dropHeldItem() called — heldItem:`, this.heldItem, "hiding:", this.hiding);
     if (!this.heldItem || this.hiding) return;
-    const { id, mesh, prompt, throwable, noiseRadius } = this.heldItem;
+    const { id, mesh, prompt, throwable, noiseRadius, originalScale } = this.heldItem;
 
     // pull the mesh back out of camera-local space into world space
     this.camera.remove(mesh);
+    if (originalScale) mesh.scale.copy(originalScale);
 
     const dropDir = new THREE.Vector3();
     this.camera.getWorldDirection(dropDir);
@@ -313,8 +335,9 @@ export class Engine {
       return;
     }
 
-    const { id, mesh, prompt, noiseRadius } = this.heldItem;
+    const { id, mesh, prompt, noiseRadius, originalScale } = this.heldItem;
     this.camera.remove(mesh);
+    if (originalScale) mesh.scale.copy(originalScale);
 
     const worldPos = new THREE.Vector3();
     mesh.getWorldPosition(worldPos);
