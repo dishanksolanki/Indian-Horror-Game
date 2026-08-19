@@ -393,11 +393,58 @@ function createShivLing(scene, opts = {}) {
 }
 
 // =========================================================
-// Trishul (Shiva's trident) builder — a tall brass-tipped staff with three
-// curved prongs (representing creation/preservation/destruction), planted
-// upright in a small stone/brass stand beside the Shiv Ling. Self-contained,
-// using the shrine's brass/stone palette so it reads as belonging there.
+// Trishul (Shiva's trident) builder — modeled after a traditional ritual
+// trishul: two outward-curving "buffalo horn" blades flanking a tall
+// straight center spear-blade, all flat and coplanar like a real forged
+// head, rising from an ornate blackened-bronze junction. A wooden damaru
+// (hourglass drum) hangs just below the head, tied on with a rudraksha
+// mala loop and saffron/white cloth streamers with small brass tassels,
+// all mounted on a dark wood staff with metal ferrules. Self-contained.
 // =========================================================
+
+// Builds a flat, tapering blade outline from a 2D centerline + half-width
+// profile, returning a THREE.Shape (base at local origin, blade rising
+// toward +Y, curving in X as the centerline dictates).
+function buildBladeShape(centerPts, halfWidths) {
+  const left = [];
+  const right = [];
+  for (let i = 0; i < centerPts.length; i++) {
+    const p = centerPts[i];
+    const prev = centerPts[Math.max(i - 1, 0)];
+    const next = centerPts[Math.min(i + 1, centerPts.length - 1)];
+    const tangent = new THREE.Vector2().subVectors(next, prev);
+    if (tangent.lengthSq() < 1e-8) tangent.set(0, 1);
+    tangent.normalize();
+    const normal = new THREE.Vector2(-tangent.y, tangent.x);
+    const hw = halfWidths[i];
+    left.push(new THREE.Vector2(p.x + normal.x * hw, p.y + normal.y * hw));
+    right.push(new THREE.Vector2(p.x - normal.x * hw, p.y - normal.y * hw));
+  }
+  const shape = new THREE.Shape();
+  shape.moveTo(left[0].x, left[0].y);
+  for (let i = 1; i < left.length; i++) shape.lineTo(left[i].x, left[i].y);
+  for (let i = right.length - 1; i >= 0; i--) shape.lineTo(right[i].x, right[i].y);
+  shape.closePath();
+  return shape;
+}
+
+function makeBladeMesh(centerPts, halfWidths, thickness, material) {
+  const shape = buildBladeShape(centerPts, halfWidths);
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: thickness,
+    bevelEnabled: true,
+    bevelThickness: thickness * 0.35,
+    bevelSize: thickness * 0.3,
+    bevelSegments: 1,
+    steps: 1,
+  });
+  geo.translate(0, 0, -thickness / 2);
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
 function createTrishul(scene, opts = {}) {
   const {
     x = 0,
@@ -411,13 +458,17 @@ function createTrishul(scene, opts = {}) {
   const group = new THREE.Group();
   const S = scale;
 
-  const brassMat = new THREE.MeshStandardMaterial({ color: 0xb08d3e, roughness: 0.35, metalness: 0.75 });
-  const darkBrassMat = new THREE.MeshStandardMaterial({ color: 0x7a5f28, roughness: 0.45, metalness: 0.65 });
+  const bronzeMat = new THREE.MeshStandardMaterial({ color: 0x3f392e, roughness: 0.5, metalness: 0.6 });
+  const bronzeDarkMat = new THREE.MeshStandardMaterial({ color: 0x211d17, roughness: 0.7, metalness: 0.4 });
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x4a2f18, roughness: 0.85, metalness: 0.05 });
+  const beadMat = new THREE.MeshStandardMaterial({ color: 0x2b1a10, roughness: 0.7 });
+  const saffronMat = new THREE.MeshStandardMaterial({ color: 0xd9701f, roughness: 0.9 });
+  const whiteClothMat = new THREE.MeshStandardMaterial({ color: 0xe8e0d0, roughness: 0.9 });
+  const bellMat = new THREE.MeshStandardMaterial({ color: 0xb08d3e, roughness: 0.35, metalness: 0.7 });
   const stoneMat = new THREE.MeshStandardMaterial({ color: 0x4a4844, roughness: 0.7 });
-  const clothMat = new THREE.MeshStandardMaterial({ color: 0xd6482f, roughness: 0.85 });
 
   const parts = [];
-  function add(mesh) {
+  function add(mesh, mat) {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
@@ -427,62 +478,154 @@ function createTrishul(scene, opts = {}) {
 
   // ---- small stone/brass stand the staff is planted in ----
   const standH = 0.14 * S;
-  const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.11 * S, 0.14 * S, standH, 12), stoneMat);
+  const stand = add(new THREE.Mesh(new THREE.CylinderGeometry(0.1 * S, 0.13 * S, standH, 12), stoneMat));
   stand.position.set(0, standH / 2, 0);
-  add(stand);
-  const standCollar = new THREE.Mesh(new THREE.TorusGeometry(0.055 * S, 0.012 * S, 8, 16), brassMat);
+  const standCollar = add(new THREE.Mesh(new THREE.TorusGeometry(0.05 * S, 0.011 * S, 8, 16), bronzeMat));
   standCollar.rotation.x = Math.PI / 2;
   standCollar.position.set(0, standH + 0.005 * S, 0);
-  add(standCollar);
 
-  // ---- long staff (danda) ----
-  const staffH = 1.55 * S;
-  const staff = new THREE.Mesh(new THREE.CylinderGeometry(0.018 * S, 0.024 * S, staffH, 10), darkBrassMat);
-  staff.position.set(0, standH + staffH / 2 - 0.02 * S, 0);
-  add(staff);
+  // ---- long dark-wood staff (danda) with metal ferrules top & bottom ----
+  const staffH = 1.5 * S;
+  const staffR = 0.02 * S;
+  const staffBaseY = standH;
+  const headY = staffBaseY + staffH; // where the bronze head sits
 
-  // decorative brass rings along the staff
-  [0.3, 0.65].forEach((f) => {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.026 * S, 0.006 * S, 6, 14), brassMat);
+  const staff = add(new THREE.Mesh(new THREE.CylinderGeometry(staffR * 0.9, staffR * 1.15, staffH, 10), woodMat));
+  staff.position.set(0, staffBaseY + staffH / 2, 0);
+
+  const bottomFerrule = add(new THREE.Mesh(new THREE.CylinderGeometry(staffR * 1.25, staffR * 1.35, 0.05 * S, 10), bronzeMat));
+  bottomFerrule.position.set(0, staffBaseY + 0.03 * S, 0);
+  const topFerrule = add(new THREE.Mesh(new THREE.CylinderGeometry(staffR * 1.1, staffR * 1.2, 0.045 * S, 10), bronzeMat));
+  topFerrule.position.set(0, headY - 0.03 * S, 0);
+
+  // =========================================================
+  // DAMARU: small hourglass hand-drum tied just below the head
+  // =========================================================
+  const damaruY = headY - 0.22 * S;
+  const damaruBaseR = 0.05 * S;
+  const damaruWaistR = 0.016 * S;
+  const damaruHalfH = 0.045 * S;
+  const damaruTop = add(new THREE.Mesh(new THREE.CylinderGeometry(damaruBaseR, damaruWaistR, damaruHalfH, 12), woodMat));
+  damaruTop.position.set(0, damaruY + damaruHalfH / 2, 0);
+  const damaruBottom = add(new THREE.Mesh(new THREE.CylinderGeometry(damaruWaistR, damaruBaseR, damaruHalfH, 12), woodMat));
+  damaruBottom.position.set(0, damaruY - damaruHalfH / 2, 0);
+  [damaruY + damaruHalfH, damaruY - damaruHalfH, damaruY].forEach((ry, i) => {
+    const ring = add(new THREE.Mesh(new THREE.TorusGeometry(i === 2 ? damaruWaistR : damaruBaseR, 0.006 * S, 6, 14), bronzeDarkMat));
     ring.rotation.x = Math.PI / 2;
-    ring.position.set(0, standH + staffH * f, 0);
-    add(ring);
+    ring.position.set(0, ry, 0);
+  });
+  // two tiny knotted tassel-weights dangling from the waist cord, as on a real damaru
+  [-1, 1].forEach((s) => {
+    const thread = add(new THREE.Mesh(new THREE.CylinderGeometry(0.003 * S, 0.003 * S, 0.05 * S, 5), bronzeDarkMat));
+    thread.position.set(s * 0.03 * S, damaruY - 0.02 * S, 0.02 * S);
+    thread.rotation.z = s * 0.5;
+    const knot = add(new THREE.Mesh(new THREE.SphereGeometry(0.01 * S, 6, 6), bellMat));
+    knot.position.set(s * 0.05 * S, damaruY - 0.045 * S, 0.03 * S);
   });
 
-  const staffTopY = standH + staffH - 0.02 * S;
+  // =========================================================
+  // RUDRAKSHA MALA: a loop of small dark beads draped below the damaru
+  // =========================================================
+  const malaTopY = damaruY - damaruHalfH - 0.01 * S;
+  const malaCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0.025 * S, malaTopY, 0.02 * S),
+    new THREE.Vector3(0.11 * S, malaTopY - 0.16 * S, 0.07 * S),
+    new THREE.Vector3(0.06 * S, malaTopY - 0.32 * S, 0.05 * S),
+    new THREE.Vector3(-0.06 * S, malaTopY - 0.32 * S, -0.05 * S),
+    new THREE.Vector3(-0.11 * S, malaTopY - 0.16 * S, -0.07 * S),
+    new THREE.Vector3(-0.025 * S, malaTopY, -0.02 * S),
+  ]);
+  const malaPts = malaCurve.getPoints(20);
+  malaPts.forEach((p) => {
+    const bead = add(new THREE.Mesh(new THREE.SphereGeometry(0.009 * S, 6, 6), beadMat));
+    bead.position.copy(p);
+  });
 
-  // ---- small cloth binding just below the prongs ----
-  const bindCloth = new THREE.Mesh(new THREE.CylinderGeometry(0.032 * S, 0.028 * S, 0.05 * S, 10), clothMat);
-  bindCloth.position.set(0, staffTopY - 0.02 * S, 0);
-  add(bindCloth);
+  // =========================================================
+  // CLOTH: saffron wrap around the staff with hanging streamers, plus one
+  // white strip, each tipped with a tiny brass tassel bell
+  // =========================================================
+  const clothY = malaTopY - 0.4 * S;
+  const clothWrap = add(new THREE.Mesh(new THREE.CylinderGeometry(staffR * 1.7, staffR * 1.7, 0.09 * S, 10), saffronMat));
+  clothWrap.position.set(0, clothY, 0);
+  const clothTie = add(new THREE.Mesh(new THREE.TorusGeometry(staffR * 1.75, 0.006 * S, 6, 14), bronzeDarkMat));
+  clothTie.rotation.x = Math.PI / 2;
+  clothTie.position.set(0, clothY + 0.05 * S, 0);
 
-  // ---- three prongs (trishul tines): one straight center, two curving outward ----
-  function buildProng(tipOffsetX, tipOffsetZ) {
-    const base = new THREE.Vector3(0, staffTopY, 0);
-    const mid = new THREE.Vector3(tipOffsetX * 0.5, staffTopY + 0.16 * S, tipOffsetZ * 0.5);
-    const tip = new THREE.Vector3(tipOffsetX, staffTopY + 0.34 * S, tipOffsetZ);
-    const curve = new THREE.CatmullRomCurve3([base, mid, tip]);
-    const pts = curve.getPoints(6);
-    const prongGroup = new THREE.Group();
-    for (let i = 0; i < pts.length - 1; i++) {
-      const t = i / (pts.length - 2);
-      const r = 0.014 * S * (1 - t * 0.75);
-      const seg = segmentBetween(pts[i], pts[i + 1], Math.max(r, 0.003 * S), Math.max(r * 1.1, 0.003 * S), 7, brassMat);
-      prongGroup.add(seg);
-    }
-    // sharp tip point, aligned with the final segment direction
-    const tipCone = new THREE.Mesh(new THREE.ConeGeometry(0.012 * S, 0.1 * S, 7), brassMat);
-    const dir = new THREE.Vector3().subVectors(pts[pts.length - 1], pts[pts.length - 2]).normalize();
-    tipCone.position.copy(tip).add(dir.clone().multiplyScalar(0.05 * S));
-    tipCone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-    prongGroup.add(tipCone);
-    prongGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    group.add(prongGroup);
-    parts.push(prongGroup);
+  function addStreamer(mat, offsetX, offsetZ, length, bend) {
+    const strip = new THREE.Group();
+    const seg1 = new THREE.Mesh(new THREE.BoxGeometry(0.035 * S, length * 0.55, 0.004 * S), mat);
+    seg1.position.set(0, -length * 0.275, 0);
+    strip.add(seg1);
+    const seg2 = new THREE.Mesh(new THREE.BoxGeometry(0.028 * S, length * 0.45, 0.004 * S), mat);
+    seg2.position.set(0, -length * 0.55 - length * 0.225, 0);
+    seg2.rotation.z = bend;
+    strip.add(seg2);
+    const tassel = new THREE.Mesh(new THREE.SphereGeometry(0.014 * S, 8, 8), bellMat);
+    tassel.position.set(Math.sin(bend) * length * 0.45, -length * 0.55 - length * 0.45 * Math.cos(bend), 0);
+    strip.add(tassel);
+    strip.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    strip.position.set(offsetX, clothY - 0.03 * S, offsetZ);
+    group.add(strip);
+    parts.push(strip);
   }
-  buildProng(0, 0);                    // center prong, straight up
-  buildProng(0.11 * S, 0.045 * S);     // right prong, curves outward
-  buildProng(-0.11 * S, 0.045 * S);    // left prong, curves outward
+  addStreamer(saffronMat, 0.02 * S, 0.015 * S, 0.42 * S, 0.15);
+  addStreamer(whiteClothMat, -0.015 * S, -0.01 * S, 0.36 * S, -0.2);
+  addStreamer(saffronMat, -0.03 * S, 0.02 * S, 0.3 * S, 0.3);
+
+  // =========================================================
+  // TRIDENT HEAD: ornate blackened-bronze junction with a tall straight
+  // center spear-blade and two outward-curving "buffalo horn" blades,
+  // all flat and forward-facing like a real forged trishul head.
+  // =========================================================
+  const ballR = 0.065 * S;
+  const ball = add(new THREE.Mesh(new THREE.SphereGeometry(ballR, 14, 10), bronzeMat));
+  ball.scale.set(1, 0.8, 0.75);
+  ball.position.set(0, headY, 0);
+  const ballCollar = add(new THREE.Mesh(new THREE.TorusGeometry(ballR * 0.85, 0.01 * S, 8, 16), bronzeDarkMat));
+  ballCollar.rotation.x = Math.PI / 2;
+  ballCollar.position.set(0, headY - ballR * 0.55, 0);
+
+  const bladeBaseY = headY + ballR * 0.4;
+  const thickness = 0.016 * S;
+
+  // center spear-blade: straight, tall, sharply pointed
+  const centerPts = [
+    new THREE.Vector2(0, 0),
+    new THREE.Vector2(0, 0.045 * S),
+    new THREE.Vector2(0, 0.16 * S),
+    new THREE.Vector2(0, 0.32 * S),
+    new THREE.Vector2(0, 0.44 * S),
+    new THREE.Vector2(0, 0.52 * S),
+  ];
+  const centerHw = [0.022 * S, 0.03 * S, 0.022 * S, 0.014 * S, 0.006 * S, 0.0];
+  const centerBlade = makeBladeMesh(centerPts, centerHw, thickness, bronzeMat);
+  centerBlade.position.set(0, bladeBaseY, 0);
+  group.add(centerBlade);
+  parts.push(centerBlade);
+
+  // outer horn blades: curve outward then hook back in near the tip
+  [1, -1].forEach((sign) => {
+    const hornPts = [
+      new THREE.Vector2(0, 0),
+      new THREE.Vector2(sign * 0.05 * S, 0.05 * S),
+      new THREE.Vector2(sign * 0.1 * S, 0.13 * S),
+      new THREE.Vector2(sign * 0.125 * S, 0.22 * S),
+      new THREE.Vector2(sign * 0.12 * S, 0.3 * S),
+      new THREE.Vector2(sign * 0.09 * S, 0.36 * S),
+      new THREE.Vector2(sign * 0.078 * S, 0.4 * S),
+    ];
+    const hornHw = [0.024 * S, 0.022 * S, 0.018 * S, 0.013 * S, 0.008 * S, 0.004 * S, 0.0];
+    const horn = makeBladeMesh(hornPts, hornHw, thickness, bronzeMat);
+    horn.position.set(0, bladeBaseY, 0);
+    group.add(horn);
+    parts.push(horn);
+
+    // small decorative carved bead where the horn meets the junction ball
+    const bead = add(new THREE.Mesh(new THREE.SphereGeometry(0.022 * S, 8, 8), bronzeDarkMat));
+    bead.scale.set(1, 0.8, 0.8);
+    bead.position.set(sign * 0.035 * S, bladeBaseY + 0.01 * S, 0);
+  });
 
   // ---- finalize ----
   group.position.set(x, y, z);
