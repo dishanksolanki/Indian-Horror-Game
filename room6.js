@@ -93,9 +93,124 @@ export function createRoom6(scene, engine, doorX, doorZ) {
   addWallBox(eastX, centerZ + (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
   addWallBox(eastX, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
-  // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
-  function update() {
-    // intentionally static
+  // =========================================================
+  // ---------- wooden door filling the north doorway gap (to room9) ----------
+  // A dark-wood, iron-studded haveli door mounted on a hinge pivot so it can
+  // be pushed open/closed. The gap was previously empty (no door mesh at
+  // all) — this fills it with an actual swinging door + frame.
+  // =========================================================
+  const doorWoodMat = new THREE.MeshStandardMaterial({ color: 0x3a2415, roughness: 0.78, metalness: 0.04 });
+  const doorIronMat = new THREE.MeshStandardMaterial({ color: 0x2b2822, roughness: 0.55, metalness: 0.6 });
+  const doorHandleMat = new THREE.MeshStandardMaterial({ color: 0x8a7250, roughness: 0.4, metalness: 0.65 });
+
+  const northWallZ = centerZ - ROOM_D / 2;
+  const doorW = DOOR_GAP - 0.16;
+  const doorH = ROOM_H - 0.55;
+  const doorThickness = 0.06;
+
+  // frame jambs on either side of the gap
+  const jambGeo = new THREE.BoxGeometry(0.08, doorH + 0.06, t);
+  [centerX - DOOR_GAP / 2 + 0.04, centerX + DOOR_GAP / 2 - 0.04].forEach((jx) => {
+    const jamb = new THREE.Mesh(jambGeo, doorWoodMat);
+    jamb.position.set(jx, (doorH + 0.06) / 2, northWallZ);
+    jamb.castShadow = true;
+    jamb.receiveShadow = true;
+    scene.add(jamb);
+  });
+
+  // pivot group — hinged on the west edge of the gap, swings open into the room (south, +z)
+  const hingeX = centerX - doorW / 2;
+  const doorPivot = new THREE.Group();
+  doorPivot.position.set(hingeX, 0, northWallZ);
+  scene.add(doorPivot);
+
+  const doorPanel = new THREE.Mesh(
+    new THREE.BoxGeometry(doorW, doorH, doorThickness),
+    doorWoodMat
+  );
+  doorPanel.position.set(doorW / 2, doorH / 2, 0);
+  doorPanel.castShadow = true;
+  doorPanel.receiveShadow = true;
+  doorPivot.add(doorPanel);
+
+  // two raised panel insets for a classic paneled-door look
+  [-1, 1].forEach((s) => {
+    const inset = new THREE.Mesh(
+      new THREE.BoxGeometry(doorW * 0.62, doorH * 0.38, doorThickness * 0.4),
+      doorWoodMat
+    );
+    inset.position.set(doorW / 2, doorH / 2 + s * doorH * 0.22, doorThickness * 0.55);
+    inset.castShadow = true;
+    doorPivot.add(inset);
+  });
+
+  // decorative iron studs scattered across the panel, haveli-door style
+  for (let i = 0; i < 14; i++) {
+    const stud = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 8), doorIronMat);
+    const sx = 0.15 + Math.random() * (doorW - 0.3);
+    const sy = 0.2 + Math.random() * (doorH - 0.4);
+    stud.position.set(sx, sy, doorThickness / 2 + 0.01);
+    doorPivot.add(stud);
+  }
+
+  // three iron hinges along the hinge edge
+  [0.15, doorH / 2, doorH - 0.15].forEach((hy) => {
+    const hinge = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.03), doorIronMat);
+    hinge.position.set(0.02, hy, doorThickness / 2 + 0.015);
+    doorPivot.add(hinge);
+  });
+
+  // ring handle + backplate on the far (latch) edge
+  const handleRing = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.011, 8, 16), doorHandleMat);
+  handleRing.rotation.y = Math.PI / 2;
+  handleRing.position.set(doorW - 0.12, doorH / 2, doorThickness / 2 + 0.02);
+  doorPivot.add(handleRing);
+  const handleBase = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.03, 10), doorHandleMat);
+  handleBase.rotation.x = Math.PI / 2;
+  handleBase.position.set(doorW - 0.12, doorH / 2, doorThickness / 2 + 0.005);
+  doorPivot.add(handleBase);
+
+  // Invisible world-space anchor for the interactable — doorPanel itself is
+  // nested inside doorPivot (which has its own position/rotation), so its
+  // .position is LOCAL to the pivot, not world space. The engine's focus
+  // check reads object3D.position directly assuming world space, so a
+  // dedicated top-level anchor at the door's actual world position keeps
+  // the "look at it to focus" check accurate regardless of swing angle.
+  const doorAnchor = new THREE.Object3D();
+  doorAnchor.position.set(centerX, doorH / 2, northWallZ);
+  scene.add(doorAnchor);
+
+  // closed-door collider — a simple static box spanning the gap; removed
+  // while open so the player can actually walk through, restored on close.
+  const doorClosedBox = new THREE.Box3(
+    new THREE.Vector3(centerX - doorW / 2, 0, northWallZ - 0.08),
+    new THREE.Vector3(centerX + doorW / 2, doorH, northWallZ + 0.08)
+  );
+  colliders.push(doorClosedBox);
+  engine.addCollider(doorClosedBox);
+
+  // open/close state — the pivot swings smoothly toward its target angle
+  // each frame in update() below rather than snapping instantly.
+  let doorOpen = false;
+  const doorClosedRot = 0;
+  const doorOpenRot = -Math.PI * 0.58; // swings inward, into the room
+  let doorTargetRot = doorClosedRot;
+
+  engine.addInteractable(doorAnchor, {
+    radius: 2.2,
+    prompt: () => (doorOpen ? "Close Door" : "Open Door"),
+    onInteract: () => {
+      doorOpen = !doorOpen;
+      doorTargetRot = doorOpen ? doorOpenRot : doorClosedRot;
+      if (doorOpen) engine.removeCollider(doorClosedBox);
+      else engine.addCollider(doorClosedBox);
+    },
+  });
+
+  // ---------- per-frame update ----------
+  function update(dt = 1 / 60) {
+    // smoothly swing the north door toward its open/closed target angle
+    doorPivot.rotation.y += (doorTargetRot - doorPivot.rotation.y) * Math.min(1, dt * 6);
   }
 
   // eastDoorZ: the doorway sits in the middle of the east wall —
