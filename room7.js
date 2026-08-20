@@ -563,6 +563,101 @@ export function createRoom7(scene, engine, doorX, doorZ) {
   // let its little offering diya flicker along with the rest of the shrine's flames
   flames.push(shivLing.flame);
 
+  // =========================================================
+  // ---------- TRIDENT HOLDER ----------
+  // An empty stone-and-brass stand on the shrine platform, at the spot the
+  // trishul itself used to occupy before it moved to room11. Bring the
+  // trishul here and place it (E) to unlock room6's north door — reported
+  // to the rest of the house via engine.setFlag("trishulPlaced", ...) since
+  // this room has no direct reference to room6.
+  // =========================================================
+  const holderStoneMat = new THREE.MeshStandardMaterial({ color: 0x4a4844, roughness: 0.7 });
+  const holderBrassMat = new THREE.MeshStandardMaterial({ color: 0xb08d3e, roughness: 0.35, metalness: 0.7 });
+  const holderSocketMat = new THREE.MeshStandardMaterial({ color: 0x14110d, roughness: 0.9 });
+
+  const holderX = pillarX + 0.62;
+  const holderZ = platZ - 0.55;
+  const holderY = platformH;
+
+  const holderGroup = new THREE.Group();
+  const holderBase = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.14, 0.14, 12), holderStoneMat);
+  holderBase.position.set(0, 0.07, 0);
+  holderGroup.add(holderBase);
+  const holderCollar = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.012, 8, 16), holderBrassMat);
+  holderCollar.rotation.x = Math.PI / 2;
+  holderCollar.position.set(0, 0.145, 0);
+  holderGroup.add(holderCollar);
+  const holderSocket = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.03, 12), holderSocketMat);
+  holderSocket.position.set(0, 0.15, 0);
+  holderGroup.add(holderSocket);
+  holderGroup.position.set(holderX, holderY, holderZ);
+  holderGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  scene.add(holderGroup);
+
+  // World-space anchor for the interactable (see the doorAnchor note in
+  // room6.js for why nested-object .position can't be used directly here).
+  const holderAnchor = new THREE.Object3D();
+  holderAnchor.position.set(holderX, holderY + 0.3, holderZ);
+  scene.add(holderAnchor);
+
+  let tridentPlaced = false;
+  let placedTridentMesh = null;
+  let placedTridentBox = null;
+
+  const holderEntry = engine.addInteractable(holderAnchor, {
+    radius: 2.2,
+    prompt: () => {
+      if (tridentPlaced) return "Take Trishul";
+      if (engine.heldItem && engine.heldItem.id === "trishul") return "Place Trishul";
+      return "Trident Holder (empty)";
+    },
+    onInteract: () => {
+      if (tridentPlaced) {
+        // lift the trishul back off the holder and into the player's hands
+        const mesh = placedTridentMesh;
+        if (placedTridentBox) {
+          engine.removeCollider(placedTridentBox);
+          const ci = colliders.indexOf(placedTridentBox);
+          if (ci !== -1) colliders.splice(ci, 1);
+        }
+        scene.remove(mesh);
+        mesh.rotation.set(0, 0, 0);
+        engine.pickupItem({
+          id: "trishul",
+          mesh,
+          prompt: "Trishul",
+          holdOffset: new THREE.Vector3(0.32, -0.3, -0.6),
+          holdScale: 0.32,
+          throwable: false,
+        });
+        tridentPlaced = false;
+        placedTridentMesh = null;
+        placedTridentBox = null;
+        engine.setFlag("trishulPlaced", false);
+        return;
+      }
+
+      if (engine.heldItem && engine.heldItem.id === "trishul") {
+        const { mesh, originalScale } = engine.heldItem;
+        engine.camera.remove(mesh);
+        if (originalScale) mesh.scale.copy(originalScale);
+        mesh.position.set(holderX, holderY + 0.16, holderZ);
+        mesh.rotation.set(0, 0, 0);
+        scene.add(mesh);
+        engine.heldItem = null;
+
+        const box = new THREE.Box3().setFromObject(mesh);
+        colliders.push(box);
+        engine.addCollider(box);
+
+        tridentPlaced = true;
+        placedTridentMesh = mesh;
+        placedTridentBox = box;
+        engine.setFlag("trishulPlaced", true);
+      }
+    },
+  });
+
   // Brass bell hanging from the middle beam, in front of the shrine
   bellNode = new THREE.Group();
   const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.5, 6), brassMat);
