@@ -196,10 +196,35 @@ export function createRoom6(scene, engine, doorX, doorZ) {
   const doorOpenRot = -Math.PI * 0.58; // swings inward, into the room
   let doorTargetRot = doorClosedRot;
 
+  // ---------- lock: stays locked until the trishul is placed on its holder
+  // in room7. room6 has no direct reference to room7, so the two rooms talk
+  // through the engine's shared flag bus (see engine.js setFlag/onFlag). ----
+  // getFlag() covers the case where the puzzle was already solved before
+  // this room was even built; onFlag() covers it happening while the player
+  // is standing right here.
+  let doorLocked = !engine.getFlag("trishulPlaced");
+  engine.onFlag("trishulPlaced", (placed) => {
+    doorLocked = !placed;
+    // if someone takes the trishul back off the holder while this door is
+    // sitting open, swing it shut and re-lock it behind them
+    if (doorLocked && doorOpen) {
+      doorOpen = false;
+      doorTargetRot = doorClosedRot;
+      engine.addCollider(doorClosedBox);
+    }
+  });
+
   engine.addInteractable(doorAnchor, {
     radius: 2.2,
-    prompt: () => (doorOpen ? "Close Door" : "Open Door"),
+    prompt: () => {
+      if (doorLocked) return "Locked";
+      return doorOpen ? "Close Door" : "Open Door";
+    },
     onInteract: () => {
+      if (doorLocked) {
+        console.log("[room6.js] north door is locked — place the trishul on its holder in room7 first.");
+        return;
+      }
       doorOpen = !doorOpen;
       doorTargetRot = doorOpen ? doorOpenRot : doorClosedRot;
       if (doorOpen) engine.removeCollider(doorClosedBox);
