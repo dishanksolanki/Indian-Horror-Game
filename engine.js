@@ -33,7 +33,7 @@ import { PointerLockControls } from "three/addons/controls/PointerLockControls.j
 // cached copy from before (ES module scripts get cached aggressively — if
 // you don't see this line after a save, the browser is serving a stale
 // engine.js and a hard refresh / cache-busted script src is needed).
-console.log("[engine.js] loaded — build: held-item-scale-v1");
+console.log("[engine.js] loaded — build: cross-room-flags-v1");
 
 // Counts how many Engine instances have been constructed this page load.
 // Multiple instances is the #1 cause of "heldItem was null" reports: each
@@ -151,6 +151,15 @@ export class Engine {
     // have it "hear" the distraction and investigate that position.
     this._noiseListeners = [];
 
+    // --- cross-room puzzle-state flags ---
+    // A tiny shared bus so one room can react to something that happened in
+    // a completely different room (e.g. room6's north door staying locked
+    // until room7's trident holder reports the trishul has been placed).
+    // Rooms don't hold references to each other, so this lives on the
+    // engine — the one object every room already has access to.
+    this.flags = new Map();
+    this._flagListeners = new Map(); // name -> array of callbacks
+
     // flashlight
     this.flashlight = new THREE.SpotLight(0xfff2d0, 0, 9, Math.PI / 6.2, 0.45, 1.6);
     this.flashlight.castShadow = true;
@@ -210,6 +219,49 @@ export class Engine {
 
   lock() {
     this.controls.lock();
+  }
+
+  // ---------- cross-room puzzle-state flags ----------
+  /**
+   * Set a named shared flag (any value) and notify subscribers. Used for
+   * simple cross-room puzzle state — e.g. room7 marks "trishulPlaced" true
+   * once the player sets the trident on its holder, and room6 listens for
+   * that to unlock its north door, without either room needing a direct
+   * reference to the other.
+   * @param {string} name
+   * @param {*} value
+   */
+  setFlag(name, value) {
+    this.flags.set(name, value);
+    console.log(`[engine.js] flag "${name}" set to`, value);
+    const cbs = this._flagListeners.get(name);
+    if (cbs) for (const cb of cbs.slice()) cb(value);
+  }
+
+  /** Reads a flag's current value (undefined if never set). */
+  getFlag(name) {
+    return this.flags.get(name);
+  }
+
+  /**
+   * Subscribe to changes on a named flag. Fires only on setFlag() calls made
+   * AFTER subscribing — if a room needs to know the flag's value at load
+   * time too (e.g. re-entering a room after already solving the puzzle),
+   * read getFlag() once up front in addition to subscribing here.
+   * @param {string} name
+   * @param {(value: *) => void} cb
+   * @returns {() => void} unsubscribe function
+   */
+  onFlag(name, cb) {
+    if (!this._flagListeners.has(name)) this._flagListeners.set(name, []);
+    this._flagListeners.get(name).push(cb);
+    return () => {
+      const arr = this._flagListeners.get(name);
+      if (arr) {
+        const i = arr.indexOf(cb);
+        if (i !== -1) arr.splice(i, 1);
+      }
+    };
   }
 
   // ---------- noise event subscription (for AI / monster hooks) ----------
