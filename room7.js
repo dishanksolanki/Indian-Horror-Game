@@ -642,7 +642,10 @@ export function createRoom7(scene, engine, doorX, doorZ) {
         engine.camera.remove(mesh);
         if (originalScale) mesh.scale.copy(originalScale);
         mesh.position.set(holderX, holderY + 0.16, holderZ);
-        mesh.rotation.set(0, 0, 0);
+        // face the flat blades toward the player (same fix as the original
+        // static placement — the blade faces are coplanar with local Z, so
+        // they need ~90° of yaw to turn from edge-on to front-on)
+        mesh.rotation.set(0, -Math.PI / 2, 0);
         scene.add(mesh);
         engine.heldItem = null;
 
