@@ -25,6 +25,10 @@
 // Room 24 continuing further north off Hall 3's north doorway, and bridged (west,
 // north, then west again — a three-segment jog, since both doorways face the
 // same way) into Room 16's west doorway,
+// Room 25 continuing further north off Room 16's north doorway — the haveli's
+// final chamber, holding the ancient door / win condition (moved here from
+// Room 16, which previously had it mounted non-functionally on its own solid
+// north wall),
 // and Hall 2 connected directly to Hall 3 via a straight westward corridor
 // bridging their previously dead-end walls (hall2's west doorway to hall3's
 // east doorway),
@@ -67,6 +71,7 @@ import { createRoom22 } from "./room22.js";
 import { createRoom23 } from "./room23.js";
 import { createHall3 } from "./hall3.js";
 import { createRoom24 } from "./room24.js";
+import { createRoom25 } from "./room25.js";
 
 const canvas = document.getElementById("scene");
 const engine = new Engine(canvas);
@@ -245,6 +250,14 @@ const corridor17 = createCorridorNorth(engine.scene, engine, room15.northZ, room
 // small landing room that links room15 and hall1 together.
 const room16 = createRoom16(engine.scene, engine, corridor17.endZ, corridor17.x);
 
+// thirtieth corridor starts at room16's north doorway and runs north to room25 —
+// the haveli's final chamber, which now holds the ancient door / win condition
+// that used to be mounted (non-functionally, on a solid wall) in room16 itself.
+const corridor30 = createCorridorNorth(engine.scene, engine, room16.northZ, room16.northDoorX);
+
+// room25 hangs its south doorway exactly on corridor30's far end.
+const room25 = createRoom25(engine.scene, engine, corridor30.endZ, corridor30.x);
+
 // eighteenth/nineteenth corridor: a single L-shaped bridging passage from room16's
 // east doorway — east to hall1's x position, then south into hall1's north doorway.
 // Built as one bend (not two glued-together straight corridors) so the corner is a
@@ -312,7 +325,7 @@ engine.controls.addEventListener("unlock", () => {
   engine.pause();
 });
 
-// ---------- win condition: room16's big door dispatches this when opened ----------
+// ---------- win condition: room25's big door dispatches this when opened ----------
 window.addEventListener("game:win", () => {
   fade.classList.add("show");
   // let the door-opening animation and the fade-to-black play out before
@@ -382,6 +395,8 @@ engine.start((dt, eng) => {
   room15.update(dt, eng);
   corridor17.update(dt, eng);
   room16.update(dt, eng);
+  corridor30.update(dt, eng);
+  room25.update(dt, eng);
   corridor18.update(dt, eng);
   corridor28.update(dt, eng);
   corridor29.update(dt, eng);
