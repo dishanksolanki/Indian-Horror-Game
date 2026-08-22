@@ -23,6 +23,11 @@ const DOOR_GAP = 1.6; // must match corridor width
 export function createRoom16(scene, engine, doorZ, doorX) {
   const colliders = [];
 
+  // shared inventory bag lives on the engine so any room can read/write it.
+  // Guarded here in case room16 happens to load before room17 does — the
+  // north door's plank barricade below reads engine.inventory.hammer.
+  if (!engine.inventory) engine.inventory = {};
+
   // room center sits further north (more negative z) than its south doorway
   const centerZ = doorZ - ROOM_D / 2;
   const centerX = doorX;
@@ -101,12 +106,15 @@ export function createRoom16(scene, engine, doorZ, doorX) {
   addWallBox(centerX, southZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
   // =========================================================
-  // ---------- wooden double door filling the north doorway gap (to room25) ----------
-  // This carries the "ancient door" look that used to live in this room —
-  // dark wood, iron studs, ring handles, two hinged panels — but now it's
-  // just a normal, unlocked passage door: no plank barricade, no hammer
-  // requirement, no win event. Walk up, press E, it swings open like any
-  // other door. The actual win condition now lives on room25's north door.
+  // ---------- wooden door + plank barricade filling the north doorway gap (to room25) ----------
+  // Same "ancient door" mechanic that guards room25's win door — dark wood,
+  // iron studs, ring handles, two hinged panels, nailed shut with planks that
+  // only come off once the player has the hammer from room17
+  // (engine.inventory.hammer) — but with the win-condition part stripped out.
+  // Since this doorway is a REAL passage (unlike room25's, which is mounted
+  // on an otherwise solid dead-end wall), removing the planks and then
+  // opening the door here actually clears a collider so the player can walk
+  // through to room25, instead of dispatching "game:win".
   // =========================================================
   const doorWoodMat = new THREE.MeshStandardMaterial({ color: 0x2b1c10, roughness: 0.7, metalness: 0.05 });
   const doorStudMat = new THREE.MeshStandardMaterial({ color: 0x8a7442, roughness: 0.4, metalness: 0.7 });
@@ -158,14 +166,16 @@ export function createRoom16(scene, engine, doorZ, doorX) {
   const northDoorPanelLeft = makeNorthDoorPanel(-1);
   const northDoorPanelRight = makeNorthDoorPanel(1);
 
-  // world-space anchor for the interactable — the panels are nested inside
-  // their own pivots, so their .position is local, not world; a dedicated
-  // top-level anchor keeps the "look at it to focus" check accurate.
+  // world-space anchor for the door's own interactable — the panels are
+  // nested inside their own pivots, so their .position is local, not world;
+  // a dedicated top-level anchor keeps the "look at it to focus" check accurate.
   const northDoorAnchor = new THREE.Object3D();
   northDoorAnchor.position.set(centerX, doorH / 2, northZ);
   scene.add(northDoorAnchor);
 
-  // closed-door collider — blocks the gap until opened
+  // closed collider — blocks the whole gap until the planks are gone AND the
+  // door itself has been opened; removed the moment the door swings open,
+  // restored the moment it's closed again.
   const northDoorClosedBox = new THREE.Box3(
     new THREE.Vector3(centerX - doorW / 2, 0, northZ - 0.1),
     new THREE.Vector3(centerX + doorW / 2, doorH, northZ + 0.1)
@@ -177,13 +187,97 @@ export function createRoom16(scene, engine, doorZ, doorX) {
   let northDoorSwing = 0; // 0 = closed .. 1 = open, eased toward its target each frame
   const NORTH_DOOR_OPEN_ANGLE = Math.PI * 0.55;
 
-  engine.addInteractable(northDoorAnchor, {
-    radius: 2.2,
-    prompt: () => (northDoorOpen ? "Close Door" : "Open Door"),
+  function openCloseNorthDoor() {
+    northDoorOpen = !northDoorOpen;
+    if (northDoorOpen) engine.removeCollider(northDoorClosedBox);
+    else engine.addCollider(northDoorClosedBox);
+  }
+
+  // ---------- plank barricade across the door (requires the hammer) ----------
+  // Exactly the same nailed-plank mechanic as room25's door: only a "Remove
+  // Plank" interactable exists at first; the door's own open/close
+  // interactable isn't registered at all until the planks are pried off, so
+  // the passage stays blocked until then. Removing the plank requires
+  // engine.inventory.hammer (picked up from the table in room17 — see
+  // room17.js); without it, interacting does nothing except update the prompt.
+  const plankMat = new THREE.MeshStandardMaterial({ color: 0x3b2a18, roughness: 0.95 });
+  const nailMat = new THREE.MeshStandardMaterial({ color: 0x555049, roughness: 0.6, metalness: 0.5 });
+
+  const plankWidth = doorW + 0.3; // slight overlap onto the frame either side
+  const plankZ = northZ + t / 2 + 0.14; // just in front of the door, inside the room, blocking it
+
+  const plankGroup = new THREE.Group();
+  plankGroup.position.set(centerX, 0, plankZ);
+  scene.add(plankGroup);
+
+  // three roughly-nailed planks at different heights, each tilted slightly
+  // so they don't read as too clean/uniform
+  const plankDefs = [
+    { y: 0.5, tilt: 0.05 },
+    { y: 1.1, tilt: -0.06 },
+    { y: 1.7, tilt: 0.04 },
+  ];
+
+  const plankMeshes = [];
+  for (const def of plankDefs) {
+    const plank = new THREE.Mesh(new THREE.BoxGeometry(plankWidth, 0.22, 0.06), plankMat);
+    plank.position.set(0, def.y, 0);
+    plank.rotation.z = def.tilt;
+    plank.castShadow = true;
+    plank.receiveShadow = true;
+    plankGroup.add(plank);
+    plankMeshes.push(plank);
+
+    // crude nail heads at each end for detail
+    for (const nx of [-plankWidth / 2 + 0.15, plankWidth / 2 - 0.15]) {
+      const nail = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 6), nailMat);
+      nail.position.set(nx, def.y, 0.035);
+      plankGroup.add(nail);
+    }
+  }
+
+  const NORTH_PLANK_PROMPT_LOCKED = "Nailed Shut — Need a Hammer";
+  const NORTH_PLANK_PROMPT_READY = "Remove Plank";
+
+  let northPlankRemoved = false;
+  const northPlankInteractable = engine.addInteractable(plankGroup, {
+    radius: 2.6,
+    prompt: NORTH_PLANK_PROMPT_LOCKED,
     onInteract: () => {
-      northDoorOpen = !northDoorOpen;
-      if (northDoorOpen) engine.removeCollider(northDoorClosedBox);
-      else engine.addCollider(northDoorClosedBox);
+      if (northPlankRemoved) return;
+      if (!engine.inventory.hammer) return; // no hammer yet — plank won't budge
+
+      northPlankRemoved = true;
+
+      // drop the plank interactable so it can't be re-triggered / re-focused
+      const ix = engine.interactables.indexOf(northPlankInteractable);
+      if (ix !== -1) engine.interactables.splice(ix, 1);
+
+      // now — and only now — does the door itself become interactable
+      engine.addInteractable(northDoorAnchor, {
+        radius: 2.2,
+        prompt: () => (northDoorOpen ? "Close Door" : "Open Door"),
+        onInteract: openCloseNorthDoor,
+      });
+
+      // quick "pried loose and dropped" animation, then clean up the meshes
+      let t2 = 0;
+      const startRotations = plankMeshes.map((p) => p.rotation.z);
+      const startY = plankMeshes.map((p) => p.position.y);
+      function fall() {
+        const fdt = 1 / 60;
+        t2 += fdt;
+        for (let i = 0; i < plankMeshes.length; i++) {
+          plankMeshes[i].position.y = startY[i] - t2 * t2 * 2.2;
+          plankMeshes[i].rotation.z = startRotations[i] + t2 * 2.6 * (i % 2 === 0 ? 1 : -1);
+        }
+        if (t2 < 0.6) {
+          requestAnimationFrame(fall);
+        } else {
+          scene.remove(plankGroup);
+        }
+      }
+      fall();
     },
   });
 
@@ -198,11 +292,16 @@ export function createRoom16(scene, engine, doorZ, doorX) {
   landingLight.position.set(centerX, ROOM_H - 0.3, centerZ);
   scene.add(landingLight);
 
-  // ---------- per-frame update: gentle flicker, tying it to the corridor mood ----------
+  // ---------- per-frame update: gentle flicker, plank/hammer sync, door swing ----------
   let flickerT = 0;
   function update(dt) {
     flickerT += dt;
     landingLight.intensity = 1.3 + Math.sin(flickerT * 6) * 0.25 + (Math.random() - 0.5) * 0.3;
+
+    // keep the plank prompt in sync with whether the player has the hammer yet
+    if (!northPlankRemoved) {
+      northPlankInteractable.prompt = engine.inventory.hammer ? NORTH_PLANK_PROMPT_READY : NORTH_PLANK_PROMPT_LOCKED;
+    }
 
     // smoothly swing the north door's two panels toward their open/closed target
     const target = northDoorOpen ? 1 : 0;
