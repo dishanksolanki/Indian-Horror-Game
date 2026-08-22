@@ -100,6 +100,93 @@ export function createRoom16(scene, engine, doorZ, doorX) {
   addWallBox(centerX + (DOOR_GAP / 2 + southSideLen / 2), southZ, southSideLen, t);
   addWallBox(centerX, southZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
+  // =========================================================
+  // ---------- wooden double door filling the north doorway gap (to room25) ----------
+  // This carries the "ancient door" look that used to live in this room —
+  // dark wood, iron studs, ring handles, two hinged panels — but now it's
+  // just a normal, unlocked passage door: no plank barricade, no hammer
+  // requirement, no win event. Walk up, press E, it swings open like any
+  // other door. The actual win condition now lives on room25's north door.
+  // =========================================================
+  const doorWoodMat = new THREE.MeshStandardMaterial({ color: 0x2b1c10, roughness: 0.7, metalness: 0.05 });
+  const doorStudMat = new THREE.MeshStandardMaterial({ color: 0x8a7442, roughness: 0.4, metalness: 0.7 });
+  const doorFrameMat = new THREE.MeshStandardMaterial({ color: 0x1c130a, roughness: 0.85 });
+
+  const doorW = DOOR_GAP - 0.1; // slight margin so panels clear the frame
+  const doorH = ROOM_H - 0.55;
+  const panelW = doorW / 2;
+  const doorThickness = 0.07;
+
+  // frame jambs on either side of the gap
+  const jambGeo = new THREE.BoxGeometry(0.08, doorH + 0.06, t);
+  [centerX - DOOR_GAP / 2 + 0.04, centerX + DOOR_GAP / 2 - 0.04].forEach((jx) => {
+    const jamb = new THREE.Mesh(jambGeo, doorFrameMat);
+    jamb.position.set(jx, (doorH + 0.06) / 2, northZ);
+    jamb.castShadow = true;
+    jamb.receiveShadow = true;
+    scene.add(jamb);
+  });
+
+  // two hinged panels — pivots sit at the outer edges of the gap, each panel
+  // extending inward toward the middle, so they swing open away from each other
+  function makeNorthDoorPanel(sign) {
+    const pivot = new THREE.Group();
+    pivot.position.set(centerX + sign * (doorW / 2), 0, northZ);
+    scene.add(pivot);
+
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(panelW - 0.02, doorH, doorThickness), doorWoodMat);
+    panel.position.set(-sign * (panelW / 2), doorH / 2, 0);
+    panel.castShadow = true;
+    panel.receiveShadow = true;
+    pivot.add(panel);
+
+    // a few decorative iron studs down the middle of the panel
+    for (let row = -1; row <= 1; row++) {
+      const stud = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 6), doorStudMat);
+      stud.position.set(-sign * (panelW / 2), doorH / 2 + row * (doorH / 3.2), doorThickness / 2 + 0.01);
+      pivot.add(stud);
+    }
+
+    // ring handle near the inner edge
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.01, 6, 12), doorStudMat);
+    ring.position.set(-sign * (panelW - 0.12), doorH / 2, doorThickness / 2 + 0.02);
+    pivot.add(ring);
+
+    return pivot;
+  }
+
+  const northDoorPanelLeft = makeNorthDoorPanel(-1);
+  const northDoorPanelRight = makeNorthDoorPanel(1);
+
+  // world-space anchor for the interactable — the panels are nested inside
+  // their own pivots, so their .position is local, not world; a dedicated
+  // top-level anchor keeps the "look at it to focus" check accurate.
+  const northDoorAnchor = new THREE.Object3D();
+  northDoorAnchor.position.set(centerX, doorH / 2, northZ);
+  scene.add(northDoorAnchor);
+
+  // closed-door collider — blocks the gap until opened
+  const northDoorClosedBox = new THREE.Box3(
+    new THREE.Vector3(centerX - doorW / 2, 0, northZ - 0.1),
+    new THREE.Vector3(centerX + doorW / 2, doorH, northZ + 0.1)
+  );
+  colliders.push(northDoorClosedBox);
+  engine.addCollider(northDoorClosedBox);
+
+  let northDoorOpen = false;
+  let northDoorSwing = 0; // 0 = closed .. 1 = open, eased toward its target each frame
+  const NORTH_DOOR_OPEN_ANGLE = Math.PI * 0.55;
+
+  engine.addInteractable(northDoorAnchor, {
+    radius: 2.2,
+    prompt: () => (northDoorOpen ? "Close Door" : "Open Door"),
+    onInteract: () => {
+      northDoorOpen = !northDoorOpen;
+      if (northDoorOpen) engine.removeCollider(northDoorClosedBox);
+      else engine.addCollider(northDoorClosedBox);
+    },
+  });
+
   // ---------- ambient room lighting: dim, a quiet in-between space ----------
   const ambient = new THREE.AmbientLight(0x231e18, 1.0);
   scene.add(ambient);
@@ -116,6 +203,13 @@ export function createRoom16(scene, engine, doorZ, doorX) {
   function update(dt) {
     flickerT += dt;
     landingLight.intensity = 1.3 + Math.sin(flickerT * 6) * 0.25 + (Math.random() - 0.5) * 0.3;
+
+    // smoothly swing the north door's two panels toward their open/closed target
+    const target = northDoorOpen ? 1 : 0;
+    northDoorSwing += (target - northDoorSwing) * Math.min(1, dt * 6);
+    const eased = 1 - Math.pow(1 - northDoorSwing, 3); // ease-out
+    northDoorPanelLeft.rotation.y = -eased * NORTH_DOOR_OPEN_ANGLE;
+    northDoorPanelRight.rotation.y = eased * NORTH_DOOR_OPEN_ANGLE;
   }
 
   // eastDoorZ: the doorway sits in the middle of the east wall — bridging corridor to hall1 starts here.
