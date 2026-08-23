@@ -280,17 +280,15 @@ export function createRoom25(scene, engine, doorZ, doorX) {
     },
   });
 
-  // ---------- book holder (west wall) — collect all 4 books, then place them here ----------
+  // ---------- book holder (west wall) — carry each book here and place it ----------
   // The four storybooks (see books.js) are scattered through rooms 8, 9, 13
-  // and 22. Collecting one just sets an engine.inventory flag — it doesn't
-  // occupy the single held-item slot, so the player can gather all four
-  // independently of whatever else they're carrying/holding (e.g. the
-  // hammer, or nothing at all).
-  //
-  // Walking up to this holder and pressing [E] only does something once all
-  // four flags are true; it then racks all four books on the shelf in one
-  // go, sets booksPlaced, and calls tryUnlockDoor(). Before that, the prompt
-  // shows a live "X/4 found" count so the player knows they're missing some.
+  // and 22 and picked up via the same engine.pickupItem/heldItem system as
+  // the hammer — only one can be carried at a time. Walking up to this
+  // holder and pressing [E] while CURRENTLY HOLDING one of the four books
+  // consumes it out of your hands, racks it on the shelf, and marks
+  // engine.inventory[bookId] = true (this is the "does its work" step —
+  // picking a book up doesn't set the flag, only placing it here does).
+  // Once all four are placed, booksPlaced is set and tryUnlockDoor() is called.
   const holderMat = new THREE.MeshStandardMaterial({ color: 0x2a1c10, roughness: 0.85 });
   const holderGroup = new THREE.Group();
   holderGroup.position.set(westX + 0.55, 0, centerZ);
@@ -316,6 +314,11 @@ export function createRoom25(scene, engine, doorZ, doorX) {
     holderGroup.add(side);
   }
 
+  // Holder pickup/interaction radius bumped from 2.2 -> 2.6 to match the
+  // plank's radius and make it easier to actually trigger from a natural
+  // standing distance in front of the bookcase.
+  const HOLDER_RADIUS = 2.6;
+
   const BOOK_IDS = ["book1", "book2", "book3", "book4"];
   const BOOK_COVER_COLORS = { book1: 0x7a1f1f, book2: 0x1f3d7a, book3: 0x1f5a2e, book4: 0x5a3d1f };
 
@@ -332,26 +335,53 @@ export function createRoom25(scene, engine, doorZ, doorX) {
   }
 
   const holderInteractable = engine.addInteractable(holderGroup, {
-    radius: 2.2,
+    radius: HOLDER_RADIUS,
     prompt: () => {
       if (booksPlaced) return "Books Placed";
-      const have = BOOK_IDS.filter((id) => engine.inventory[id]).length;
-      return `Place Books on Holder (${have}/4 found)`;
+      const placedCount = BOOK_IDS.filter((id) => engine.inventory[id]).length;
+      const held = engine.heldItem;
+      if (held && BOOK_IDS.includes(held.id) && !engine.inventory[held.id]) {
+        return `Place ${held.prompt} on Holder (${placedCount}/4 placed)`;
+      }
+      return `Book Holder (${placedCount}/4 placed)`;
     },
     onInteract: () => {
       if (booksPlaced) return;
-      const allFound = BOOK_IDS.every((id) => engine.inventory[id]);
-      if (!allFound) {
+
+      const held = engine.heldItem;
+      if (!held || !BOOK_IDS.includes(held.id)) {
         console.log(
-          "[room25.js] book holder interacted with, but not all books collected yet: " +
-            BOOK_IDS.map((id) => `${id}=${!!engine.inventory[id]}`).join(", ")
+          "[room25.js] book holder interacted with, but you aren't holding one of the four books " +
+            "right now — carry one here first (see books.js pickup in rooms 8/9/13/22). " +
+            "Currently held:", held
         );
         return;
       }
-      booksPlaced = true;
-      BOOK_IDS.forEach((id, i) => placeBookOnShelf(id, i));
-      console.log("[room25.js] all 4 books placed on holder");
-      tryUnlockDoor();
+      if (engine.inventory[held.id]) {
+        // already placed earlier somehow (shouldn't normally happen) — no-op
+        return;
+      }
+
+      // pull the book off the camera viewmodel and consume it — this is a
+      // deliberate bypass of dropHeldItem()/throwHeldItem(): we don't want
+      // it re-registered as a pickup fixture, it's being permanently racked.
+      engine.camera.remove(held.mesh);
+      if (held.originalScale) held.mesh.scale.copy(held.originalScale);
+
+      const slotIndex = BOOK_IDS.indexOf(held.id);
+      placeBookOnShelf(held.id, slotIndex);
+      engine.inventory[held.id] = true;
+      const placedLabel = held.prompt;
+      engine.heldItem = null;
+
+      const placedCount = BOOK_IDS.filter((id) => engine.inventory[id]).length;
+      console.log(`[room25.js] placed "${placedLabel}" on the holder (${placedCount}/4)`);
+
+      if (placedCount === BOOK_IDS.length) {
+        booksPlaced = true;
+        console.log("[room25.js] all 4 books placed on holder");
+        tryUnlockDoor();
+      }
     },
   });
 
