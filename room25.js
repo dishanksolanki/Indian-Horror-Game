@@ -1,10 +1,21 @@
-// room25.js — ROOM 25: the haveli's final chamber, reached via a corridor running
-// north from room16's north doorway. A small, dead-end room whose north wall holds
-// the ancient double door — the win condition. (This used to be mounted, non-
-// functionally, on room16's own north wall; it's been moved here now that room16
-// has a real doorway leading onward instead of a dead end.)
+// room25.js — ROOM 25: the haveli's final chamber, reached via a corridor
+// running north from room16's north doorway. A small, dead-end room whose
+// north wall holds the ancient double door — the win condition.
 // South wall has a doorway gap matching the corridor width (entrance from room16).
 // North/east/west walls remain solid, no window — this is the end of the line.
+//
+// The north door is gated by TWO independent puzzles that must BOTH be
+// solved before it can be opened at all:
+//   1. The plank barricade — requires the hammer (engine.inventory.hammer,
+//      picked up from the table in room17). See the plank section below.
+//   2. The book holder — requires all four collectible storybooks
+//      (engine.inventory.book1..book4, scattered in rooms 8, 9, 13 and 22 —
+//      see books.js) to be gathered and racked here. See the holder section
+//      below.
+// Only once the plank has been removed AND all four books have been placed
+// does tryUnlockDoor() actually register the "Open the door" interactable —
+// see that function near the bottom of the file. Until then, pressing E on
+// the door does nothing because it isn't interactable yet.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -21,7 +32,7 @@ export function createRoom25(scene, engine, doorZ, doorX) {
   const colliders = [];
 
   // shared inventory bag lives on the engine so any room can read/write it.
-  // Guarded here in case room25 happens to load before room17 does.
+  // Guarded here in case room25 happens to load before room17/books do.
   if (!engine.inventory) engine.inventory = {};
 
   // room center sits further north (more negative z) than its south doorway
@@ -96,11 +107,9 @@ export function createRoom25(scene, engine, doorZ, doorX) {
   // face of that wall. Walking up to it and pressing [E] opens it and ends the
   // game — see the "game:win" event dispatched below, handled in main.js.
   //
-  // It's nailed shut with wooden planks (see below): the "Open the door"
-  // interactable isn't registered at all until the planks are pried off, so
-  // there's no way to trigger the win condition while they're still up. And
-  // the planks themselves can only be removed once the player has picked up
-  // the hammer from the table in room17 (engine.inventory.hammer).
+  // The "Open the door" interactable is only ever registered by
+  // tryUnlockDoor(), once BOTH the plank is removed AND all four books are
+  // placed on the holder — see the bottom of this function.
   const doorFrameMat = new THREE.MeshStandardMaterial({ color: 0x1c130a, roughness: 0.85 });
   const doorPanelMat = new THREE.MeshStandardMaterial({ color: 0x2b1c10, roughness: 0.7, metalness: 0.05 });
   const doorStudMat = new THREE.MeshStandardMaterial({ color: 0x8a7442, roughness: 0.4, metalness: 0.7 });
@@ -166,15 +175,36 @@ export function createRoom25(scene, engine, doorZ, doorX) {
     window.dispatchEvent(new CustomEvent("game:win"));
   }
 
+  // ---------- shared unlock gate ----------
+  // Called after either sub-puzzle below completes. Only registers the
+  // door's own interactable once BOTH are true, and only does so once.
+  let plankRemoved = false;
+  let booksPlaced = false;
+  let doorUnlocked = false;
+
+  function tryUnlockDoor() {
+    if (doorUnlocked) return;
+    if (!plankRemoved || !booksPlaced) {
+      console.log(
+        `[room25.js] tryUnlockDoor() — not yet: plankRemoved=${plankRemoved}, booksPlaced=${booksPlaced}`
+      );
+      return;
+    }
+    doorUnlocked = true;
+    engine.addInteractable(doorFrame, {
+      radius: 2.6,
+      prompt: "Open the door",
+      onInteract: openDoor,
+    });
+    console.log("[room25.js] plank removed AND all books placed — the ancient door can now be opened");
+  }
+
   // ---------- plank barricade across the door (requires the hammer) ----------
-  // A few nailed wooden planks block the door until removed. Only a "Remove
-  // Plank" interactable exists at first; the door's own "Open the door"
-  // interactable is registered lazily inside the plank's onInteract, once it
-  // has actually been pried off — so the win condition is unreachable until then.
-  //
-  // Removing the plank requires engine.inventory.hammer to be true (picked up
-  // from the table in room17 — see room17.js). Without it, interacting with
-  // the plank does nothing except update the on-screen prompt to say so.
+  // A few nailed wooden planks block the door until removed. Interacting
+  // with the plank only works once engine.inventory.hammer is true (picked
+  // up from the table in room17 — see room17.js). Removing it sets
+  // plankRemoved and calls tryUnlockDoor() — it no longer registers the door
+  // interactable directly, since the book holder must also be satisfied.
   const plankMat = new THREE.MeshStandardMaterial({ color: 0x3b2a18, roughness: 0.95 });
   const nailMat = new THREE.MeshStandardMaterial({ color: 0x555049, roughness: 0.6, metalness: 0.5 });
 
@@ -214,7 +244,6 @@ export function createRoom25(scene, engine, doorZ, doorX) {
   const PLANK_PROMPT_LOCKED = "Nailed Shut — Need a Hammer";
   const PLANK_PROMPT_READY = "Remove Plank";
 
-  let plankRemoved = false;
   const plankInteractable = engine.addInteractable(plankGroup, {
     radius: 2.6,
     prompt: PLANK_PROMPT_LOCKED,
@@ -227,13 +256,6 @@ export function createRoom25(scene, engine, doorZ, doorX) {
       // drop the plank interactable so it can't be re-triggered / re-focused
       const ix = engine.interactables.indexOf(plankInteractable);
       if (ix !== -1) engine.interactables.splice(ix, 1);
-
-      // now — and only now — does the door itself become interactable
-      engine.addInteractable(doorFrame, {
-        radius: 2.6,
-        prompt: "Open the door",
-        onInteract: openDoor,
-      });
 
       // quick "pried loose and dropped" animation, then clean up the meshes
       let t = 0;
@@ -253,6 +275,83 @@ export function createRoom25(scene, engine, doorZ, doorX) {
         }
       }
       fall();
+
+      tryUnlockDoor();
+    },
+  });
+
+  // ---------- book holder (west wall) — collect all 4 books, then place them here ----------
+  // The four storybooks (see books.js) are scattered through rooms 8, 9, 13
+  // and 22. Collecting one just sets an engine.inventory flag — it doesn't
+  // occupy the single held-item slot, so the player can gather all four
+  // independently of whatever else they're carrying/holding (e.g. the
+  // hammer, or nothing at all).
+  //
+  // Walking up to this holder and pressing [E] only does something once all
+  // four flags are true; it then racks all four books on the shelf in one
+  // go, sets booksPlaced, and calls tryUnlockDoor(). Before that, the prompt
+  // shows a live "X/4 found" count so the player knows they're missing some.
+  const holderMat = new THREE.MeshStandardMaterial({ color: 0x2a1c10, roughness: 0.85 });
+  const holderGroup = new THREE.Group();
+  holderGroup.position.set(westX + 0.55, 0, centerZ);
+  scene.add(holderGroup);
+
+  // simple two-shelf bookcase carcass
+  const shelfGeo = new THREE.BoxGeometry(0.85, 0.05, 0.3);
+  for (const y of [0.9, 1.5]) {
+    const shelf = new THREE.Mesh(shelfGeo, holderMat);
+    shelf.position.set(0, y, 0);
+    shelf.castShadow = shelf.receiveShadow = true;
+    holderGroup.add(shelf);
+  }
+  const backPanel = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.2, 0.05), holderMat);
+  backPanel.position.set(0, 1.2, -0.13);
+  backPanel.castShadow = backPanel.receiveShadow = true;
+  holderGroup.add(backPanel);
+  const sideGeo = new THREE.BoxGeometry(0.05, 1.6, 0.3);
+  for (const x of [-0.42, 0.42]) {
+    const side = new THREE.Mesh(sideGeo, holderMat);
+    side.position.set(x, 1.0, 0);
+    side.castShadow = side.receiveShadow = true;
+    holderGroup.add(side);
+  }
+
+  const BOOK_IDS = ["book1", "book2", "book3", "book4"];
+  const BOOK_COVER_COLORS = { book1: 0x7a1f1f, book2: 0x1f3d7a, book3: 0x1f5a2e, book4: 0x5a3d1f };
+
+  function placeBookOnShelf(bookId, slotIndex) {
+    const mat = new THREE.MeshStandardMaterial({
+      color: BOOK_COVER_COLORS[bookId] ?? 0x3a2a1a,
+      roughness: 0.6,
+    });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.24, 0.04), mat);
+    mesh.position.set(-0.3 + slotIndex * 0.2, 1.02, 0.02);
+    mesh.rotation.z = (Math.random() - 0.5) * 0.08;
+    mesh.castShadow = true;
+    holderGroup.add(mesh);
+  }
+
+  const holderInteractable = engine.addInteractable(holderGroup, {
+    radius: 2.2,
+    prompt: () => {
+      if (booksPlaced) return "Books Placed";
+      const have = BOOK_IDS.filter((id) => engine.inventory[id]).length;
+      return `Place Books on Holder (${have}/4 found)`;
+    },
+    onInteract: () => {
+      if (booksPlaced) return;
+      const allFound = BOOK_IDS.every((id) => engine.inventory[id]);
+      if (!allFound) {
+        console.log(
+          "[room25.js] book holder interacted with, but not all books collected yet: " +
+            BOOK_IDS.map((id) => `${id}=${!!engine.inventory[id]}`).join(", ")
+        );
+        return;
+      }
+      booksPlaced = true;
+      BOOK_IDS.forEach((id, i) => placeBookOnShelf(id, i));
+      console.log("[room25.js] all 4 books placed on holder");
+      tryUnlockDoor();
     },
   });
 
@@ -267,7 +366,7 @@ export function createRoom25(scene, engine, doorZ, doorX) {
   chamberLight.position.set(centerX, ROOM_H - 0.3, centerZ);
   scene.add(chamberLight);
 
-  // ---------- per-frame update: gentle flicker, plank/door state, door-swing animation ----------
+  // ---------- per-frame update: gentle flicker, plank prompt sync, door-swing animation ----------
   let flickerT = 0;
   function update(dt) {
     flickerT += dt;
