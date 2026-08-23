@@ -4,9 +4,14 @@
 // East wall has a doorway gap matching the corridor width (entrance from room12).
 // West wall also has a doorway gap, leading further out via a corridor to Hall 2.
 // North/south walls remain solid, no window — just a dim passage room.
+//
+// Also holds "book3", one of the four collectible storybooks (see books.js)
+// that must all be gathered and racked on the holder in room25 before its
+// north door will open.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
+import { addBookPickup } from "./books.js";
 
 const ROOM_W = 4;   // east-west
 const ROOM_D = 3.5; // north-south
@@ -90,6 +95,16 @@ export function createRoom13(scene, engine, doorX, doorZ) {
   addWallBox(westX, centerZ - (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
   addWallBox(westX, centerZ + (DOOR_GAP / 2 + westSideLen / 2), t, westSideLen);
   addWallBox(westX, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
+
+  // ---------- collectible: book3 ----------
+  // This room is small — tucked against the north wall, clear of both doorways.
+  addBookPickup(
+    scene,
+    engine,
+    { x: centerX + 0.8, y: 0.05, z: northZ + 0.6 },
+    "book3",
+    "Cracked Scripture"
+  );
 
   // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
   function update() {
