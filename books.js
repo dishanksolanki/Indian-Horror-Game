@@ -1,17 +1,16 @@
 // books.js — shared helper for the four collectible storybooks scattered
-// through the haveli (rooms 8, 9, 13, 22). Each book is a simple pickup:
-// walk up, press [E], it disappears from the world and sets a boolean flag
-// on engine.inventory (e.g. engine.inventory.book1 = true).
+// through the haveli (rooms 8, 9, 13, 22).
 //
-// Unlike the hammer, books are NOT carried as a held-item viewmodel —
-// engine.heldItem only ever holds one thing at a time, but the player needs
-// to gather all four books independently of whatever else they're carrying,
-// so they're tracked as simple inventory flags instead (same pattern as
-// engine.inventory.hammer in room17/room25).
+// Books work EXACTLY like the hammer (engine.pickupItem / heldItem):
+// walk up, press [E], the book pops into your hands as a viewmodel parented
+// to the camera. You can carry it around, [G] drop it back into the world,
+// or walk it over to the book holder in room25 and [E] the holder to place
+// it — which is where it actually "does its work" (see room25.js: placing
+// consumes the held book and sets engine.inventory.bookN = true).
 //
-// All four books get racked on the book holder fixture in room25 (see
-// room25.js) — that's the actual gate on the north door / win condition,
-// alongside the existing hammer+plank puzzle.
+// Only one item can be held at a time (engine.heldItem is a single slot,
+// not a bag), so the player will naturally end up ferrying the four books
+// one at a time — pick up, walk to room25, place, walk back for the next.
 
 import * as THREE from "three";
 
@@ -22,17 +21,37 @@ const COVER_COLORS = {
   book4: 0x5a3d1f, // brown/leather
 };
 
+// Tracks which bookIds already have a live pickup interactable registered,
+// so calling addBookPickup twice for the same id (e.g. a room module
+// accidentally re-run, or hot-reload re-invoking room setup) can't silently
+// spawn two overlapping interactables for the same book — which would make
+// pickup look "broken" (you'd interact with one, but a duplicate world book
+// mesh /interactable would still be sitting there, or the wrong one would
+// win the raycast focus check).
+const _registeredBookIds = new Set();
+
 /**
- * Adds a single collectible book to a room.
+ * Adds a single collectible/carryable book to a room.
  * @param {THREE.Scene} scene
  * @param {Engine} engine
  * @param {{x:number,y:number,z:number}} position - world position to rest the book at (e.g. on the floor)
- * @param {string} bookId - unique id, one of "book1".."book4" — used as the engine.inventory flag name
- * @param {string} label - display name shown in the pickup prompt, e.g. "Old Diary"
- * @returns {{mesh: THREE.Group, interactable: object}}
+ * @param {string} bookId - unique id, one of "book1".."book4" — also used as the
+ *   engine.inventory flag name once the book is PLACED on the holder (not on pickup)
+ * @param {string} label - display name shown in "Pick Up X" / held-item prompts
+ * @returns {{mesh: THREE.Group}|null} null if this bookId was already registered elsewhere
  */
 export function addBookPickup(scene, engine, position, bookId, label) {
   if (!engine.inventory) engine.inventory = {};
+
+  if (_registeredBookIds.has(bookId)) {
+    console.warn(
+      `[books.js] addBookPickup() called again for "${bookId}" — a pickup for this ` +
+      `id is already registered elsewhere. Skipping to avoid a duplicate interactable ` +
+      `(this is almost always caused by a room's setup function running twice — ` +
+      `check main.js isn't calling createRoomX() more than once).`
+    );
+    return null;
+  }
 
   const coverColor = COVER_COLORS[bookId] ?? 0x3a2a1a;
   const coverMat = new THREE.MeshStandardMaterial({ color: coverColor, roughness: 0.6 });
@@ -51,6 +70,7 @@ export function addBookPickup(scene, engine, position, bookId, label) {
   const bottomCover = new THREE.Mesh(coverGeo, coverMat);
   bottomCover.position.y = -0.001;
   book.add(bottomCover);
+
   const topCover = new THREE.Mesh(coverGeo, coverMat);
   topCover.position.y = 0.031;
   book.add(topCover);
@@ -64,24 +84,42 @@ export function addBookPickup(scene, engine, position, bookId, label) {
 
   scene.add(book);
 
-  let collected = false;
+  // Radius bumped from 1.6 -> 1.9. Books sit low (y ~0.05) and are small, so
+  // the horizontal-facing-dot check in engine.js's _updateInteractionFocus
+  // already requires a fairly direct look at them; a slightly bigger catch
+  // radius makes them easier to actually trigger without changing anything
+  // about how the hammer or other props behave.
+  const PICKUP_RADIUS = 1.9;
+
   const interactable = engine.addInteractable(book, {
-    radius: 1.6,
+    radius: PICKUP_RADIUS,
     prompt: `Pick Up ${label}`,
     onInteract: () => {
-      if (collected) return;
-      collected = true;
-      engine.inventory[bookId] = true;
-      console.log(`[books.js] ${bookId} ("${label}") collected — engine.inventory.${bookId} is now true`);
-      engine.removeInteractable(interactable);
-      scene.remove(book);
-      // optional hook a room can set (room25 doesn't currently need this,
-      // since its holder prompt re-checks engine.inventory live each time
-      // it's focused, but it's here in case some future room wants to react
-      // the instant any book is picked up anywhere in the house).
-      if (typeof engine._onBookCollected === "function") engine._onBookCollected(bookId);
+      console.log(`[books.js] "${label}" (${bookId}) interacted with — attempting pickup. Currently held:`, engine.heldItem);
+
+      const picked = engine.pickupItem({
+        id: bookId,
+        mesh: book,
+        prompt: label,
+        holdOffset: new THREE.Vector3(0.28, -0.22, -0.55),
+        throwable: false, // books aren't noise-distraction items
+        onPickup: () => {
+          engine.removeInteractable(interactable);
+          _registeredBookIds.delete(bookId); // free the id in case it's ever dropped and re-picked up via a different path
+          console.log(`[books.js] picked up ${bookId} ("${label}") — now held. engine.heldItem:`, engine.heldItem);
+        },
+      });
+
+      if (!picked) {
+        console.log(
+          `[books.js] couldn't pick up ${bookId} — already holding "${engine.heldItem?.id}". ` +
+          `Drop it with [G] first, or carry it to the room25 holder and place it.`
+        );
+      }
     },
   });
 
-  return { mesh: book, interactable };
+  _registeredBookIds.add(bookId);
+
+  return { mesh: book };
 }
