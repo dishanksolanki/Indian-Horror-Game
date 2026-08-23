@@ -3,25 +3,25 @@
 // South wall has a doorway gap matching the corridor width (entrance from room21).
 // North wall also has a matching doorway gap (exit toward room23 via a corridor).
 // East/west walls remain solid, no window.
-
+//
+// Also holds "book4", the last of the four collectible storybooks (see
+// books.js) that must all be gathered and racked on the holder in room25
+// before its north door will open.
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
-
+import { addBookPickup } from "./books.js";
 const ROOM_W = 6; // east-west
 const ROOM_D = 6.5; // north-south
 const ROOM_H = 2.9;
 const DOOR_GAP = 1.6; // must match corridor width
-
 // doorZ: the z coordinate where room22's south wall (and doorway) sits —
 // this is corridor24.endZ, so the door lines up exactly with the passage.
 // doorX: the x coordinate of the doorway, matching the corridor's x (room21's north door).
 export function createRoom22(scene, engine, doorZ, doorX) {
   const colliders = [];
-
   // room center sits further north (more negative z) than its south doorway
   const centerZ = doorZ - ROOM_D / 2;
   const centerX = doorX;
-
   // ---------- floor: old, dirty tiles ----------
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(ROOM_W, ROOM_D),
@@ -31,7 +31,6 @@ export function createRoom22(scene, engine, doorZ, doorX) {
   floor.position.set(centerX, 0, centerZ);
   floor.receiveShadow = true;
   scene.add(floor);
-
   // ---------- ceiling + beams ----------
   const ceiling = new THREE.Mesh(
     new THREE.PlaneGeometry(ROOM_W, ROOM_D),
@@ -40,7 +39,6 @@ export function createRoom22(scene, engine, doorZ, doorX) {
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.set(centerX, ROOM_H, centerZ);
   scene.add(ceiling);
-
   const beamMat = new THREE.MeshStandardMaterial({ color: 0x2e2013, roughness: 0.9 });
   for (let i = -1; i <= 1; i++) {
     const beam = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.17, ROOM_D), beamMat);
@@ -48,11 +46,9 @@ export function createRoom22(scene, engine, doorZ, doorX) {
     beam.castShadow = true;
     scene.add(beam);
   }
-
   // ---------- walls ----------
   const wallMat = createWallMaterial();
   const t = 0.2;
-
   function addWallBox(cx, cz, w, d, h = ROOM_H, cy = h / 2) {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
     mesh.position.set(cx, cy, cz);
@@ -64,10 +60,8 @@ export function createRoom22(scene, engine, doorZ, doorX) {
     engine.addCollider(box);
     return mesh;
   }
-
   const southZ = centerZ + ROOM_D / 2; // == doorZ
   const northZ = centerZ - ROOM_D / 2;
-
   // north wall — doorway gap in the middle, aligned with the corridor to room23
   const northSideLen = (ROOM_W - DOOR_GAP) / 2;
   addWallBox(centerX - (DOOR_GAP / 2 + northSideLen / 2), northZ, northSideLen, t);
@@ -77,21 +71,28 @@ export function createRoom22(scene, engine, doorZ, doorX) {
   addWallBox(centerX - ROOM_W / 2, centerZ, t, ROOM_D + t);
   // east wall — solid, no window
   addWallBox(centerX + ROOM_W / 2, centerZ, t, ROOM_D + t);
-
   // south wall — doorway gap in the middle, aligned with the corridor from room21
   const southSideLen = (ROOM_W - DOOR_GAP) / 2;
   addWallBox(centerX - (DOOR_GAP / 2 + southSideLen / 2), southZ, southSideLen, t);
   addWallBox(centerX + (DOOR_GAP / 2 + southSideLen / 2), southZ, southSideLen, t);
   addWallBox(centerX, southZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
 
+  // ---------- collectible: book4 ----------
+  // Sitting in the north-east corner, clear of both doorways.
+  addBookPickup(
+    scene,
+    engine,
+    { x: centerX + 1.7, y: 0.05, z: northZ + 1.6 },
+    "book4",
+    "Sealed Journal"
+  );
+
   // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
   function update() {
     // intentionally static
   }
-
   // northDoorX: the doorway sits in the middle of the north wall — corridor.js's
   // createCorridorNorth starts here and runs further north toward room23.
   const northDoorX = centerX;
-
   return { colliders, update, centerX, centerZ, northZ, southZ, northDoorX };
 }
