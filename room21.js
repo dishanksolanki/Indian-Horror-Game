@@ -3,9 +3,19 @@
 // East wall has a doorway gap matching the corridor width (entrance from room20).
 // North wall also has a matching doorway gap (exit toward room22 via a corridor).
 // South/west walls remain solid, no window.
+//
+// UPDATED: this room now holds the Chudail — see chudail.js (procedural
+// model) and chudailEnemy.js (state-machine behavior: idle/patrol, sees or
+// hears the player, chases, attacks). She's built from primitives, so no
+// model file is needed. On a landed hit she dispatches a "game:caught"
+// window event the same way the ancient door in room25 dispatches
+// "game:win" — see main.js for that pattern; main.js needs a matching
+// listener added for "game:caught" (jumpscare / restart flow), same shape
+// as the existing "game:win" listener.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
+import { createChudailEnemy } from "./chudailEnemy.js";
 
 const ROOM_W = 6; // east-west
 const ROOM_D = 6.5; // north-south
@@ -84,9 +94,35 @@ export function createRoom21(scene, engine, doorX, doorZ) {
   addWallBox(eastX, centerZ + (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
   addWallBox(eastX, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
-  // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
-  function update() {
-    // intentionally static
+  // ---------- the Chudail ----------
+  // Spawned near the room's north wall, patrolling a short two-point beat
+  // between the north and south ends of the room so she isn't just standing
+  // in the doorway the player walks in through. She'll notice the player by
+  // sight/range, or get pulled off her patrol by a thrown item's noise
+  // (engine.onNoise — see engine.js and chudailEnemy.js for that hook).
+  const chudail = createChudailEnemy(scene, engine, {
+    position: new THREE.Vector3(centerX, 0, centerZ - ROOM_D / 2 + 1.2),
+    yaw: Math.PI, // facing south, into the room
+    patrolPoints: [
+      new THREE.Vector3(centerX - 1.4, 0, centerZ - ROOM_D / 2 + 1.2),
+      new THREE.Vector3(centerX + 1.4, 0, centerZ + ROOM_D / 2 - 1.2),
+    ],
+    onCatchPlayer: () => {
+      // Mirrors the "game:win" pattern room25's door uses (see main.js) —
+      // main.js needs a matching listener added for this event, e.g.:
+      //
+      //   window.addEventListener("game:caught", () => {
+      //     engine.pause();
+      //     engine.controls.unlock();
+      //     jumpscareOverlay.classList.add("show"); // or a restart flow
+      //   });
+      window.dispatchEvent(new CustomEvent("game:caught"));
+    },
+  });
+
+  // ---------- per-frame update ----------
+  function update(dt, eng) {
+    chudail.update(dt, eng);
   }
 
   // northZ/northDoorX: the doorway sits in the middle of the north wall —
@@ -94,5 +130,5 @@ export function createRoom21(scene, engine, doorX, doorZ) {
   const northZ = centerZ - ROOM_D / 2;
   const northDoorX = centerX;
 
-  return { colliders, update, centerX, centerZ, westX, eastX, northZ, northDoorX };
+  return { colliders, update, centerX, centerZ, westX, eastX, northZ, northDoorX, chudail };
 }
