@@ -16,6 +16,14 @@
 // does tryUnlockDoor() actually register the "Open the door" interactable —
 // see that function near the bottom of the file. Until then, pressing E on
 // the door does nothing because it isn't interactable yet.
+//
+// NEW: the book holder is now covered by a locked IRON CAGE. The holder's
+// own "place book" interactable isn't even registered until the cage is
+// unlocked, and the cage itself is a real collider, so there is no way to
+// place a book through the bars. Unlocking requires the iron key picked up
+// from the wooden table in room24 (engine.inventory.holderKey — see
+// room24.js). Like the hammer/plank relationship, the cage-unlock flag is
+// set on KEY PICKUP, not on later use.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -32,7 +40,7 @@ export function createRoom25(scene, engine, doorZ, doorX) {
   const colliders = [];
 
   // shared inventory bag lives on the engine so any room can read/write it.
-  // Guarded here in case room25 happens to load before room17/books do.
+  // Guarded here in case room25 happens to load before room17/room24/books do.
   if (!engine.inventory) engine.inventory = {};
 
   // room center sits further north (more negative z) than its south doorway
@@ -289,6 +297,9 @@ export function createRoom25(scene, engine, doorZ, doorX) {
   // engine.inventory[bookId] = true (this is the "does its work" step —
   // picking a book up doesn't set the flag, only placing it here does).
   // Once all four are placed, booksPlaced is set and tryUnlockDoor() is called.
+  //
+  // The holder is now behind a locked iron cage (see below) — its own
+  // interactable is only registered once the cage has been unlocked.
   const holderMat = new THREE.MeshStandardMaterial({ color: 0x2a1c10, roughness: 0.85 });
   const holderGroup = new THREE.Group();
   holderGroup.position.set(westX + 0.55, 0, centerZ);
@@ -334,54 +345,133 @@ export function createRoom25(scene, engine, doorZ, doorX) {
     holderGroup.add(mesh);
   }
 
-  const holderInteractable = engine.addInteractable(holderGroup, {
-    radius: HOLDER_RADIUS,
-    prompt: () => {
-      if (booksPlaced) return "Books Placed";
-      const placedCount = BOOK_IDS.filter((id) => engine.inventory[id]).length;
-      const held = engine.heldItem;
-      if (held && BOOK_IDS.includes(held.id) && !engine.inventory[held.id]) {
-        return `Place ${held.prompt} on Holder (${placedCount}/4 placed)`;
-      }
-      return `Book Holder (${placedCount}/4 placed)`;
-    },
+  // ---------- iron cage locking the book holder (requires the room24 key) ----------
+  // Covers the holder until unlocked with the key from room24's table
+  // (engine.inventory.holderKey — see room24.js). While locked, the cage
+  // itself is what's interactable — the holder's own "place book"
+  // interactable isn't registered at all yet, so there's no way to place a
+  // book through the bars. The cage is also a real collider, blocking
+  // physical access, not just the raycast interaction.
+  const cageMat = new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.5, metalness: 0.8 });
+  const cageGroup = new THREE.Group();
+  cageGroup.position.copy(holderGroup.position);
+  scene.add(cageGroup);
+
+  const CAGE_W = 1.0;
+  const CAGE_D = 0.5;
+  const CAGE_H = 1.9;
+  const BAR_R = 0.02;
+
+  function addCageBar(x, z) {
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(BAR_R, BAR_R, CAGE_H, 8), cageMat);
+    bar.position.set(x, CAGE_H / 2, z);
+    bar.castShadow = bar.receiveShadow = true;
+    cageGroup.add(bar);
+  }
+
+  const BAR_COUNT = 6;
+  for (let i = 0; i <= BAR_COUNT; i++) {
+    addCageBar(-CAGE_W / 2 + (CAGE_W * i) / BAR_COUNT, CAGE_D / 2); // front face, facing into the room
+  }
+  for (const x of [-CAGE_W / 2, CAGE_W / 2]) {
+    addCageBar(x, -CAGE_D / 2);
+    addCageBar(x, 0);
+  }
+
+  const railGeo = new THREE.BoxGeometry(CAGE_W + 0.05, 0.04, CAGE_D + 0.05);
+  const topRail = new THREE.Mesh(railGeo, cageMat);
+  topRail.position.set(0, CAGE_H, 0);
+  cageGroup.add(topRail);
+  const bottomRail = new THREE.Mesh(railGeo, cageMat);
+  bottomRail.position.set(0, 0, 0);
+  cageGroup.add(bottomRail);
+
+  const lockMat = new THREE.MeshStandardMaterial({ color: 0x555049, roughness: 0.4, metalness: 0.7 });
+  const padlock = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.04), lockMat);
+  padlock.position.set(0, 1.0, CAGE_D / 2 + 0.02);
+  cageGroup.add(padlock);
+
+  const cageCollider = new THREE.Box3().setFromObject(cageGroup);
+  colliders.push(cageCollider);
+  engine.addCollider(cageCollider);
+
+  const CAGE_PROMPT_LOCKED = "Locked Iron Cage — Need a Key";
+  const CAGE_PROMPT_READY = "Unlock Cage";
+  let cageUnlocked = false;
+  let holderInteractable = null; // only registered once the cage is unlocked, see registerHolderInteractable()
+
+  const HOLDER_PROMPT = () => {
+    if (booksPlaced) return "Books Placed";
+    const placedCount = BOOK_IDS.filter((id) => engine.inventory[id]).length;
+    const held = engine.heldItem;
+    if (held && BOOK_IDS.includes(held.id) && !engine.inventory[held.id]) {
+      return `Place ${held.prompt} on Holder (${placedCount}/4 placed)`;
+    }
+    return `Book Holder (${placedCount}/4 placed)`;
+  };
+
+  function registerHolderInteractable() {
+    holderInteractable = engine.addInteractable(holderGroup, {
+      radius: HOLDER_RADIUS,
+      prompt: HOLDER_PROMPT,
+      onInteract: () => {
+        if (booksPlaced) return;
+
+        const held = engine.heldItem;
+        if (!held || !BOOK_IDS.includes(held.id)) {
+          console.log(
+            "[room25.js] book holder interacted with, but you aren't holding one of the four books " +
+              "right now — carry one here first (see books.js pickup in rooms 8/9/13/22). " +
+              "Currently held:", held
+          );
+          return;
+        }
+        if (engine.inventory[held.id]) {
+          // already placed earlier somehow (shouldn't normally happen) — no-op
+          return;
+        }
+
+        // pull the book off the camera viewmodel and consume it — this is a
+        // deliberate bypass of dropHeldItem()/throwHeldItem(): we don't want
+        // it re-registered as a pickup fixture, it's being permanently racked.
+        engine.camera.remove(held.mesh);
+        if (held.originalScale) held.mesh.scale.copy(held.originalScale);
+
+        const slotIndex = BOOK_IDS.indexOf(held.id);
+        placeBookOnShelf(held.id, slotIndex);
+        engine.inventory[held.id] = true;
+        const placedLabel = held.prompt;
+        engine.heldItem = null;
+
+        const placedCount = BOOK_IDS.filter((id) => engine.inventory[id]).length;
+        console.log(`[room25.js] placed "${placedLabel}" on the holder (${placedCount}/4)`);
+
+        if (placedCount === BOOK_IDS.length) {
+          booksPlaced = true;
+          console.log("[room25.js] all 4 books placed on holder");
+          tryUnlockDoor();
+        }
+      },
+    });
+  }
+
+  const cageInteractable = engine.addInteractable(cageGroup, {
+    radius: 2.4,
+    prompt: CAGE_PROMPT_LOCKED,
     onInteract: () => {
-      if (booksPlaced) return;
+      if (cageUnlocked) return;
+      if (!engine.inventory.holderKey) return; // no key yet — cage won't budge
 
-      const held = engine.heldItem;
-      if (!held || !BOOK_IDS.includes(held.id)) {
-        console.log(
-          "[room25.js] book holder interacted with, but you aren't holding one of the four books " +
-            "right now — carry one here first (see books.js pickup in rooms 8/9/13/22). " +
-            "Currently held:", held
-        );
-        return;
-      }
-      if (engine.inventory[held.id]) {
-        // already placed earlier somehow (shouldn't normally happen) — no-op
-        return;
-      }
+      cageUnlocked = true;
 
-      // pull the book off the camera viewmodel and consume it — this is a
-      // deliberate bypass of dropHeldItem()/throwHeldItem(): we don't want
-      // it re-registered as a pickup fixture, it's being permanently racked.
-      engine.camera.remove(held.mesh);
-      if (held.originalScale) held.mesh.scale.copy(held.originalScale);
+      // drop the cage interactable so it can't be re-triggered / re-focused
+      const ix = engine.interactables.indexOf(cageInteractable);
+      if (ix !== -1) engine.interactables.splice(ix, 1);
 
-      const slotIndex = BOOK_IDS.indexOf(held.id);
-      placeBookOnShelf(held.id, slotIndex);
-      engine.inventory[held.id] = true;
-      const placedLabel = held.prompt;
-      engine.heldItem = null;
-
-      const placedCount = BOOK_IDS.filter((id) => engine.inventory[id]).length;
-      console.log(`[room25.js] placed "${placedLabel}" on the holder (${placedCount}/4)`);
-
-      if (placedCount === BOOK_IDS.length) {
-        booksPlaced = true;
-        console.log("[room25.js] all 4 books placed on holder");
-        tryUnlockDoor();
-      }
+      engine.removeCollider(cageCollider);
+      scene.remove(cageGroup);
+      registerHolderInteractable();
+      console.log("[room25.js] cage unlocked with the iron key — book holder now accessible");
     },
   });
 
@@ -396,7 +486,7 @@ export function createRoom25(scene, engine, doorZ, doorX) {
   chamberLight.position.set(centerX, ROOM_H - 0.3, centerZ);
   scene.add(chamberLight);
 
-  // ---------- per-frame update: gentle flicker, plank prompt sync, door-swing animation ----------
+  // ---------- per-frame update: gentle flicker, plank/cage prompt sync, door-swing animation ----------
   let flickerT = 0;
   function update(dt) {
     flickerT += dt;
@@ -405,6 +495,11 @@ export function createRoom25(scene, engine, doorZ, doorX) {
     // keep the plank prompt in sync with whether the player has the hammer yet
     if (!plankRemoved) {
       plankInteractable.prompt = engine.inventory.hammer ? PLANK_PROMPT_READY : PLANK_PROMPT_LOCKED;
+    }
+
+    // keep the cage prompt in sync with whether the player has the key yet
+    if (!cageUnlocked) {
+      cageInteractable.prompt = engine.inventory.holderKey ? CAGE_PROMPT_READY : CAGE_PROMPT_LOCKED;
     }
 
     // animate the door swinging open once the player has interacted with it
