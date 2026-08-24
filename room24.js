@@ -4,6 +4,12 @@
 // South wall has a doorway gap matching the corridor width (entrance from hall3).
 // East wall also has a doorway gap, leading to the long bridging corridor to room16.
 // North/west walls remain solid, no window.
+//
+// NEW: a wooden table holding the IRON KEY that unlocks the caged book holder
+// in room25. Walk up, press [E] to pick the key up — like the hammer, the
+// flag (engine.inventory.holderKey) is set on PICKUP, not on later use, so
+// once grabbed once the cage stays unlockable even if the key is later
+// dropped somewhere else via [G].
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
@@ -18,6 +24,8 @@ const DOOR_GAP = 1.6; // must match corridor width
 // doorX: the x coordinate of the doorway, matching the corridor's x (hall3's north door).
 export function createRoom24(scene, engine, doorZ, doorX) {
   const colliders = [];
+
+  if (!engine.inventory) engine.inventory = {};
 
   // room center sits further north (more negative z) than its south doorway
   const centerZ = doorZ - ROOM_D / 2;
@@ -87,6 +95,100 @@ export function createRoom24(scene, engine, doorZ, doorX) {
   addWallBox(centerX - (DOOR_GAP / 2 + southSideLen / 2), southZ, southSideLen, t);
   addWallBox(centerX + (DOOR_GAP / 2 + southSideLen / 2), southZ, southSideLen, t);
   addWallBox(centerX, southZ, DOOR_GAP, t, 0.4, ROOM_H - 0.2); // lintel
+
+  // ---------- wooden table with the book-holder cage key ----------
+  const tableMat = new THREE.MeshStandardMaterial({ color: 0x4a3520, roughness: 0.8 });
+  const tableGroup = new THREE.Group();
+  const tableX = centerX - 1.8;
+  const tableZ = centerZ - 1.8;
+  tableGroup.position.set(tableX, 0, tableZ);
+  scene.add(tableGroup);
+
+  const tabletop = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.06, 0.7), tableMat);
+  tabletop.position.set(0, 0.75, 0);
+  tabletop.castShadow = tabletop.receiveShadow = true;
+  tableGroup.add(tabletop);
+
+  const legGeo = new THREE.BoxGeometry(0.08, 0.75, 0.08);
+  for (const lx of [-0.48, 0.48]) {
+    for (const lz of [-0.28, 0.28]) {
+      const leg = new THREE.Mesh(legGeo, tableMat);
+      leg.position.set(lx, 0.375, lz);
+      leg.castShadow = leg.receiveShadow = true;
+      tableGroup.add(leg);
+    }
+  }
+
+  const tableBox = new THREE.Box3().setFromObject(tableGroup);
+  colliders.push(tableBox);
+  engine.addCollider(tableBox);
+
+  // ---------- the iron key resting on the table (unlocks the cage in room25) ----------
+  const keyMat = new THREE.MeshStandardMaterial({ color: 0x9a8a4a, roughness: 0.4, metalness: 0.75 });
+  const keyGroup = new THREE.Group();
+  keyGroup.position.set(tableX + 0.15, 0.8, tableZ + 0.1);
+  keyGroup.rotation.x = Math.PI / 2; // lay flat on the tabletop
+  scene.add(keyGroup);
+
+  const keyShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.14, 8), keyMat);
+  keyShaft.rotation.z = Math.PI / 2;
+  keyShaft.position.x = 0.02;
+  keyGroup.add(keyShaft);
+
+  const keyRing = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.008, 6, 12), keyMat);
+  keyRing.position.x = -0.06;
+  keyGroup.add(keyRing);
+
+  const keyBit1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.03, 0.008), keyMat);
+  keyBit1.position.set(0.08, -0.01, 0);
+  keyGroup.add(keyBit1);
+  const keyBit2 = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.02, 0.008), keyMat);
+  keyBit2.position.set(0.095, -0.025, 0);
+  keyGroup.add(keyBit2);
+
+  keyGroup.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+
+  // small warm point light so the key actually glints and reads as a
+  // pickup in this room's otherwise dim, flashlight-only lighting
+  const keyGlint = new THREE.PointLight(0xffdf9a, 0.5, 1.6, 2);
+  keyGlint.position.set(tableX + 0.15, 0.95, tableZ + 0.1);
+  scene.add(keyGlint);
+
+  const KEY_PICKUP_RADIUS = 1.8;
+  const keyInteractable = engine.addInteractable(keyGroup, {
+    radius: KEY_PICKUP_RADIUS,
+    prompt: "Pick Up Iron Key",
+    onInteract: () => {
+      console.log("[room24.js] iron key interacted with — attempting pickup. Currently held:", engine.heldItem);
+
+      const picked = engine.pickupItem({
+        id: "holderKey",
+        mesh: keyGroup,
+        prompt: "Iron Key",
+        holdOffset: new THREE.Vector3(0.26, -0.2, -0.5),
+        throwable: false,
+        onPickup: () => {
+          engine.removeInteractable(keyInteractable);
+          if (!engine.inventory) engine.inventory = {};
+          engine.inventory.holderKey = true;
+          scene.remove(keyGlint);
+          console.log("[room24.js] picked up the iron key — engine.inventory.holderKey = true");
+        },
+      });
+
+      if (!picked) {
+        console.log(
+          `[room24.js] couldn't pick up the key — already holding "${engine.heldItem?.id}". ` +
+          `Drop it with [G] first.`
+        );
+      }
+    },
+  });
 
   // ---------- per-frame update: no scene lights anymore — player relies on the flashlight ----------
   function update() {
