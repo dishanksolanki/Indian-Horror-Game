@@ -1,31 +1,25 @@
 // chudail.js — procedural model for the Chudail / Daayan enemy.
 //
-// Redesigned to match a reference turnaround: a weathered, hunched elderly
-// woman — NOT a skeletal bone-spike monster (that was an earlier pass).
-// Long disheveled grey hair falls forward around the face and shoulders,
-// she wears a dark blouse under a tattered maroon/purple saree with a torn
-// hem, layered necklaces and wrist bangles, and goes barefoot. Right hand
-// grips a simple curved sickle — a plain blade + wooden handle, not the
-// earlier bone-toothed rolling-pin hybrid.
+// v3: pushed further toward horror, closer to a reference turnaround
+// (weathered/hunched elderly woman, tattered maroon saree, sickle) than v2.
+// Ceiling of this approach: it's still built from primitives, not a
+// sculpted/textured mesh, so it will never match a rendered reference's
+// surface fidelity (skin pores, individual hair strands, fabric weave) —
+// that requires an actual .glb/.gltf model file. What CAN be pushed with
+// code: silhouette/proportions (gaunt, crooked, asymmetric hunch), grime
+// and mottling painted on with a generated canvas texture instead of flat
+// color (see makeGrimeTexture below), sunken shadowed eye sockets with a
+// faint emissive glow, clawed elongated fingers/toes, and denser matted
+// hair partly obscuring the face.
 //
-// Built entirely from THREE.js primitives (BoxGeometry, CylinderGeometry,
-// ConeGeometry, SphereGeometry, TorusGeometry) — no .glb/.gltf needed, same
-// approach as the rest of this codebase's low-poly geometry (see room1.js's
-// walls/beams).
+// No skeleton/rig — "animation" means directly rotating the joint pivot
+// Groups this function returns (leftUpperArm, rightForearm,
+// leftUpperLeg, etc.) every frame from chudailEnemy.js.
 //
-// There is no skeleton/rig — "animation" means directly rotating the joint
-// pivot Groups this function returns (leftUpperArm, rightForearm,
-// leftUpperLeg, etc.) every frame from chudailEnemy.js, the same way a
-// simple puppet is posed. Each pivot Group is positioned at the joint
-// origin with its mesh offset so rotations pivot correctly at the joint.
-//
-// IMPORTANT: the shape of the returned `parts` object is unchanged from the
-// previous version (same key names: hips, torso, hair, head, leftEye,
-// rightEye, eyeLight, eyeMaterial, leftShoulder, leftUpperArm, leftForearm,
-// leftHand, rightShoulder, rightUpperArm, rightForearm, rightHand,
-// weaponSocket, leftUpperLeg, leftLowerLeg, rightUpperLeg, rightLowerLeg) —
-// chudailEnemy.js's animation/attack-hitbox code references these directly
-// and needs no changes for this redesign.
+// IMPORTANT: the shape of the returned `parts` object is unchanged from
+// the previous version (same key names) — chudailEnemy.js's
+// animation/attack-hitbox code references these directly and needs no
+// changes for this redesign.
 //
 // Returns { group, parts } — `group` is the THREE.Object3D to add to the
 // scene and move around; `parts` exposes every joint/material a behavior
@@ -33,27 +27,78 @@
 
 import * as THREE from "three";
 
+// ---------- procedural grime/mottling texture ----------
+// Paints a base color plus irregular dark blotches and fine speckle onto a
+// small canvas, so materials read as dirty/weathered/uneven instead of flat
+// plastic color. Deterministic per call (seeded loop, no Math.random typo
+// risk across reloads) — the goal is texture, not per-load randomness.
+function makeGrimeTexture({ base, blotchColor, size = 128, blotches = 55, seed = 1 }) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, size, size);
+
+  // simple deterministic pseudo-random so the same seed always paints the
+  // same pattern (avoids "looks different every page load" weirdness)
+  let s = seed * 9301 + 49297;
+  const rand = () => {
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
+
+  for (let i = 0; i < blotches; i++) {
+    const x = rand() * size;
+    const y = rand() * size;
+    const r = 3 + rand() * 16;
+    ctx.beginPath();
+    ctx.fillStyle = blotchColor;
+    ctx.globalAlpha = 0.12 + rand() * 0.32;
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  const speckleCount = Math.floor(size * size * 0.04);
+  for (let i = 0; i < speckleCount; i++) {
+    const x = rand() * size;
+    const y = rand() * size;
+    ctx.fillStyle = rand() > 0.5 ? "rgba(0,0,0,0.22)" : "rgba(255,255,255,0.06)";
+    ctx.fillRect(x, y, 1, 1);
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
 export function createChudailModel() {
   const group = new THREE.Group();
   group.name = "chudail";
 
   // ---------- materials ----------
-  const skinMat = new THREE.MeshStandardMaterial({ color: 0x8a6f5c, roughness: 1 }); // weathered, sun-worn skin
-  const blouseMat = new THREE.MeshStandardMaterial({ color: 0x2b2e33, roughness: 0.95 }); // dark short-sleeve blouse
-  const sareeMat = new THREE.MeshStandardMaterial({ color: 0x5c2430, roughness: 0.9, side: THREE.DoubleSide }); // maroon/wine
-  const sareeUnderMat = new THREE.MeshStandardMaterial({ color: 0x3a3f52, roughness: 0.95, side: THREE.DoubleSide }); // dusty blue-grey underlayer at the hem
-  const hairMat = new THREE.MeshStandardMaterial({ color: 0x8c8a86, roughness: 1 }); // long grey hair
-  const metalMat = new THREE.MeshStandardMaterial({ color: 0xb8a06a, roughness: 0.5, metalness: 0.6 }); // bangles/necklace, tarnished gold/silver
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0x4a3320, roughness: 0.8 }); // sickle handle
-  const bladeMat = new THREE.MeshStandardMaterial({ color: 0x9aa0a3, roughness: 0.4, metalness: 0.7 }); // sickle blade
+  const skinTex = makeGrimeTexture({ base: "#7d6353", blotchColor: "rgba(35,20,15,0.5)", seed: 3, blotches: 70 });
+  const skinMat = new THREE.MeshStandardMaterial({ map: skinTex, roughness: 1 });
+
+  const blouseMat = new THREE.MeshStandardMaterial({ color: 0x232527, roughness: 0.95 });
+
+  const sareeTex = makeGrimeTexture({ base: "#511f2a", blotchColor: "rgba(10,5,8,0.45)", seed: 7, blotches: 60 });
+  const sareeMat = new THREE.MeshStandardMaterial({ map: sareeTex, roughness: 0.92, side: THREE.DoubleSide });
+
+  const sareeUnderTex = makeGrimeTexture({ base: "#33384a", blotchColor: "rgba(8,8,12,0.4)", seed: 11, blotches: 50 });
+  const sareeUnderMat = new THREE.MeshStandardMaterial({ map: sareeUnderTex, roughness: 0.95, side: THREE.DoubleSide });
+
+  const hairMat = new THREE.MeshStandardMaterial({ color: 0x716e69, roughness: 1 });
+  const nailMat = new THREE.MeshStandardMaterial({ color: 0x1c1815, roughness: 0.6 });
+  const metalMat = new THREE.MeshStandardMaterial({ color: 0xa88f5c, roughness: 0.55, metalness: 0.55 });
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x3d2a19, roughness: 0.85 });
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0x8d9295, roughness: 0.4, metalness: 0.7 });
+
   // shared so chudailEnemy.js can pulse emissiveIntensity for the horror
-  // "reveal" beat — kept subtle/near-off at rest (unlike the earlier design,
-  // her eyes read as ordinary, sunken, and haunted at a glance, not
-  // visibly glowing, and only brighten when she's actively hunting).
+  // "reveal" — dark and sunken at rest, brightens when actively hunting.
   const eyeMaterial = new THREE.MeshStandardMaterial({
-    color: 0x1a1210,
-    emissive: 0x8a0000,
-    emissiveIntensity: 0.15,
+    color: 0x0e0808,
+    emissive: 0x990000,
+    emissiveIntensity: 0.18,
     roughness: 0.5,
   });
 
@@ -66,134 +111,151 @@ export function createChudailModel() {
   }
 
   // ============================================================
-  // HIPS (root of the puppet) — feet touch y=0, hips sit at hip height.
-  // Slightly shorter/stooped than a standing adult to read as elderly.
+  // HIPS (root) — feet touch y=0
   // ============================================================
-  const HIP_Y = 0.86;
+  const HIP_Y = 0.85;
   const hips = new THREE.Group();
   hips.position.set(0, HIP_Y, 0);
   group.add(hips);
-
-  addMesh(hips, new THREE.BoxGeometry(0.4, 0.2, 0.24), sareeMat, 0, 0, 0); // saree wrap at the hip
+  addMesh(hips, new THREE.BoxGeometry(0.38, 0.19, 0.23), sareeMat, 0, 0, 0);
 
   // ============================================================
-  // TORSO — a gentle forward hunch (rotation.x) is the single biggest cue
-  // that reads "elderly" at a glance, so it's baked into the rest pose here
-  // rather than only appearing during animation.
+  // TORSO — a pronounced, slightly ASYMMETRIC hunch: forward stoop plus a
+  // small sideways/rotational twist so the silhouette reads as crooked and
+  // uncanny rather than a stiff, evenly-posed mannequin.
   // ============================================================
-  const TORSO_H = 0.56;
+  const TORSO_H = 0.54;
   const torso = new THREE.Group();
   torso.position.set(0, 0.1, 0);
-  torso.rotation.x = 0.14; // stooped forward
+  torso.rotation.x = 0.22; // pronounced forward stoop
+  torso.rotation.z = 0.05; // slight lean, breaks symmetry
   hips.add(torso);
 
-  addMesh(torso, new THREE.BoxGeometry(0.36, TORSO_H, 0.22), blouseMat, 0, TORSO_H / 2, 0); // dark blouse
-  // saree draped diagonally across the torso and over one shoulder
+  addMesh(torso, new THREE.BoxGeometry(0.34, TORSO_H, 0.2), blouseMat, 0, TORSO_H / 2, 0);
   const sareeDrape = addMesh(
     torso,
-    new THREE.CylinderGeometry(0.24, 0.3, TORSO_H + 0.15, 8, 1, true),
+    new THREE.CylinderGeometry(0.22, 0.29, TORSO_H + 0.16, 8, 1, true),
     sareeMat,
     0,
     TORSO_H / 2 + 0.02,
     0
   );
   sareeDrape.rotation.z = 0.05;
-  // torn hem strips at the waist — irregular, uneven lengths, mixed maroon/dusty-blue
-  const hemMats = [sareeMat, sareeUnderMat, sareeMat, sareeUnderMat, sareeMat];
-  const hemOffsets = [-0.16, -0.08, 0, 0.08, 0.17];
+
+  // torn, uneven hem strips
+  const hemMats = [sareeMat, sareeUnderMat, sareeMat, sareeUnderMat, sareeMat, sareeUnderMat];
+  const hemOffsets = [-0.17, -0.1, -0.03, 0.04, 0.11, 0.18];
   hemOffsets.forEach((ox, i) => {
-    const len = 0.3 + ((i * 37) % 5) * 0.05; // varied, deterministic (no per-load randomness)
-    const strip = addMesh(torso, new THREE.PlaneGeometry(0.1, len), hemMats[i], ox, -0.14 - len / 2, 0.1);
-    strip.rotation.z = (i - 2) * 0.06;
+    const len = 0.28 + ((i * 41) % 6) * 0.045;
+    const strip = addMesh(torso, new THREE.PlaneGeometry(0.09, len), hemMats[i], ox, -0.13 - len / 2, 0.095);
+    strip.rotation.z = (i - 2.5) * 0.05;
+    strip.rotation.x = 0.05;
   });
 
-  // layered necklace — a few thin metal torus rings at the base of the neck
+  // layered necklace
   for (let i = 0; i < 3; i++) {
     const ring = addMesh(
       torso,
-      new THREE.TorusGeometry(0.09 - i * 0.012, 0.006, 6, 16, Math.PI * 1.3),
+      new THREE.TorusGeometry(0.085 - i * 0.011, 0.005, 6, 16, Math.PI * 1.3),
       metalMat,
       0,
-      TORSO_H - 0.02 - i * 0.02,
-      0.09
+      TORSO_H - 0.02 - i * 0.018,
+      0.085
     );
     ring.rotation.x = Math.PI / 2 + 0.3;
   }
 
   // ============================================================
-  // NECK + HEAD
+  // NECK + HEAD — gaunt: hollow cheek panels, brow shadow, sunken eyes
   // ============================================================
-  const neckHair = new THREE.Group(); // also carries the hair mass, used as the "hair" sway pivot
+  const neckHair = new THREE.Group();
   neckHair.position.set(0, TORSO_H, 0);
   torso.add(neckHair);
-  addMesh(neckHair, new THREE.CylinderGeometry(0.055, 0.06, 0.1, 6), skinMat, 0, 0.05, 0);
+  addMesh(neckHair, new THREE.CylinderGeometry(0.05, 0.056, 0.09, 6), skinMat, 0, 0.045, 0);
 
   const head = new THREE.Group();
-  head.position.set(0, 0.16, 0);
-  head.rotation.x = 0.1; // slight downward tilt, reinforces the hunch/wariness
+  head.position.set(0, 0.15, 0);
+  head.rotation.x = 0.16; // downward tilt, reinforces hunch + wariness
   neckHair.add(head);
-  addMesh(head, new THREE.BoxGeometry(0.2, 0.22, 0.2), skinMat, 0, 0, 0);
-  // brow ridge / sunken cheek suggestion — a subtle darker band
-  addMesh(head, new THREE.BoxGeometry(0.2, 0.03, 0.06), skinMat, 0, 0.04, 0.1);
 
-  // eyes — set into the face, dark and sunken rather than overtly glowing
-  // at rest (see eyeMaterial comment above); chudailEnemy.js still pulses
-  // emissiveIntensity faster/brighter during PURSUE/ATTACK for the reveal.
-  const leftEye = addMesh(head, new THREE.SphereGeometry(0.022, 8, 8), eyeMaterial, -0.05, 0.02, 0.1);
-  const rightEye = addMesh(head, new THREE.SphereGeometry(0.022, 8, 8), eyeMaterial, 0.05, 0.02, 0.1);
-  const eyeLight = new THREE.PointLight(0xaa1111, 0.12, 1.8, 2); // faint at rest, brightened procedurally when hunting
-  eyeLight.position.set(0, 0.02, 0.08);
+  addMesh(head, new THREE.BoxGeometry(0.18, 0.2, 0.19), skinMat, 0, 0, 0); // skull base
+  // hollow cheeks — thin angled panels cut the silhouette in on each side
+  const leftCheek = addMesh(head, new THREE.BoxGeometry(0.03, 0.09, 0.14), skinMat, -0.085, -0.02, 0.02);
+  leftCheek.rotation.y = 0.35;
+  const rightCheek = addMesh(head, new THREE.BoxGeometry(0.03, 0.09, 0.14), skinMat, 0.085, -0.02, 0.02);
+  rightCheek.rotation.y = -0.35;
+  // brow ridge, casts a small shadow over the eyes
+  addMesh(head, new THREE.BoxGeometry(0.18, 0.025, 0.05), skinMat, 0, 0.055, 0.09);
+  // sunken eye sockets — dark recessed boxes behind the eyes themselves
+  addMesh(head, new THREE.BoxGeometry(0.13, 0.03, 0.02), new THREE.MeshStandardMaterial({ color: 0x120a08, roughness: 1 }), 0, 0.02, 0.095);
+  // gaunt jaw, narrows toward the chin
+  addMesh(head, new THREE.BoxGeometry(0.12, 0.06, 0.16), skinMat, 0, -0.11, 0.01);
+
+  const leftEye = addMesh(head, new THREE.SphereGeometry(0.018, 8, 8), eyeMaterial, -0.045, 0.02, 0.095);
+  const rightEye = addMesh(head, new THREE.SphereGeometry(0.018, 8, 8), eyeMaterial, 0.045, 0.02, 0.095);
+  const eyeLight = new THREE.PointLight(0x990000, 0.15, 1.8, 2);
+  eyeLight.position.set(0, 0.02, 0.07);
   head.add(eyeLight);
 
-  // bindi
-  addMesh(head, new THREE.CircleGeometry(0.012, 10), new THREE.MeshStandardMaterial({ color: 0x6a0000 }), 0, 0.075, 0.101);
+  addMesh(head, new THREE.CircleGeometry(0.011, 10), new THREE.MeshStandardMaterial({ color: 0x5a0000 }), 0, 0.07, 0.096);
 
-  // long, disheveled grey hair — falls forward around the face as well as
-  // down the back/shoulders (unlike the earlier back-only fan), matching
-  // the reference: hair partially obscuring the face from the front.
-  const hairStrandCount = 22;
+  // long, dense, matted grey hair — full ring around the head so strands
+  // fall forward across the face as well as down the back, with extra
+  // clumping (paired strands at slightly offset angles) instead of an even
+  // fan, to read as matted rather than combed.
+  const hairStrandCount = 30;
   for (let i = 0; i < hairStrandCount; i++) {
-    const angle = (i / hairStrandCount) * Math.PI * 2; // full ring around the head, front included
-    const length = 0.42 + ((i * 53) % 7) * 0.05; // varied, deterministic
+    const angle = (i / hairStrandCount) * Math.PI * 2;
+    const clump = (i % 3 === 0) ? 0.015 : 0; // occasional clumped offset
+    const length = 0.4 + ((i * 53) % 9) * 0.05;
     const strand = addMesh(
       neckHair,
-      new THREE.ConeGeometry(0.013, length, 4),
+      new THREE.ConeGeometry(0.012, length, 4),
       hairMat,
-      Math.sin(angle) * 0.1,
-      0.22 - length / 2,
-      Math.cos(angle) * 0.1
+      Math.sin(angle) * 0.09 + clump,
+      0.2 - length / 2,
+      Math.cos(angle) * 0.09
     );
-    strand.rotation.x = Math.PI + 0.15;
-    strand.rotation.z = Math.sin(angle) * 0.3;
+    strand.rotation.x = Math.PI + 0.18;
+    strand.rotation.z = Math.sin(angle * 1.7) * 0.35;
   }
 
   // ============================================================
-  // ARMS — shoulder pivot -> upper arm -> forearm pivot -> forearm -> hand.
-  // Thin but fleshed (skin, not bare bone) with a wrist bangle on each side.
+  // ARMS — thin, sinewy, with elongated fingers and claw-like nails
   // ============================================================
   function buildArm(side) {
     const sign = side === "left" ? -1 : 1;
     const shoulder = new THREE.Group();
-    shoulder.position.set(sign * 0.21, TORSO_H - 0.04, 0);
+    shoulder.position.set(sign * 0.2, TORSO_H - 0.03, 0);
+    // slight asymmetry: the weapon (right) arm sits a touch lower/forward,
+    // as if habitually favoring the sickle side
+    if (side === "right") shoulder.position.y -= 0.015;
     torso.add(shoulder);
 
-    const UPPER_LEN = 0.26;
-    addMesh(shoulder, new THREE.CylinderGeometry(0.032, 0.028, UPPER_LEN, 6), skinMat, 0, -UPPER_LEN / 2, 0);
+    const UPPER_LEN = 0.25;
+    addMesh(shoulder, new THREE.CylinderGeometry(0.03, 0.026, UPPER_LEN, 6), skinMat, 0, -UPPER_LEN / 2, 0);
 
     const forearmPivot = new THREE.Group();
     forearmPivot.position.set(0, -UPPER_LEN, 0);
     shoulder.add(forearmPivot);
 
-    const LOWER_LEN = 0.24;
-    addMesh(forearmPivot, new THREE.CylinderGeometry(0.028, 0.024, LOWER_LEN, 6), skinMat, 0, -LOWER_LEN / 2, 0);
-    // wrist bangles
-    const bangle = addMesh(forearmPivot, new THREE.TorusGeometry(0.032, 0.006, 6, 12), metalMat, 0, -LOWER_LEN + 0.03, 0);
+    const LOWER_LEN = 0.23;
+    addMesh(forearmPivot, new THREE.CylinderGeometry(0.026, 0.021, LOWER_LEN, 6), skinMat, 0, -LOWER_LEN / 2, 0);
+    const bangle = addMesh(forearmPivot, new THREE.TorusGeometry(0.03, 0.0055, 6, 12), metalMat, 0, -LOWER_LEN + 0.03, 0);
     bangle.rotation.x = Math.PI / 2;
 
     const hand = new THREE.Group();
     hand.position.set(0, -LOWER_LEN, 0);
     forearmPivot.add(hand);
-    addMesh(hand, new THREE.SphereGeometry(0.032, 6, 6), skinMat, 0, 0, 0);
+    addMesh(hand, new THREE.SphereGeometry(0.026, 6, 6), skinMat, 0, 0, 0);
+
+    // elongated clawed fingers — a small fan of thin cones tipped dark, in
+    // place of a plain sphere hand, for the gaunt/menacing read
+    for (let f = -1; f <= 1; f++) {
+      const finger = addMesh(hand, new THREE.CylinderGeometry(0.006, 0.005, 0.06, 4), skinMat, f * 0.014, -0.03, f * 0.006);
+      finger.rotation.x = 0.3;
+      addMesh(hand, new THREE.ConeGeometry(0.006, 0.025, 4), nailMat, f * 0.014, -0.06, f * 0.006 + 0.012).rotation.x = 0.3;
+    }
 
     return { shoulder, forearmPivot, hand };
   }
@@ -201,37 +263,40 @@ export function createChudailModel() {
   const leftArm = buildArm("left");
   const rightArm = buildArm("right");
 
-  // ---------- weapon: a plain curved sickle, socketed to the right hand ----------
+  // ---------- weapon: curved sickle, socketed to the right hand ----------
   const weaponSocket = new THREE.Group();
   rightArm.hand.add(weaponSocket);
-  weaponSocket.rotation.x = Math.PI / 2.2; // angled forward/down, as if held loosely at the side
+  weaponSocket.rotation.x = Math.PI / 2.2;
 
-  // wooden handle
-  addMesh(weaponSocket, new THREE.CylinderGeometry(0.02, 0.022, 0.22, 8), woodMat, 0, 0.11, 0);
-  // curved blade — a partial torus arcing off the top of the handle
-  const blade = addMesh(weaponSocket, new THREE.TorusGeometry(0.11, 0.014, 6, 12, Math.PI * 1.15), bladeMat, 0, 0.21, 0);
+  addMesh(weaponSocket, new THREE.CylinderGeometry(0.019, 0.021, 0.21, 8), woodMat, 0, 0.105, 0);
+  const blade = addMesh(weaponSocket, new THREE.TorusGeometry(0.1, 0.013, 6, 12, Math.PI * 1.15), bladeMat, 0, 0.2, 0);
   blade.rotation.x = Math.PI / 2;
   blade.rotation.z = -0.4;
 
   // ============================================================
-  // LEGS — hip pivot -> upper leg -> knee pivot -> lower leg. Bare feet.
+  // LEGS — bare, with clawed toes
   // ============================================================
   function buildLeg(side) {
     const sign = side === "left" ? -1 : 1;
     const upperLeg = new THREE.Group();
-    upperLeg.position.set(sign * 0.09, 0, 0);
+    upperLeg.position.set(sign * 0.085, 0, 0);
     hips.add(upperLeg);
 
-    const UPPER_LEN = 0.38;
-    addMesh(upperLeg, new THREE.CylinderGeometry(0.05, 0.04, UPPER_LEN, 6), sareeMat, 0, -UPPER_LEN / 2, 0); // saree hem covers the thigh
+    const UPPER_LEN = 0.36;
+    addMesh(upperLeg, new THREE.CylinderGeometry(0.048, 0.038, UPPER_LEN, 6), sareeMat, 0, -UPPER_LEN / 2, 0);
 
     const lowerLeg = new THREE.Group();
     lowerLeg.position.set(0, -UPPER_LEN, 0);
     upperLeg.add(lowerLeg);
 
-    const LOWER_LEN = 0.38;
-    addMesh(lowerLeg, new THREE.CylinderGeometry(0.036, 0.03, LOWER_LEN, 6), skinMat, 0, -LOWER_LEN / 2, 0); // bare shin
-    addMesh(lowerLeg, new THREE.BoxGeometry(0.06, 0.035, 0.13), skinMat, 0, -LOWER_LEN - 0.015, 0.03); // bare foot
+    const LOWER_LEN = 0.36;
+    addMesh(lowerLeg, new THREE.CylinderGeometry(0.034, 0.028, LOWER_LEN, 6), skinMat, 0, -LOWER_LEN / 2, 0);
+    addMesh(lowerLeg, new THREE.BoxGeometry(0.058, 0.032, 0.12), skinMat, 0, -LOWER_LEN - 0.014, 0.028); // foot
+    // clawed toes
+    for (let t = -1; t <= 1; t++) {
+      addMesh(lowerLeg, new THREE.ConeGeometry(0.008, 0.03, 4), nailMat, t * 0.016, -LOWER_LEN - 0.014, 0.08 + Math.abs(t) * -0.005)
+        .rotation.x = 1.6;
+    }
 
     return { upperLeg, lowerLeg };
   }
@@ -249,11 +314,11 @@ export function createChudailModel() {
     eyeLight,
     eyeMaterial,
     leftShoulder: leftArm.shoulder,
-    leftUpperArm: leftArm.shoulder,   // rotate this Group to swing the whole left arm from the shoulder
+    leftUpperArm: leftArm.shoulder,
     leftForearm: leftArm.forearmPivot,
     leftHand: leftArm.hand,
     rightShoulder: rightArm.shoulder,
-    rightUpperArm: rightArm.shoulder, // rotate this Group to swing the whole right (weapon) arm from the shoulder
+    rightUpperArm: rightArm.shoulder,
     rightForearm: rightArm.forearmPivot,
     rightHand: rightArm.hand,
     weaponSocket,
