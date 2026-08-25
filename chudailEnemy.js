@@ -1,64 +1,44 @@
 // chudailenemy.js — behavior controller for the haveli's stalking presence.
 //
-// v5 note: chudail.js v10 added a third secondary head (now 3 total on
-// parts.extraHeads — the pulseEyes()/animateExtras() loops already iterate
-// the array so that part needed no changes) and a `parts.drips` array of
-// active wet-blood teardrops scattered across both jaws, the skull wound,
-// the three small heads, and the bone-blade wound. This update adds
-// animateDrips(), called every frame in every state, which actually makes
-// those drops fall: each one stretches downward, keeps a bead at the tip
-// for a highlight, then resets to its start position on a loop with a
-// per-drop phase offset so they don't all fall in lockstep. Fall speed and
-// stretch amount scale up with how "active" the current state is (idle vs.
-// pursuing/attacking), same pattern as pulseEyes()'s speed parameter.
-// Nothing else changes shape here — state machine, movement/collision,
-// and attack hitbox timing are unchanged from v4.
+// v6 note: chudail.js v11 replaced the leg pair with a segmented naga tail
+// (`parts.tailSegments`, base -> tip) and added a held cleaver
+// (`parts.heldWeapon` / `parts.weaponTip`) alongside the existing forearm
+// bone-blade. This update rewrites movement animation to match:
+//   - animateWalk()/animateCrawl() no longer touch leftUpperLeg/
+//     rightUpperLeg/leftLowerLeg/rightLowerLeg (those keys don't exist on
+//     `parts` anymore). Both now call the new animateSlither(), which drives
+//     a traveling side-to-side wave down parts.tailSegments — each segment
+//     lags the one before it, so the wave visibly travels tip-ward as it
+//     moves, the way a real slither reads.
+//   - The torso's per-state forward pitch was softened to match chudail.js
+//     v11 standing the character upright at rest (hunch 0.32 -> 0.04); the
+//     PURSUE crawl-lean is now a smaller additional lean on top of that,
+//     not a full hunch.
+//   - checkAttackHit() now reads parts.weaponTip (the held cleaver's tip)
+//     instead of parts.weaponSocket (the forearm blade) as the strike
+//     point, since the player asked for the weapon to actually be the
+//     thing gripped in the hand. The forearm blade still exists and still
+//     visually threatens on every swing (animateAttack() moves the whole
+//     arm), it's just no longer what's used for the hit math.
+// State machine shape, collision/obstacle avoidance, and attack timing
+// windows are otherwise unchanged from v5.
 //
-// v4 note: chudail.js v9 added a big main head (with a hinged jaw and
-// extra eye sockets), two smaller secondary heads on the torso, and a
-// second smaller arm pair. This update adds the matching animation so
-// none of that new geometry just hangs there stiffly: pulseEyes() now
-// also drives the secondary heads' lights (they share parts.eyeMaterial
-// with the main head already, so opacity syncs for free), a new
-// animateExtras() gives the extra heads/arms an independent restless
-// twitch in every state, and animateMainJaw() eases the main jaw open
-// further as it goes from idle -> pursue -> a full gape at the attack's
-// strike frame. State machine shape, movement/collision, and attack
-// hitbox timing below are otherwise unchanged from the prior version.
+// ---- prior history (condensed) ----
+// v5: added animateDrips() to actively animate chudail.js v10's wet-blood
+//     teardrops (parts.drips) in every state.
+// v4: added animation for chudail.js v9's big main head (hinged jaw, extra
+//     eye sockets), 2 secondary heads, and a 2nd smaller arm pair.
+// v3: BEHAVIOR REWORK FOR HORROR — stalk-freeze/lunge cycling, a neck-snap
+//     reaction on first spotting the player, and (at the time) a jerky,
+//     asymmetric crawl gait for the leg pair that has since been replaced
+//     by the tail in v11/v6.
 //
 // Wraps the procedural model from chudail.js with a small state machine:
 //   IDLE -> WALK (patrol) -> [sees player] -> PURSUE -> [in range] -> ATTACK
 //   any of IDLE/WALK -> [hears a thrown item land, via engine.onNoise()] -> INVESTIGATE
 //
-// v3 note — BEHAVIOR REWORK FOR HORROR: the model changed to a near-black,
-// wrong-jointed "Stripped One" (see chudail.js v7/v8 headers). This pass
-// changes how it MOVES, on the theory that in a horror game the animation
-// and staging sell the scare far more than any amount of visible detail on
-// the mesh — a fully-lit, cleanly-animated monster rarely reads as scary no
-// matter how much gore is on it.
-//
-// Three additions, all inside PURSUE, none of which change the public API
-// (update/dispose/state/onCatchPlayer all work exactly as before, so
-// room21.js doesn't need to change):
-//   1. STALK FREEZES — while chasing, it doesn't just close distance at a
-//      constant speed. It randomly locks completely still for a beat,
-//      as if it's just staring, then bursts forward at well above its
-//      normal pursue speed. Unpredictable pacing is what makes a chase
-//      feel dangerous instead of just being a speed stat.
-//   2. NECK-SNAP ON SPOTTING — the instant it first sees the player (IDLE
-//      or WALK -> PURSUE), the neck pivot snaps hard toward the player
-//      for a few frames before smoothing out, instead of turning
-//      gradually like the rest of the body. Reads as "it just noticed you"
-//      rather than "it's facing your general direction."
-//   3. JERKY CRAWL — pursuit animation is no longer a clean symmetric
-//      walk cycle. Limb swing uses per-limb phase/speed jitter so the gait
-//      looks broken/wrong instead of athletic, and the torso pitches
-//      forward hard, dragging the arms low, like it's crawling more than
-//      running.
-//
-// Everything else below (state machine shape, collision/obstacle
-// avoidance, attack hitbox timing, noise hook) is UNCHANGED from the prior
-// version, since none of that needed to change for this pass.
+// Everything below not called out above (state machine shape, collision,
+// noise hook) is UNCHANGED from the prior version.
 
 import * as THREE from "three";
 import { createChudailModel } from "./chudail.js";
@@ -99,9 +79,9 @@ export function createChudailEnemy(scene, engine, {
 
   let state = ChudailState.IDLE;
   let stateT = 0;          // seconds spent in the current state
-  let walkAnimT = 0;       // running phase clock for limb-swing animation
+  let walkAnimT = 0;       // running phase clock for slither/limb-swing animation
   let eyeAnimT = 0;        // running phase clock for the eye pulse
-  let dripAnimT = 0;       // v10/v5: running phase clock for the blood-drip fall cycle
+  let dripAnimT = 0;       // running phase clock for the blood-drip fall cycle
   let attackTimer = 0;
   let attackHitChecked = false;
   let cooldownTimer = 0;
@@ -194,10 +174,6 @@ export function createChudailEnemy(scene, engine, {
   // ---------- procedural animation ----------
   function pulseEyes(dt, speed) {
     eyeAnimT += dt * speed;
-    // faint, cold, and small at rest; barely brighter when hunting — this
-    // model is meant to almost vanish into darkness, not flare up.
-    // parts.eyeMaterial is shared across every ember on every head, so this
-    // one line already keeps all of them in sync.
     parts.eyeMaterial.opacity = 0.22 + Math.sin(eyeAnimT) * 0.14;
     parts.eyeLight.intensity = 0.05 + Math.max(0, Math.sin(eyeAnimT)) * 0.16;
     if (parts.extraHeads) {
@@ -207,40 +183,32 @@ export function createChudailEnemy(scene, engine, {
     }
   }
 
-  // v10/v5: animates every registered wet-blood drop (parts.drips) so the
-  // whole body reads as actively bleeding rather than statically stained.
-  // Each drop's pivot is anchored at its origin point on the body; we drive
-  // a local fall offset + a stretch on the drop mesh + a fade on the bead
-  // as it "detaches", then loop back to 0 using each drop's own phase so
-  // they don't all fall in unison. `intensity` (0-1ish) scales fall speed
-  // and stretch amount — barely-there at idle, more visibly active once
-  // she's hunting, matching the same escalation pulseEyes() already does.
+  // Animates every registered wet-blood drop (parts.drips): each stretches
+  // downward, holds a highlighted bead at the tip, then resets on its own
+  // phase-offset loop so they don't all fall in lockstep. `intensity`
+  // scales fall speed/stretch — barely-there at idle, most active while
+  // hunting/attacking.
   function animateDrips(dt, intensity) {
     if (!parts.drips) return;
     dripAnimT += dt;
     parts.drips.forEach((d) => {
-      const cycle = 1.4 / Math.max(0.2, d.speed * (0.5 + intensity)); // seconds per fall cycle
-      const t = ((dripAnimT * d.speed * (0.5 + intensity) + d.phase) % cycle) / cycle; // 0..1
+      const cycle = 1.4 / Math.max(0.2, d.speed * (0.5 + intensity));
+      const t = ((dripAnimT * d.speed * (0.5 + intensity) + d.phase) % cycle) / cycle;
       const fall = t * d.range;
       d.pivot.position.y = d.baseY - fall;
-      // stretch the drop a little as it falls, like surface tension
-      // dragging it out, then snap back at the reset point
       const stretch = 1 + Math.sin(t * Math.PI) * 0.5 * (0.4 + intensity);
       d.drop.scale.y = stretch;
       d.bead.position.y = -d.len * stretch;
-      // fade the bead out right before reset so the loop isn't visible as
-      // a hard pop, then fade back in at the start of the next cycle
       const fadeIn = Math.min(1, t * 6);
       const fadeOut = Math.min(1, (1 - t) * 6);
       d.bead.visible = fadeIn > 0.05 && fadeOut > 0.05;
     });
   }
 
-  // Independent twitch/sway for the extra heads and extra arm pair, so
-  // they read as restless and slightly out of the body's control rather
-  // than just hanging there. `restless` pushes the amplitude/jaw-gape up
-  // for pursue/attack vs. a much subtler idle fidget. Runs over
-  // parts.extraHeads (now 3 entries as of chudail.js v10) unchanged.
+  // Independent twitch/sway for the extra heads and extra arm pair.
+  // `restless` pushes amplitude/jaw-gape up for pursue/attack vs. a subtler
+  // idle fidget. parts.extraHeads is length 2 as of chudail.js v11 (3
+  // heads total with the main head) — this loop needed no change for that.
   function animateExtras(dt, restless) {
     if (parts.extraArms) {
       parts.extraArms.forEach((arm, i) => {
@@ -267,66 +235,54 @@ export function createChudailEnemy(scene, engine, {
     parts.jawPivot.rotation.x += (target - parts.jawPivot.rotation.x) * Math.min(1, dt * 6);
   }
 
+  // v11/v6: replaces the old leg-based walk/crawl cycles entirely. Drives a
+  // traveling side-to-side wave down parts.tailSegments (base -> tip) —
+  // each segment's phase lags the one before it by `lag`, so the S-curve
+  // visibly travels toward the tip as it moves, the way a real slither
+  // reads, rather than every segment swinging in place together.
+  // `speedScale` plays the same role it did for the old walk/crawl calls:
+  // 1 for a patrol pace, higher during pursue/lunge.
+  function animateSlither(dt, speedScale) {
+    walkAnimT += dt * 3.2 * speedScale;
+    if (parts.tailSegments) {
+      const lag = 0.55;
+      const amp = 0.22 + Math.min(0.22, speedScale * 0.08); // wider whip at higher speed
+      parts.tailSegments.forEach((seg, i) => {
+        seg.rotation.y = Math.sin(walkAnimT - i * lag) * amp * (1 - i / (parts.tailSegments.length * 1.6));
+      });
+    }
+    // arms sway loosely opposite the tail's beat rather than a leg-swing
+    // mirror — there's no leg cadence to lock to anymore
+    const swing = Math.sin(walkAnimT * 0.7);
+    parts.leftUpperArm.rotation.x = 0.15 + swing * 0.12;
+    parts.rightUpperArm.rotation.x = 0.15 - swing * 0.12;
+    parts.hair.rotation.z = Math.sin(walkAnimT * 0.4) * 0.04;
+    pulseEyes(dt, 1.2 + speedScale * 0.6);
+    animateExtras(dt, speedScale > 1.3);
+    animateMainJaw(0.1 + Math.max(0, Math.sin(walkAnimT * 1.6)) * 0.12 * speedScale, dt);
+    animateDrips(dt, Math.min(1, 0.15 + speedScale * 0.3));
+    // a small additional forward lean while actively moving, stacked on
+    // top of the near-upright resting pose set in chudail.js v11
+    parts.torso.rotation.x = 0.04 + Math.min(0.16, speedScale * 0.06);
+  }
+
   function animateIdle(dt) {
     walkAnimT += dt * 0.4;
     parts.hair.rotation.z = Math.sin(walkAnimT) * 0.02;
     parts.torso.rotation.z = Math.sin(walkAnimT * 0.5) * 0.01;
+    parts.torso.rotation.x = 0.04; // resting upright pose from chudail.js v11
     parts.leftUpperArm.rotation.x = Math.sin(walkAnimT) * 0.03;
     parts.rightUpperArm.rotation.x = Math.sin(walkAnimT + Math.PI) * 0.03;
+    if (parts.tailSegments) {
+      parts.tailSegments.forEach((seg, i) => {
+        // slow idle coil breathing rather than a full slither
+        seg.rotation.y = Math.sin(walkAnimT * 0.6 - i * 0.4) * 0.04;
+      });
+    }
     pulseEyes(dt, 0.9);
     animateExtras(dt, false);
     animateMainJaw(0.05 + Math.max(0, Math.sin(walkAnimT * 1.7)) * 0.08, dt);
     animateDrips(dt, 0.05);
-  }
-
-  function animateWalk(dt, speedScale) {
-    walkAnimT += dt * 4.2 * speedScale;
-    const swing = Math.sin(walkAnimT);
-    parts.leftUpperLeg.rotation.x = swing * 0.5;
-    parts.rightUpperLeg.rotation.x = -swing * 0.5;
-    parts.leftLowerLeg.rotation.x = Math.max(0, -swing) * 0.4;
-    parts.rightLowerLeg.rotation.x = Math.max(0, swing) * 0.4;
-    parts.leftUpperArm.rotation.x = -swing * 0.25;
-    parts.rightUpperArm.rotation.x = swing * 0.25;
-    parts.hair.rotation.z = Math.sin(walkAnimT * 0.45) * 0.05;
-    pulseEyes(dt, 1.6);
-    animateExtras(dt, false);
-    animateMainJaw(0.12 + Math.max(0, Math.sin(walkAnimT * 2)) * 0.1, dt);
-    animateDrips(dt, 0.25);
-  }
-
-  // Pursuit gait — deliberately broken-looking. Each limb runs at a
-  // slightly different speed/phase (via distinct multipliers, not a clean
-  // shared sine wave) so nothing lines up symmetrically, and the torso
-  // pitches forward hard so the arms drag low, closer to a crawl than a
-  // sprint. This replaces animateWalk() during PURSUE.
-  function animateCrawl(dt, speedScale) {
-    walkAnimT += dt * 6.5 * speedScale;
-    const legSwing = Math.sin(walkAnimT);
-    const legSwing2 = Math.sin(walkAnimT * 1.13 + 0.7); // deliberately not in sync with legSwing
-    parts.leftUpperLeg.rotation.x = legSwing * 0.7;
-    parts.rightUpperLeg.rotation.x = -legSwing2 * 0.75;
-    parts.leftLowerLeg.rotation.x = Math.max(0, -legSwing) * 0.6;
-    parts.rightLowerLeg.rotation.x = Math.max(0, legSwing2) * 0.65;
-
-    // arms drag low and swing hard, out of phase with each other and with
-    // the legs — the "wrongness" is in the lack of a clean shared rhythm
-    const armSwing = Math.sin(walkAnimT * 0.83 + 1.4);
-    const armSwing2 = Math.sin(walkAnimT * 1.31);
-    parts.leftUpperArm.rotation.x = 0.9 + armSwing * 0.35;
-    parts.rightUpperArm.rotation.x = 0.9 + armSwing2 * 0.35;
-    parts.leftForearm.rotation.x = 0.5 + Math.abs(armSwing) * 0.4;
-    parts.rightForearm.rotation.x = 0.5 + Math.abs(armSwing2) * 0.4;
-
-    // torso pitches forward hard while closing distance, on top of its
-    // resting hunch (set once in chudail.js) — an additional lean, not a
-    // replacement, so it stacks with the base pose
-    parts.torso.rotation.x = 0.32 + 0.18 + Math.sin(walkAnimT * 2) * 0.02;
-
-    pulseEyes(dt, speedScale > 1.6 ? 4.5 : 2.6);
-    animateExtras(dt, true);
-    animateMainJaw(0.35 + Math.max(0, Math.sin(walkAnimT * 2.4)) * 0.15, dt);
-    animateDrips(dt, speedScale > 1.6 ? 0.9 : 0.6);
   }
 
   function animateAttack(dt) {
@@ -334,6 +290,13 @@ export function createChudailEnemy(scene, engine, {
     const swing = p < 0.6 ? -(p / 0.6) : -(1 - (p - 0.6) / 0.4);
     parts.rightUpperArm.rotation.x = 0.9 + swing * 1.5;
     parts.rightForearm.rotation.x = 0.5 + swing * 0.8;
+    if (parts.tailSegments) {
+      // a hard coiled brace through the tail at the strike, like it's
+      // anchoring itself to put weight behind the swing
+      parts.tailSegments.forEach((seg, i) => {
+        seg.rotation.y = Math.sin(walkAnimT * 2 - i * 0.6) * 0.1 * (1 - i / (parts.tailSegments.length * 1.6));
+      });
+    }
     pulseEyes(dt, 7);
     animateExtras(dt, true);
     animateMainJaw(0.7, dt); // full gape at the moment of the strike
@@ -343,8 +306,8 @@ export function createChudailEnemy(scene, engine, {
   // Frozen "stalking" pose — the body stays completely still (that's the
   // point), but the extra heads keep a slow independent twitch and the
   // eye pulse keeps a slow, deliberate breathing-like rhythm, so it reads
-  // as "watching" rather than "paused". The blood keeps dripping even
-  // when everything else locks up — nothing about her is actually calm.
+  // as "watching" rather than "paused". The blood keeps dripping even when
+  // everything else locks up — nothing about her is actually calm.
   function animateFrozen(dt) {
     pulseEyes(dt, 0.7);
     animateExtras(dt, false);
@@ -354,12 +317,14 @@ export function createChudailEnemy(scene, engine, {
 
   // ---------- attack hitbox ----------
   // Checked once, at the moment the forward swing completes, so a single
-  // attack can only ever land a single hit. Reads the bone-blade
-  // (weaponSocket)'s world position — see chudail.js — as "where the
-  // strike lands", same role a held weapon's tip would play.
+  // attack can only ever land a single hit. v11/v6: reads the HELD
+  // WEAPON's tip (parts.weaponTip, the gripped cleaver — see chudail.js)
+  // as "where the strike lands", now that there's an actual weapon in
+  // hand rather than only the forearm bone-blade.
   function checkAttackHit() {
     const strikeWorldPos = new THREE.Vector3();
-    parts.weaponSocket.getWorldPosition(strikeWorldPos);
+    const tip = parts.weaponTip || parts.weaponSocket; // fall back just in case
+    tip.getWorldPosition(strikeWorldPos);
     return strikeWorldPos.distanceTo(engine.camera.position) < attackRange + 0.4;
   }
 
@@ -427,7 +392,7 @@ export function createChudailEnemy(scene, engine, {
         const target = nextPatrolTarget();
         if (!target) { state = ChudailState.IDLE; stateT = 0; break; }
         const remaining = moveToward(target, walkSpeed, dt);
-        animateWalk(dt, 1);
+        animateSlither(dt, 1);
         if (remaining < 0.2) { patrolIndex++; state = ChudailState.IDLE; stateT = 0; }
         if (seesPlayer) { enterPursue(); }
         break;
@@ -436,7 +401,7 @@ export function createChudailEnemy(scene, engine, {
       case ChudailState.INVESTIGATE: {
         if (!investigateTarget) { state = ChudailState.IDLE; stateT = 0; break; }
         const remaining = moveToward(investigateTarget, investigateSpeed, dt);
-        animateWalk(dt, 1.3);
+        animateSlither(dt, 1.3);
         if (remaining < 0.3) { investigateTarget = null; state = ChudailState.IDLE; stateT = 0; }
         if (seesPlayer) { enterPursue(); }
         break;
@@ -481,7 +446,7 @@ export function createChudailEnemy(scene, engine, {
 
         const speed = lungeTimer > 0 ? pursueSpeed * lungeSpeedMult : pursueSpeed;
         moveToward(engine.camera.position, speed, dt);
-        animateCrawl(dt, lungeTimer > 0 ? 2.2 : 1.4);
+        animateSlither(dt, lungeTimer > 0 ? 2.4 : 1.6);
         break;
       }
 
