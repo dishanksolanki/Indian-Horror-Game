@@ -1,5 +1,17 @@
 // chudailenemy.js — behavior controller for the haveli's stalking presence.
 //
+// v4 note: chudail.js v9 added a big main head (with a hinged jaw and
+// extra eye sockets), two smaller secondary heads on the torso, and a
+// second smaller arm pair. This update adds the matching animation so
+// none of that new geometry just hangs there stiffly: pulseEyes() now
+// also drives the secondary heads' lights (they share parts.eyeMaterial
+// with the main head already, so opacity syncs for free), a new
+// animateExtras() gives the extra heads/arms an independent restless
+// twitch in every state, and animateMainJaw() eases the main jaw open
+// further as it goes from idle -> pursue -> a full gape at the attack's
+// strike frame. State machine shape, movement/collision, and attack
+// hitbox timing below are otherwise unchanged from the prior version.
+//
 // Wraps the procedural model from chudail.js with a small state machine:
 //   IDLE -> WALK (patrol) -> [sees player] -> PURSUE -> [in range] -> ATTACK
 //   any of IDLE/WALK -> [hears a thrown item land, via engine.onNoise()] -> INVESTIGATE
@@ -168,9 +180,46 @@ export function createChudailEnemy(scene, engine, {
   function pulseEyes(dt, speed) {
     eyeAnimT += dt * speed;
     // faint, cold, and small at rest; barely brighter when hunting — this
-    // model is meant to almost vanish into darkness, not flare up
+    // model is meant to almost vanish into darkness, not flare up.
+    // parts.eyeMaterial is shared across every ember on every head, so this
+    // one line already keeps all of them in sync.
     parts.eyeMaterial.opacity = 0.22 + Math.sin(eyeAnimT) * 0.14;
     parts.eyeLight.intensity = 0.05 + Math.max(0, Math.sin(eyeAnimT)) * 0.16;
+    if (parts.extraHeads) {
+      parts.extraHeads.forEach((h, i) => {
+        h.light.intensity = 0.04 + Math.max(0, Math.sin(eyeAnimT * 1.3 + i * 2.1)) * 0.1;
+      });
+    }
+  }
+
+  // Independent twitch/sway for the extra heads and extra arm pair, so
+  // they read as restless and slightly out of the body's control rather
+  // than just hanging there. `restless` pushes the amplitude/jaw-gape up
+  // for pursue/attack vs. a much subtler idle fidget.
+  function animateExtras(dt, restless) {
+    if (parts.extraArms) {
+      parts.extraArms.forEach((arm, i) => {
+        const t = walkAnimT * (1.6 + i * 0.35) + i * 2.3;
+        arm.shoulder.rotation.x = 0.3 + Math.sin(t) * (restless ? 0.55 : 0.14);
+        arm.shoulder.rotation.z = Math.sin(t * 0.6 + i) * 0.1;
+        arm.forearmPivot.rotation.x = 0.4 + Math.abs(Math.sin(t * 1.3)) * (restless ? 0.4 : 0.15);
+      });
+    }
+    if (parts.extraHeads) {
+      parts.extraHeads.forEach((h, i) => {
+        const t = walkAnimT * (1.1 + i * 0.3) + i * 3.3;
+        h.head.rotation.z = Math.sin(t) * 0.18;
+        h.head.rotation.x = Math.sin(t * 0.7 + 1) * 0.12;
+        h.jawPivot.rotation.x = Math.max(0, Math.sin(t * 1.9)) * (restless ? 0.45 : 0.12);
+      });
+    }
+  }
+
+  // Eases the main head's jaw toward a target open-amount rather than
+  // snapping, so it reads as a deliberate gape rather than a glitch.
+  function animateMainJaw(target, dt) {
+    if (!parts.jawPivot) return;
+    parts.jawPivot.rotation.x += (target - parts.jawPivot.rotation.x) * Math.min(1, dt * 6);
   }
 
   function animateIdle(dt) {
@@ -180,6 +229,8 @@ export function createChudailEnemy(scene, engine, {
     parts.leftUpperArm.rotation.x = Math.sin(walkAnimT) * 0.03;
     parts.rightUpperArm.rotation.x = Math.sin(walkAnimT + Math.PI) * 0.03;
     pulseEyes(dt, 0.9);
+    animateExtras(dt, false);
+    animateMainJaw(0.05 + Math.max(0, Math.sin(walkAnimT * 1.7)) * 0.08, dt);
   }
 
   function animateWalk(dt, speedScale) {
@@ -193,6 +244,8 @@ export function createChudailEnemy(scene, engine, {
     parts.rightUpperArm.rotation.x = swing * 0.25;
     parts.hair.rotation.z = Math.sin(walkAnimT * 0.45) * 0.05;
     pulseEyes(dt, 1.6);
+    animateExtras(dt, false);
+    animateMainJaw(0.12 + Math.max(0, Math.sin(walkAnimT * 2)) * 0.1, dt);
   }
 
   // Pursuit gait — deliberately broken-looking. Each limb runs at a
@@ -224,6 +277,8 @@ export function createChudailEnemy(scene, engine, {
     parts.torso.rotation.x = 0.32 + 0.18 + Math.sin(walkAnimT * 2) * 0.02;
 
     pulseEyes(dt, speedScale > 1.6 ? 4.5 : 2.6);
+    animateExtras(dt, true);
+    animateMainJaw(0.35 + Math.max(0, Math.sin(walkAnimT * 2.4)) * 0.15, dt);
   }
 
   function animateAttack(dt) {
@@ -232,13 +287,18 @@ export function createChudailEnemy(scene, engine, {
     parts.rightUpperArm.rotation.x = 0.9 + swing * 1.5;
     parts.rightForearm.rotation.x = 0.5 + swing * 0.8;
     pulseEyes(dt, 7);
+    animateExtras(dt, true);
+    animateMainJaw(0.7, dt); // full gape at the moment of the strike
   }
 
-  // Frozen "stalking" pose — completely still except the eye pulse, which
-  // keeps a slow, deliberate breathing-like rhythm rather than stopping
-  // dead, so it reads as "watching" rather than "paused".
+  // Frozen "stalking" pose — the body stays completely still (that's the
+  // point), but the extra heads keep a slow independent twitch and the
+  // eye pulse keeps a slow, deliberate breathing-like rhythm, so it reads
+  // as "watching" rather than "paused".
   function animateFrozen(dt) {
     pulseEyes(dt, 0.7);
+    animateExtras(dt, false);
+    animateMainJaw(0.15, dt);
   }
 
   // ---------- attack hitbox ----------
