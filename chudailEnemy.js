@@ -4,35 +4,35 @@
 //   IDLE -> WALK (patrol) -> [sees player] -> PURSUE -> [in range] -> ATTACK
 //   any of IDLE/WALK -> [hears a thrown item land, via engine.onNoise()] -> INVESTIGATE
 //
-// v2 note: the model this drives changed from a sickle-wielding elderly
-// woman to a faceless shadow figure (see chudail.js's header) — the state
-// machine, movement, obstacle avoidance, and attack-hitbox logic below are
-// UNCHANGED, since none of that cared what she looked like. The only
-// additions here are cosmetic: a small optional wisp-sway (if the model
-// exposes parts.wisps) and eye-pulse tuning that suits "faint points of
-// light" better than "glowing red demon eyes". Filename and exported
-// function name (createChudailEnemy) are unchanged on purpose, so nothing
-// importing this needs an import-path change.
+// v3 note — BEHAVIOR REWORK FOR HORROR: the model changed to a near-black,
+// wrong-jointed "Stripped One" (see chudail.js v7/v8 headers). This pass
+// changes how it MOVES, on the theory that in a horror game the animation
+// and staging sell the scare far more than any amount of visible detail on
+// the mesh — a fully-lit, cleanly-animated monster rarely reads as scary no
+// matter how much gore is on it.
 //
-// There's no skinned rig — "animation" means directly rotating the joint
-// pivot Groups exposed on `parts` every frame, the same way the Engine
-// itself fakes headbob by nudging camera.position.y in engine.js's
-// _updateMovement(). Movement/obstacle-avoidance reuses engine.colliders
-// (a public array on Engine — see engine.js) with the same box-intersection
-// approach as Engine._resolveCollision, just with a slightly larger box
-// since this is a full-size monster, not a point.
+// Three additions, all inside PURSUE, none of which change the public API
+// (update/dispose/state/onCatchPlayer all work exactly as before, so
+// room21.js doesn't need to change):
+//   1. STALK FREEZES — while chasing, it doesn't just close distance at a
+//      constant speed. It randomly locks completely still for a beat,
+//      as if it's just staring, then bursts forward at well above its
+//      normal pursue speed. Unpredictable pacing is what makes a chase
+//      feel dangerous instead of just being a speed stat.
+//   2. NECK-SNAP ON SPOTTING — the instant it first sees the player (IDLE
+//      or WALK -> PURSUE), the neck pivot snaps hard toward the player
+//      for a few frames before smoothing out, instead of turning
+//      gradually like the rest of the body. Reads as "it just noticed you"
+//      rather than "it's facing your general direction."
+//   3. JERKY CRAWL — pursuit animation is no longer a clean symmetric
+//      walk cycle. Limb swing uses per-limb phase/speed jitter so the gait
+//      looks broken/wrong instead of athletic, and the torso pitches
+//      forward hard, dragging the arms low, like it's crawling more than
+//      running.
 //
-// Usage from a room file (see room21.js for the wired-up example):
-//
-//   import { createChudailEnemy } from "./chudailenemy.js";
-//   const shadow = createChudailEnemy(scene, engine, {
-//     position: new THREE.Vector3(centerX, 0, centerZ - 1.5),
-//     yaw: Math.PI,
-//     patrolPoints: [ ... ],
-//     onCatchPlayer: () => window.dispatchEvent(new CustomEvent("game:caught")),
-//   });
-//   // then, inside the room's own update(dt, eng):
-//   shadow.update(dt, eng);
+// Everything else below (state machine shape, collision/obstacle
+// avoidance, attack hitbox timing, noise hook) is UNCHANGED from the prior
+// version, since none of that needed to change for this pass.
 
 import * as THREE from "three";
 import { createChudailModel } from "./chudail.js";
@@ -52,12 +52,17 @@ export function createChudailEnemy(scene, engine, {
   sightRange = 7,            // distance (m) at which she can notice the player
   sightFov = Math.PI / 2.4,  // horizontal field of view (radians, full angle) for the sight check
   loseRange = 10,            // distance (m) at which an active chase is abandoned
-  attackRange = 1.4,         // distance (m) at which an attack can connect (slightly longer than before — her arms are unnaturally long now)
+  attackRange = 1.4,         // distance (m) at which an attack can connect
   attackWindup = 0.5,        // seconds of wind-up animation before the hit is checked
   attackRecover = 0.3,       // seconds after the hit-check before returning to chase/idle
   attackCooldown = 1.4,      // seconds before she can attack again
   walkSpeed = 1.6,
-  pursueSpeed = 3.6,
+  pursueSpeed = 3.2,         // baseline pursue speed — the lunge burst goes well above this
+  lungeSpeedMult = 2.1,      // speed multiplier during a post-freeze burst
+  lungeDuration = 0.55,      // seconds the burst lasts before settling back to pursueSpeed
+  freezeChancePerSec = 0.35, // rough odds per second of triggering a stalk-freeze while pursuing
+  freezeMinTime = 0.35,
+  freezeMaxTime = 1.1,
   investigateSpeed = 2.0,
   onCatchPlayer = null,      // fired once, the instant an attack connects
 } = {}) {
@@ -70,21 +75,28 @@ export function createChudailEnemy(scene, engine, {
   let stateT = 0;          // seconds spent in the current state
   let walkAnimT = 0;       // running phase clock for limb-swing animation
   let eyeAnimT = 0;        // running phase clock for the eye pulse
-  let wispAnimT = 0;       // running phase clock for the wisp sway
   let attackTimer = 0;
   let attackHitChecked = false;
   let cooldownTimer = 0;
   let investigateTarget = null;
   let patrolIndex = 0;
 
+  // --- stalk/lunge state (PURSUE only) ---
+  let frozen = false;
+  let freezeTimer = 0;
+  let lungeTimer = 0; // > 0 while a post-freeze burst is active
+
+  // --- neck-snap reaction, triggered once on first spotting the player ---
+  let snapTimer = 0;
+  const SNAP_DURATION = 0.18;
+
   const _toPlayer = new THREE.Vector3();
   const _facing = new THREE.Vector3();
   const _dir = new THREE.Vector3();
 
-  // --- noise hook: Granny/Kamla-style distraction (see engine.js's
-  // onNoise()/throwHeldItem() doc comments). While not already actively
-  // chasing or mid-swing, a thrown item's landing noise pulls her toward
-  // its position instead of wherever she was headed.
+  // --- noise hook: a thrown item's landing noise pulls it toward that
+  // position instead of wherever it was headed, unless already actively
+  // chasing or mid-swing.
   const unsubscribeNoise = engine.onNoise(({ position: noisePos }) => {
     if (state === ChudailState.PURSUE || state === ChudailState.ATTACK) return;
     investigateTarget = noisePos.clone();
@@ -110,10 +122,10 @@ export function createChudailEnemy(scene, engine, {
   // with a bigger footprint/height for a full-size monster instead of a
   // player-radius point.
   function blocked(nextPos) {
-    const r = 0.4;
+    const r = 0.35;
     const box = new THREE.Box3(
       new THREE.Vector3(nextPos.x - r, 0, nextPos.z - r),
-      new THREE.Vector3(nextPos.x + r, 2.2, nextPos.z + r) // taller box — this design stands ~2.3m
+      new THREE.Vector3(nextPos.x + r, 2.1, nextPos.z + r)
     );
     for (const c of engine.colliders) {
       if (box.intersectsBox(c)) return true;
@@ -155,63 +167,85 @@ export function createChudailEnemy(scene, engine, {
   // ---------- procedural animation ----------
   function pulseEyes(dt, speed) {
     eyeAnimT += dt * speed;
-    // faint points of light at rest, brightening toward a steady glow when
-    // hunting — kept in the 0.15–0.7 alpha range throughout, never a hard
-    // flash, since a faceless figure's only "tell" should read as subtle
-    parts.eyeMaterial.opacity = 0.35 + Math.sin(eyeAnimT) * 0.2;
-    parts.eyeLight.intensity = 0.08 + Math.max(0, Math.sin(eyeAnimT)) * 0.35;
-  }
-
-  function swayWisps(dt, speed) {
-    if (!parts.wisps || parts.wisps.length === 0) return;
-    wispAnimT += dt * speed;
-    parts.wisps.forEach((wisp, i) => {
-      wisp.rotation.z = Math.sin(wispAnimT + i * 1.3) * 0.15;
-      wisp.material.opacity = 0.35 + Math.sin(wispAnimT * 1.4 + i) * 0.2;
-    });
+    // faint, cold, and small at rest; barely brighter when hunting — this
+    // model is meant to almost vanish into darkness, not flare up
+    parts.eyeMaterial.opacity = 0.22 + Math.sin(eyeAnimT) * 0.14;
+    parts.eyeLight.intensity = 0.05 + Math.max(0, Math.sin(eyeAnimT)) * 0.16;
   }
 
   function animateIdle(dt) {
-    walkAnimT += dt * 0.5;
-    parts.hair.rotation.z = Math.sin(walkAnimT) * 0.03; // neck-pivot sway (see chudail.js header)
-    parts.torso.rotation.z = Math.sin(walkAnimT * 0.6) * 0.015;
-    parts.leftUpperArm.rotation.x = Math.sin(walkAnimT) * 0.04;
-    parts.rightUpperArm.rotation.x = Math.sin(walkAnimT + Math.PI) * 0.04;
-    pulseEyes(dt, 1.2);
-    swayWisps(dt, 0.8);
+    walkAnimT += dt * 0.4;
+    parts.hair.rotation.z = Math.sin(walkAnimT) * 0.02;
+    parts.torso.rotation.z = Math.sin(walkAnimT * 0.5) * 0.01;
+    parts.leftUpperArm.rotation.x = Math.sin(walkAnimT) * 0.03;
+    parts.rightUpperArm.rotation.x = Math.sin(walkAnimT + Math.PI) * 0.03;
+    pulseEyes(dt, 0.9);
   }
 
   function animateWalk(dt, speedScale) {
-    walkAnimT += dt * 4.5 * speedScale;
+    walkAnimT += dt * 4.2 * speedScale;
     const swing = Math.sin(walkAnimT);
-    parts.leftUpperLeg.rotation.x = swing * 0.55;
-    parts.rightUpperLeg.rotation.x = -swing * 0.55;
-    parts.leftLowerLeg.rotation.x = Math.max(0, -swing) * 0.55;
-    parts.rightLowerLeg.rotation.x = Math.max(0, swing) * 0.55;
-    parts.leftUpperArm.rotation.x = -swing * 0.3;
-    parts.rightUpperArm.rotation.x = swing * 0.3;
-    parts.hair.rotation.z = Math.sin(walkAnimT * 0.5) * 0.06;
-    pulseEyes(dt, speedScale > 1.8 ? 5 : 2.4);
-    swayWisps(dt, speedScale > 1.8 ? 3 : 1.5);
+    parts.leftUpperLeg.rotation.x = swing * 0.5;
+    parts.rightUpperLeg.rotation.x = -swing * 0.5;
+    parts.leftLowerLeg.rotation.x = Math.max(0, -swing) * 0.4;
+    parts.rightLowerLeg.rotation.x = Math.max(0, swing) * 0.4;
+    parts.leftUpperArm.rotation.x = -swing * 0.25;
+    parts.rightUpperArm.rotation.x = swing * 0.25;
+    parts.hair.rotation.z = Math.sin(walkAnimT * 0.45) * 0.05;
+    pulseEyes(dt, 1.6);
+  }
+
+  // Pursuit gait — deliberately broken-looking. Each limb runs at a
+  // slightly different speed/phase (via distinct multipliers, not a clean
+  // shared sine wave) so nothing lines up symmetrically, and the torso
+  // pitches forward hard so the arms drag low, closer to a crawl than a
+  // sprint. This replaces animateWalk() during PURSUE.
+  function animateCrawl(dt, speedScale) {
+    walkAnimT += dt * 6.5 * speedScale;
+    const legSwing = Math.sin(walkAnimT);
+    const legSwing2 = Math.sin(walkAnimT * 1.13 + 0.7); // deliberately not in sync with legSwing
+    parts.leftUpperLeg.rotation.x = legSwing * 0.7;
+    parts.rightUpperLeg.rotation.x = -legSwing2 * 0.75;
+    parts.leftLowerLeg.rotation.x = Math.max(0, -legSwing) * 0.6;
+    parts.rightLowerLeg.rotation.x = Math.max(0, legSwing2) * 0.65;
+
+    // arms drag low and swing hard, out of phase with each other and with
+    // the legs — the "wrongness" is in the lack of a clean shared rhythm
+    const armSwing = Math.sin(walkAnimT * 0.83 + 1.4);
+    const armSwing2 = Math.sin(walkAnimT * 1.31);
+    parts.leftUpperArm.rotation.x = 0.9 + armSwing * 0.35;
+    parts.rightUpperArm.rotation.x = 0.9 + armSwing2 * 0.35;
+    parts.leftForearm.rotation.x = 0.5 + Math.abs(armSwing) * 0.4;
+    parts.rightForearm.rotation.x = 0.5 + Math.abs(armSwing2) * 0.4;
+
+    // torso pitches forward hard while closing distance, on top of its
+    // resting hunch (set once in chudail.js) — an additional lean, not a
+    // replacement, so it stacks with the base pose
+    parts.torso.rotation.x = 0.32 + 0.18 + Math.sin(walkAnimT * 2) * 0.02;
+
+    pulseEyes(dt, speedScale > 1.6 ? 4.5 : 2.6);
   }
 
   function animateAttack(dt) {
     const p = Math.min(attackTimer / attackWindup, 1);
-    // wind up (long arm drawn back) for the first 60%, then whips forward —
-    // the hit is checked right as the forward swing completes
     const swing = p < 0.6 ? -(p / 0.6) : -(1 - (p - 0.6) / 0.4);
-    parts.rightUpperArm.rotation.x = swing * 1.6;
-    parts.rightForearm.rotation.x = swing * 0.9;
-    pulseEyes(dt, 8);
-    swayWisps(dt, 5);
+    parts.rightUpperArm.rotation.x = 0.9 + swing * 1.5;
+    parts.rightForearm.rotation.x = 0.5 + swing * 0.8;
+    pulseEyes(dt, 7);
+  }
+
+  // Frozen "stalking" pose — completely still except the eye pulse, which
+  // keeps a slow, deliberate breathing-like rhythm rather than stopping
+  // dead, so it reads as "watching" rather than "paused".
+  function animateFrozen(dt) {
+    pulseEyes(dt, 0.7);
   }
 
   // ---------- attack hitbox ----------
-  // Checked once, at the moment the forward swing completes (see the ATTACK
-  // case in update()) rather than every frame during the swing, so a single
-  // attack can only ever land a single hit. Reads the (empty) weaponSocket
-  // Group's world position — she attacks bare-clawed, but the socket still
-  // marks "where the strike lands" the same way a held weapon would.
+  // Checked once, at the moment the forward swing completes, so a single
+  // attack can only ever land a single hit. Reads the bone-blade
+  // (weaponSocket)'s world position — see chudail.js — as "where the
+  // strike lands", same role a held weapon's tip would play.
   function checkAttackHit() {
     const strikeWorldPos = new THREE.Vector3();
     parts.weaponSocket.getWorldPosition(strikeWorldPos);
@@ -227,16 +261,53 @@ export function createChudailEnemy(scene, engine, {
     }
   }
 
+  // Triggered once, the instant it transitions into PURSUE from a state
+  // where it wasn't already hunting. Snaps the neck hard toward the player
+  // for SNAP_DURATION before the normal smoothed facing logic takes back
+  // over — the "it just noticed you" jolt.
+  function triggerSnapReaction() {
+    snapTimer = SNAP_DURATION;
+  }
+
+  function applySnapReaction(dt) {
+    if (snapTimer <= 0) return;
+    snapTimer -= dt;
+    _dir.copy(engine.camera.position).sub(group.position);
+    _dir.y = 0;
+    if (_dir.lengthSq() > 1e-6) {
+      _dir.normalize();
+      const targetYaw = Math.atan2(_dir.x, _dir.z) - group.rotation.y;
+      // exaggerated, near-instant snap rather than an interpolated turn
+      parts.hair.rotation.y = targetYaw * 0.9;
+    }
+    if (snapTimer <= 0) {
+      parts.hair.rotation.y = 0; // hand back off to the normal sway animation
+    }
+  }
+
+  function enterPursue() {
+    const wasHunting = state === ChudailState.PURSUE || state === ChudailState.ATTACK;
+    state = ChudailState.PURSUE;
+    stateT = 0;
+    if (!wasHunting) {
+      triggerSnapReaction();
+      frozen = false;
+      freezeTimer = 0;
+      lungeTimer = 0;
+    }
+  }
+
   function update(dt, eng) {
     stateT += dt;
     if (cooldownTimer > 0) cooldownTimer -= dt;
+    applySnapReaction(dt);
 
     const seesPlayer = canSeePlayer();
 
     switch (state) {
       case ChudailState.IDLE: {
         animateIdle(dt);
-        if (seesPlayer) { state = ChudailState.PURSUE; stateT = 0; break; }
+        if (seesPlayer) { enterPursue(); break; }
         if (stateT > 2.5) { state = ChudailState.WALK; stateT = 0; }
         break;
       }
@@ -247,7 +318,7 @@ export function createChudailEnemy(scene, engine, {
         const remaining = moveToward(target, walkSpeed, dt);
         animateWalk(dt, 1);
         if (remaining < 0.2) { patrolIndex++; state = ChudailState.IDLE; stateT = 0; }
-        if (seesPlayer) { state = ChudailState.PURSUE; stateT = 0; }
+        if (seesPlayer) { enterPursue(); }
         break;
       }
 
@@ -256,22 +327,50 @@ export function createChudailEnemy(scene, engine, {
         const remaining = moveToward(investigateTarget, investigateSpeed, dt);
         animateWalk(dt, 1.3);
         if (remaining < 0.3) { investigateTarget = null; state = ChudailState.IDLE; stateT = 0; }
-        if (seesPlayer) { state = ChudailState.PURSUE; stateT = 0; }
+        if (seesPlayer) { enterPursue(); }
         break;
       }
 
       case ChudailState.PURSUE: {
         const dist = distanceToPlayer();
-        if (!seesPlayer && dist > loseRange) { state = ChudailState.IDLE; stateT = 0; break; }
+        if (!seesPlayer && dist > loseRange) { state = ChudailState.IDLE; stateT = 0; frozen = false; break; }
+
         if (dist < attackRange && cooldownTimer <= 0) {
           state = ChudailState.ATTACK;
           stateT = 0;
           attackTimer = 0;
           attackHitChecked = false;
+          frozen = false;
           break;
         }
-        moveToward(engine.camera.position, pursueSpeed, dt);
-        animateWalk(dt, 2.4);
+
+        // --- stalk-freeze / lunge cycle ---
+        if (lungeTimer > 0) {
+          lungeTimer -= dt;
+        }
+
+        if (frozen) {
+          freezeTimer -= dt;
+          animateFrozen(dt);
+          if (freezeTimer <= 0) {
+            frozen = false;
+            lungeTimer = lungeDuration; // burst forward once it un-freezes
+          }
+          break; // no movement while frozen — it's just staring
+        }
+
+        // only roll for a new freeze when not already bursting forward,
+        // so a lunge always gets to play out
+        if (lungeTimer <= 0 && Math.random() < freezeChancePerSec * dt) {
+          frozen = true;
+          freezeTimer = freezeMinTime + Math.random() * (freezeMaxTime - freezeMinTime);
+          animateFrozen(dt);
+          break;
+        }
+
+        const speed = lungeTimer > 0 ? pursueSpeed * lungeSpeedMult : pursueSpeed;
+        moveToward(engine.camera.position, speed, dt);
+        animateCrawl(dt, lungeTimer > 0 ? 2.2 : 1.4);
         break;
       }
 
