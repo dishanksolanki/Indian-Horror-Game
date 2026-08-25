@@ -1,31 +1,37 @@
 // chudail.js — procedural model for the haveli's stalking presence.
 //
-// v6: HEADLESS SWORDSMAN, BLOODIED. Same broad, armored, corpse-pale
-// warrior as v5, ending in a jagged neck wound instead of a head — but now
-// caked in dark, half-dried blood (crusted matte patches + a few fresher
-// glossy drips), with visibly thicker/heavier arms and legs so he reads as
-// something that could actually cave a door in, and a bigger, uglier,
-// serrated sword dripping down the blade. Colors stay muted/desaturated
-// (ash, rust, oxidized bronze, near-black blood) with a grime canvas
-// texture over the base color, to avoid the flat "cartoon" look at low
-// poly counts.
+// v7: COMPLETE REDESIGN — "THE STRIPPED ONE". Scrapped the armored
+// swordsman look entirely. This is a gaunt, starved, WRONG-jointed
+// humanoid: too-long limbs that hang past the knees, a spine that arches
+// and bulges through torn skin, ribs pushing out through the chest,
+// backward-bending digitigrade legs (like a broken puppet), clawed
+// fingers/toes instead of hands/feet, and a long, unnaturally bent neck
+// that ends in the same faceless wound as before — except now the wound
+// sits HIGHER, thrown back, like the neck snapped and kept growing anyway.
+// Instead of a held sword, a jagged bone blade erupts directly out of the
+// right forearm through torn flesh, dripping where it pierces the skin —
+// this is not a weapon he picked up, it's part of him.
 //
-// Filename/export name (createChudailModel) kept the same as every prior
-// version so nothing importing this (chudailenemy.js, room21.js) needs an
-// import-path change. `parts` keeps the exact same key shape as before —
-// see the v5 header notes below, still accurate:
-//   - `hair` -> the neck-sway pivot (there's no hair; it's the stump's own
-//     Group, so chudailenemy.js's existing sway animation still has
-//     something sensible to rotate).
-//   - `head` -> the stump/wound Group itself (no face geometry inside it).
-//   - `leftEye`/`rightEye`/`eyeMaterial`/`eyeLight` -> two small embers
-//     inside the neck wound, instead of sitting on a face.
-//   - `weaponSocket` -> holds the sword mesh (blade/guard/hilt).
+// The "wrongness" (elongation, reversed joints, exposed anatomy) is the
+// horror here, not gore-for-its-own-sake — gore is layered on top as
+// dark, half-dried blood/ichor, kept desaturated so it reads as texture,
+// not a cartoon splatter.
+//
+// Filename/export name (createChudailModel) kept the same so nothing
+// importing this (chudailenemy.js, room21.js) needs an import-path change.
+// `parts` keeps the SAME key shape as every prior version so the existing
+// state machine / animation code in chudailenemy.js keeps working exactly
+// as before:
+//   - `hair` -> neck-sway pivot (now the base of the long bent neck).
+//   - `head` -> the stump/wound Group at the top of the neck.
+//   - `leftEye`/`rightEye`/`eyeMaterial`/`eyeLight` -> two faint embers
+//     inside the wound, now a sickly pale white-green instead of orange.
+//   - `weaponSocket` -> now the bone blade jutting from the right forearm.
 
 import * as THREE from "three";
 
-// ---------- grime/mottling texture, muted palette on purpose ----------
-function makeGrimeTexture({ base, blotchColor, size = 128, blotches = 60, seed = 1 }) {
+// ---------- grime/vein texture ----------
+function makeSkinTexture({ base, veinColor, blotchColor, size = 128, veins = 40, blotches = 40, seed = 1 }) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext("2d");
@@ -38,22 +44,38 @@ function makeGrimeTexture({ base, blotchColor, size = 128, blotches = 60, seed =
     return s / 233280;
   };
 
+  // dark blotches — bruising, rot
   for (let i = 0; i < blotches; i++) {
-    const x = rand() * size;
-    const y = rand() * size;
-    const r = 3 + rand() * 16;
+    const x = rand() * size, y = rand() * size, r = 2 + rand() * 10;
     ctx.beginPath();
     ctx.fillStyle = blotchColor;
-    ctx.globalAlpha = 0.15 + rand() * 0.3;
+    ctx.globalAlpha = 0.12 + rand() * 0.25;
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
   }
+
+  // thin branching veins, visible under stretched-taut skin
+  ctx.globalAlpha = 0.4;
+  for (let i = 0; i < veins; i++) {
+    let x = rand() * size, y = rand() * size;
+    ctx.strokeStyle = veinColor;
+    ctx.lineWidth = 0.6 + rand() * 1.2;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    const segs = 3 + Math.floor(rand() * 3);
+    for (let j = 0; j < segs; j++) {
+      x += (rand() - 0.5) * 18;
+      y += (rand() - 0.5) * 18;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
   ctx.globalAlpha = 1;
-  const speckleCount = Math.floor(size * size * 0.035);
+  const speckleCount = Math.floor(size * size * 0.03);
   for (let i = 0; i < speckleCount; i++) {
-    const x = rand() * size;
-    const y = rand() * size;
-    ctx.fillStyle = rand() > 0.5 ? "rgba(0,0,0,0.25)" : "rgba(255,255,255,0.04)";
+    const x = rand() * size, y = rand() * size;
+    ctx.fillStyle = rand() > 0.5 ? "rgba(0,0,0,0.22)" : "rgba(255,255,255,0.035)";
     ctx.fillRect(x, y, 1, 1);
   }
 
@@ -62,67 +84,23 @@ function makeGrimeTexture({ base, blotchColor, size = 128, blotches = 60, seed =
   return tex;
 }
 
-// ---------- blood-streaked variant: same grime base, plus dark red-black
-// drip smears painted over the top, for skin/cloth that should look soaked ----------
-function makeBloodstainTexture({ base, blotchColor, bloodColor, size = 128, blotches = 55, drips = 10, seed = 1 }) {
+function makeRagTexture({ base, blotchColor, seed = 1, size = 128, blotches = 45 }) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, size, size);
-
   let s = seed * 9301 + 49297;
-  const rand = () => {
-    s = (s * 9301 + 49297) % 233280;
-    return s / 233280;
-  };
-
+  const rand = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
   for (let i = 0; i < blotches; i++) {
-    const x = rand() * size;
-    const y = rand() * size;
-    const r = 3 + rand() * 14;
+    const x = rand() * size, y = rand() * size, r = 3 + rand() * 14;
     ctx.beginPath();
     ctx.fillStyle = blotchColor;
     ctx.globalAlpha = 0.15 + rand() * 0.3;
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
   }
-
-  // dark blood drips — vertical streaks of varying width/length, mostly
-  // pooling darker at the bottom, like it's run and half-dried
-  for (let i = 0; i < drips; i++) {
-    const x = rand() * size;
-    const yTop = rand() * size * 0.5;
-    const len = size * (0.25 + rand() * 0.45);
-    const w = 2 + rand() * 5;
-    ctx.globalAlpha = 0.35 + rand() * 0.35;
-    const grad = ctx.createLinearGradient(x, yTop, x, yTop + len);
-    grad.addColorStop(0, bloodColor);
-    grad.addColorStop(1, "rgba(10,2,2,0.05)");
-    ctx.fillStyle = grad;
-    ctx.fillRect(x - w / 2, yTop, w, len);
-  }
-  // a few blotchy pooled stains
-  for (let i = 0; i < Math.floor(drips * 0.6); i++) {
-    const x = rand() * size;
-    const y = rand() * size;
-    const r = 4 + rand() * 10;
-    ctx.globalAlpha = 0.3 + rand() * 0.3;
-    ctx.fillStyle = bloodColor;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
   ctx.globalAlpha = 1;
-  const speckleCount = Math.floor(size * size * 0.035);
-  for (let i = 0; i < speckleCount; i++) {
-    const x = rand() * size;
-    const y = rand() * size;
-    ctx.fillStyle = rand() > 0.5 ? "rgba(0,0,0,0.25)" : "rgba(255,255,255,0.04)";
-    ctx.fillRect(x, y, 1, 1);
-  }
-
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   return tex;
@@ -130,37 +108,30 @@ function makeBloodstainTexture({ base, blotchColor, bloodColor, size = 128, blot
 
 export function createChudailModel() {
   const group = new THREE.Group();
-  group.name = "headlessSwordsman";
+  group.name = "strippedOne";
 
-  // ---------- materials — muted, desaturated, NOT flat/saturated ----------
-  const skinTex = makeBloodstainTexture({
-    base: "#6b6258", blotchColor: "rgba(20,15,12,0.5)", bloodColor: "rgba(30,4,4,0.8)",
-    seed: 4, blotches: 60, drips: 9,
-  }); // ash-grey corpse skin, blood-run down the chest/arms
-  const skinMat = new THREE.MeshStandardMaterial({ map: skinTex, roughness: 0.95 });
+  // ---------- materials ----------
+  const skinTex = makeSkinTexture({
+    base: "#8a8577", veinColor: "rgba(35,10,10,0.55)", blotchColor: "rgba(15,10,8,0.5)",
+    seed: 5, veins: 46, blotches: 40,
+  }); // sickly, stretched-taut pale skin, thin visible veins
+  const skinMat = new THREE.MeshStandardMaterial({ map: skinTex, roughness: 0.92 });
 
-  const armorTex = makeGrimeTexture({ base: "#3a2f26", blotchColor: "rgba(10,8,6,0.5)", seed: 9, blotches: 55 }); // oxidized leather/bronze armor
-  const armorMat = new THREE.MeshStandardMaterial({ map: armorTex, roughness: 0.85, metalness: 0.15 });
+  const muscleMat = new THREE.MeshStandardMaterial({ color: 0x4a1512, roughness: 0.75 }); // exposed muscle/tendon under torn skin
+  const boneMat = new THREE.MeshStandardMaterial({ color: 0xcfc39f, roughness: 0.55 }); // yellowed, exposed bone
+  const woundMat = new THREE.MeshStandardMaterial({ color: 0x160504, roughness: 0.9 });
 
-  const clothTex = makeBloodstainTexture({
-    base: "#4a1c18", blotchColor: "rgba(10,4,3,0.55)", bloodColor: "rgba(20,2,2,0.85)",
-    seed: 13, blotches: 50, drips: 7,
-  }); // dried-blood rust dhoti, soaked further at the waist
-  const clothMat = new THREE.MeshStandardMaterial({ map: clothTex, roughness: 0.92, side: THREE.DoubleSide });
+  const wetBloodMat = new THREE.MeshStandardMaterial({ color: 0x330706, roughness: 0.2, metalness: 0.04 });
+  const driedBloodMat = new THREE.MeshStandardMaterial({ color: 0x150302, roughness: 0.95 });
 
-  const woundMat = new THREE.MeshStandardMaterial({ color: 0x1c0605, roughness: 0.9 }); // dark, wet-looking wound interior
-  const boneMat = new THREE.MeshStandardMaterial({ color: 0x8a7d68, roughness: 0.7 }); // exposed vertebra stub
+  const ragTex = makeRagTexture({ base: "#2a211c", blotchColor: "rgba(8,5,4,0.55)", seed: 21 });
+  const ragMat = new THREE.MeshStandardMaterial({ map: ragTex, roughness: 0.95, side: THREE.DoubleSide });
 
-  // fresh wet blood (glossy, still catches light) vs. old dried crust (flat, near-black)
-  const wetBloodMat = new THREE.MeshStandardMaterial({ color: 0x3a0806, roughness: 0.2, metalness: 0.05 });
-  const driedBloodMat = new THREE.MeshStandardMaterial({ color: 0x160302, roughness: 0.95 });
+  const clawMat = new THREE.MeshStandardMaterial({ color: 0x2c2620, roughness: 0.5 }); // blackened nails/claws
 
-  const bladeMat = new THREE.MeshStandardMaterial({ color: 0x54564f, roughness: 0.4, metalness: 0.7 }); // dulled, notched, darker steel
-  const hiltMat = new THREE.MeshStandardMaterial({ color: 0x241a14, roughness: 0.85 });
-  const guardMat = new THREE.MeshStandardMaterial({ color: 0x4c3d22, roughness: 0.55, metalness: 0.45 });
-
-  // embers glowing inside the neck wound — the only "face" this design has
-  const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xff5a1a, transparent: true, opacity: 0.75 });
+  // sickly, faint white-green embers deep in the wound — not "demon red",
+  // meant to feel cold and wrong rather than aggressive
+  const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xcdeadd, transparent: true, opacity: 0.6 });
 
   function addMesh(parent, geo, mat, x = 0, y = 0, z = 0, castShadow = true) {
     const mesh = new THREE.Mesh(geo, mat);
@@ -170,8 +141,6 @@ export function createChudailModel() {
     return mesh;
   }
 
-  // small helper for painting a blood drip/streak anywhere on the body —
-  // a thin tapered box, slightly rotated, dark and half-glossy
   function addBloodDrip(parent, { x, y, z, len = 0.1, width = 0.02, rot = 0, mat = wetBloodMat, tiltX = 0 }) {
     const drip = addMesh(parent, new THREE.BoxGeometry(width, len, 0.006), mat, x, y, z, false);
     drip.rotation.z = rot;
@@ -179,132 +148,153 @@ export function createChudailModel() {
     return drip;
   }
 
+  // a bent claw: a few tapered segments angling inward, for hands/feet
+  function addClaw(parent, { x, y, z, len = 0.07, rot = 0, rotZ = 0 }) {
+    const claw = addMesh(parent, new THREE.ConeGeometry(0.012, len, 4), clawMat, x, y, z);
+    claw.rotation.x = rot;
+    claw.rotation.z = rotZ;
+    return claw;
+  }
+
   // ============================================================
-  // HIPS (root) — feet touch y=0. Broad and heavy, not lithe.
+  // HIPS (root) — narrow, starved pelvis, hip bones jutting visibly.
   // ============================================================
-  const HIP_Y = 0.95;
+  const HIP_Y = 1.0;
   const hips = new THREE.Group();
   hips.position.set(0, HIP_Y, 0);
   group.add(hips);
-  addMesh(hips, new THREE.BoxGeometry(0.44, 0.2, 0.28), clothMat, 0, 0, 0);
-  addMesh(hips, new THREE.CylinderGeometry(0.06, 0.05, 0.24, 6), armorMat, 0, 0.02, 0.16).rotation.x = Math.PI / 2; // belt buckle bar
+  addMesh(hips, new THREE.BoxGeometry(0.3, 0.16, 0.2), skinMat, 0, 0, 0);
+  addMesh(hips, new THREE.BoxGeometry(0.08, 0.1, 0.06), ragMat, 0, -0.1, 0); // scrap of ragged cloth, not real coverage
+  // jutting hip bone points
+  addMesh(hips, new THREE.ConeGeometry(0.02, 0.06, 4), boneMat, -0.13, 0.03, 0.06).rotation.z = 0.6;
+  addMesh(hips, new THREE.ConeGeometry(0.02, 0.06, 4), boneMat, 0.13, 0.03, 0.06).rotation.z = -0.6;
 
   // ============================================================
-  // TORSO — broad, bulky, armor plates over bare corpse-grey skin. Slight
-  // forward set to the shoulders (weight of the sword/stance), not a frail
-  // stoop.
+  // TORSO — concave, starved, ribs pushing out through torn skin, spine
+  // bulging up the back. Hunched hard forward — a broken-looking posture,
+  // not an upright "warrior" stance.
   // ============================================================
-  const TORSO_H = 0.62;
+  const TORSO_H = 0.58;
   const torso = new THREE.Group();
-  torso.position.set(0, 0.1, 0);
-  torso.rotation.x = 0.06;
+  torso.position.set(0, 0.08, 0);
+  torso.rotation.x = 0.32; // hard hunch
   hips.add(torso);
 
-  addMesh(torso, new THREE.BoxGeometry(0.46, TORSO_H, 0.28), skinMat, 0, TORSO_H / 2, 0);
-  // chest armor plate
-  addMesh(torso, new THREE.BoxGeometry(0.34, TORSO_H * 0.65, 0.06), armorMat, 0, TORSO_H * 0.55, 0.16);
-  // crossed leather straps
-  const strapL = addMesh(torso, new THREE.BoxGeometry(0.05, TORSO_H + 0.1, 0.02), armorMat, -0.06, TORSO_H / 2, 0.17);
-  strapL.rotation.z = 0.5;
-  const strapR = addMesh(torso, new THREE.BoxGeometry(0.05, TORSO_H + 0.1, 0.02), armorMat, 0.06, TORSO_H / 2, 0.17);
-  strapR.rotation.z = -0.5;
-  // torn cloth hanging from the waist
-  const tornOffsets = [-0.18, -0.08, 0.02, 0.12, 0.2];
-  tornOffsets.forEach((ox, i) => {
-    const len = 0.3 + ((i * 37) % 5) * 0.05;
-    const strip = addMesh(torso, new THREE.PlaneGeometry(0.1, len), clothMat, ox, -0.14 - len / 2, 0.13);
-    strip.rotation.z = (i - 2) * 0.05;
+  // concave chest — narrower at the bottom, slightly wider/hollow at the ribs
+  addMesh(torso, new THREE.BoxGeometry(0.34, TORSO_H, 0.18), skinMat, 0, TORSO_H / 2, -0.01);
+
+  // ribs bulging through torn skin, three arcs down the side
+  [0.62, 0.46, 0.3].forEach((t, i) => {
+    const rib = addMesh(torso, new THREE.TorusGeometry(0.1, 0.012, 5, 8, Math.PI * 0.9), boneMat, 0, TORSO_H * t, 0.05);
+    rib.rotation.y = Math.PI / 2;
+    rib.rotation.z = Math.PI * 0.05;
+    // torn skin flap around the rib
+    addMesh(torso, new THREE.PlaneGeometry(0.14, 0.05), muscleMat, 0, TORSO_H * t, 0.09).rotation.x = 0.3;
   });
 
-  // blood run down the front of the chest plate and skin, as if it poured
-  // out of the neck stump and down the body
-  addBloodDrip(torso, { x: -0.03, y: TORSO_H * 0.78, z: 0.195, len: 0.34, width: 0.03, mat: wetBloodMat });
-  addBloodDrip(torso, { x: 0.05, y: TORSO_H * 0.7, z: 0.195, len: 0.22, width: 0.022, mat: driedBloodMat });
-  addBloodDrip(torso, { x: 0.12, y: TORSO_H * 0.5, z: 0.15, len: 0.18, width: 0.02, rot: 0.15, mat: driedBloodMat });
-  // pooled dried blood low on the belly/waist
-  addMesh(torso, new THREE.SphereGeometry(0.06, 8, 6), driedBloodMat, 0.02, 0.02, 0.16, false).scale.set(1, 0.4, 0.5);
+  // spine bulging up the back, a row of raised vertebra bumps
+  for (let i = 0; i < 6; i++) {
+    const t = 0.12 + i * 0.14;
+    addMesh(torso, new THREE.SphereGeometry(0.02 - i * 0.001, 5, 5), boneMat, 0, TORSO_H * t, -0.1);
+  }
+
+  // ragged loincloth scraps, hanging unevenly
+  const tornOffsets = [-0.1, 0.02, 0.12];
+  tornOffsets.forEach((ox, i) => {
+    const len = 0.22 + ((i * 37) % 5) * 0.04;
+    const strip = addMesh(torso, new THREE.PlaneGeometry(0.08, len), ragMat, ox, -0.05 - len / 2, 0.06);
+    strip.rotation.z = (i - 1) * 0.08;
+  });
+
+  // blood/ichor running down the chest from the neck
+  addBloodDrip(torso, { x: -0.02, y: TORSO_H * 0.85, z: 0.1, len: 0.3, width: 0.026, mat: wetBloodMat });
+  addBloodDrip(torso, { x: 0.06, y: TORSO_H * 0.7, z: 0.1, len: 0.18, width: 0.018, mat: driedBloodMat });
 
   // ============================================================
-  // NECK STUMP — where the head would be. Jagged, uneven, dark wound
-  // interior with an exposed vertebra stub, blood crusted around the rim
-  // and dripping down onto the shoulders, and two embers glowing within.
-  // No head geometry at all past this point.
+  // NECK — long, unnaturally bent, made of two extra segments instead of
+  // sitting flush on the shoulders. Ends thrown back and up in the same
+  // wound/stump as before (kept faceless on purpose).
   // ============================================================
-  const neckPivot = new THREE.Group(); // maps to parts.hair (sway pivot)
+  const neckPivot = new THREE.Group(); // maps to parts.hair (sway pivot) — base of the neck
   neckPivot.position.set(0, TORSO_H, 0);
+  neckPivot.rotation.x = -0.5; // arches backward immediately, unnatural
   torso.add(neckPivot);
 
-  const stump = new THREE.Group(); // maps to parts.head
-  neckPivot.add(stump);
+  const NECK_SEG = 0.16;
+  addMesh(neckPivot, new THREE.CylinderGeometry(0.045, 0.055, NECK_SEG, 6), skinMat, 0, NECK_SEG / 2, 0);
 
-  // jagged base of the neck — irregular stacked boxes at slightly different
-  // rotations/sizes instead of one clean cylinder, so the cut reads as torn
+  const neckMid = new THREE.Group();
+  neckMid.position.set(0, NECK_SEG, 0);
+  neckMid.rotation.x = 0.35; // bends back the other way — a visibly broken angle
+  neckPivot.add(neckMid);
+  addMesh(neckMid, new THREE.CylinderGeometry(0.038, 0.045, NECK_SEG, 6), skinMat, 0, NECK_SEG / 2, 0);
+  // a knob of exposed vertebra at the bend, where skin has split
+  addMesh(neckMid, new THREE.SphereGeometry(0.022, 6, 6), boneMat, 0, 0.01, 0.02);
+
+  const stump = new THREE.Group(); // maps to parts.head — the wound itself
+  stump.position.set(0, NECK_SEG, 0);
+  neckMid.add(stump);
+
   const jaggedOffsets = [
-    { x: -0.05, y: 0.02, z: -0.03, s: 0.09, r: 0.3 },
-    { x: 0.04, y: 0.03, z: 0.02, s: 0.1, r: -0.2 },
-    { x: 0, y: 0.06, z: -0.01, s: 0.07, r: 0.1 },
-    { x: -0.02, y: 0.01, z: 0.04, s: 0.08, r: -0.35 },
+    { x: -0.04, y: 0.02, z: -0.02, s: 0.075, r: 0.3 },
+    { x: 0.035, y: 0.025, z: 0.015, s: 0.08, r: -0.2 },
+    { x: 0, y: 0.05, z: -0.01, s: 0.06, r: 0.1 },
   ];
   jaggedOffsets.forEach((o) => {
     const chunk = addMesh(stump, new THREE.BoxGeometry(o.s, o.s * 0.6, o.s), skinMat, o.x, o.y, o.z);
     chunk.rotation.set(o.r, o.r * 0.5, o.r * 0.3);
   });
-  // dark wound cavity — slightly larger/uglier than before
-  addMesh(stump, new THREE.CylinderGeometry(0.078, 0.085, 0.09, 8), woundMat, 0, 0.04, 0);
-  // crusted blood ring around the wound's rim
-  const rim = addMesh(stump, new THREE.TorusGeometry(0.08, 0.014, 5, 10), driedBloodMat, 0, 0.075, 0);
+  addMesh(stump, new THREE.CylinderGeometry(0.06, 0.065, 0.075, 8), woundMat, 0, 0.035, 0);
+  const rim = addMesh(stump, new THREE.TorusGeometry(0.062, 0.011, 5, 10), driedBloodMat, 0, 0.065, 0);
   rim.rotation.x = Math.PI / 2;
-  // exposed vertebra stub, just visible above the wound line
-  addMesh(stump, new THREE.CylinderGeometry(0.018, 0.022, 0.05, 6), boneMat, 0, 0.09, 0);
+  addMesh(stump, new THREE.CylinderGeometry(0.015, 0.018, 0.045, 6), boneMat, 0, 0.08, 0);
 
-  // blood streaming from the wound, down over the shoulders and chest
-  addBloodDrip(stump, { x: -0.07, y: -0.02, z: 0.03, len: 0.16, width: 0.024, rot: -0.25, mat: wetBloodMat });
-  addBloodDrip(stump, { x: 0.06, y: -0.03, z: 0.02, len: 0.13, width: 0.02, rot: 0.2, mat: wetBloodMat });
-  addBloodDrip(stump, { x: 0.0, y: -0.02, z: 0.07, len: 0.1, width: 0.018, mat: driedBloodMat });
+  addBloodDrip(stump, { x: -0.05, y: -0.02, z: 0.02, len: 0.12, width: 0.02, rot: -0.2, mat: wetBloodMat });
+  addBloodDrip(stump, { x: 0.045, y: -0.02, z: 0.015, len: 0.09, width: 0.016, rot: 0.15, mat: driedBloodMat });
 
-  // embers — replace eyes entirely, sit low inside the wound cavity rather
-  // than at "eye height" on a face that doesn't exist
-  const leftEye = addMesh(stump, new THREE.SphereGeometry(0.014, 6, 6), eyeMaterial, -0.025, 0.03, 0.04, false);
-  const rightEye = addMesh(stump, new THREE.SphereGeometry(0.014, 6, 6), eyeMaterial, 0.025, 0.03, 0.04, false);
-  const eyeLight = new THREE.PointLight(0xff5a1a, 0.35, 1.4, 2);
-  eyeLight.position.set(0, 0.04, 0.03);
+  const leftEye = addMesh(stump, new THREE.SphereGeometry(0.012, 6, 6), eyeMaterial, -0.02, 0.03, 0.035, false);
+  const rightEye = addMesh(stump, new THREE.SphereGeometry(0.012, 6, 6), eyeMaterial, 0.02, 0.03, 0.035, false);
+  const eyeLight = new THREE.PointLight(0xcdeadd, 0.25, 1.2, 2);
+  eyeLight.position.set(0, 0.035, 0.025);
   stump.add(eyeLight);
 
   // ============================================================
-  // ARMS — thick, heavy, armored vambraces over corpse-grey skin.
-  // Noticeably bulkier than before (per request), so he reads as a
-  // brute who can actually swing that sword through a door.
+  // ARMS — too long. Upper+lower arm combined length hangs well past the
+  // knee at rest, thin but corded with visible tendon, ending in long
+  // clawed fingers instead of a hand.
   // ============================================================
   function buildArm(side) {
     const sign = side === "left" ? -1 : 1;
     const shoulder = new THREE.Group();
-    shoulder.position.set(sign * 0.28, TORSO_H - 0.04, 0);
+    shoulder.position.set(sign * 0.19, TORSO_H - 0.02, 0);
     torso.add(shoulder);
-    // shoulder plate — bigger, to sit on top of the thicker upper arm
-    addMesh(shoulder, new THREE.BoxGeometry(0.19, 0.13, 0.19), armorMat, sign * 0.02, 0.02, 0);
+    // jutting shoulder bone, no armor plate this time — bare and starved
+    addMesh(shoulder, new THREE.ConeGeometry(0.025, 0.07, 5), boneMat, sign * 0.03, 0.03, 0);
 
-    const UPPER_LEN = 0.28;
-    addMesh(shoulder, new THREE.CylinderGeometry(0.065, 0.055, UPPER_LEN, 6), skinMat, 0, -UPPER_LEN / 2, 0);
-    // blood smeared down the bicep
-    addBloodDrip(shoulder, { x: sign * 0.03, y: -UPPER_LEN * 0.55, z: 0.05, len: 0.14, width: 0.018, mat: driedBloodMat });
+    const UPPER_LEN = 0.4; // long
+    addMesh(shoulder, new THREE.CylinderGeometry(0.035, 0.028, UPPER_LEN, 6), skinMat, 0, -UPPER_LEN / 2, 0);
+    addBloodDrip(shoulder, { x: sign * 0.02, y: -UPPER_LEN * 0.5, z: 0.035, len: 0.14, width: 0.014, mat: driedBloodMat });
 
     const forearmPivot = new THREE.Group();
     forearmPivot.position.set(0, -UPPER_LEN, 0);
+    // slight permanent inward bend — the joint doesn't sit straight
+    forearmPivot.rotation.z = sign * -0.08;
     shoulder.add(forearmPivot);
 
-    const LOWER_LEN = 0.26;
-    addMesh(forearmPivot, new THREE.CylinderGeometry(0.055, 0.048, LOWER_LEN, 6), skinMat, 0, -LOWER_LEN / 2, 0);
-    // armored vambrace wrap — thicker to match the bulked-up forearm
-    addMesh(forearmPivot, new THREE.CylinderGeometry(0.064, 0.064, 0.11, 6), armorMat, 0, -LOWER_LEN + 0.17, 0);
-    // blood dripping off the vambrace toward the hand
-    addBloodDrip(forearmPivot, { x: 0.02, y: -LOWER_LEN + 0.06, z: 0.05, len: 0.09, width: 0.016, mat: wetBloodMat });
+    const LOWER_LEN = 0.38; // also long
+    addMesh(forearmPivot, new THREE.CylinderGeometry(0.028, 0.022, LOWER_LEN, 6), skinMat, 0, -LOWER_LEN / 2, 0);
+    // exposed tendon strip along the forearm
+    addMesh(forearmPivot, new THREE.BoxGeometry(0.012, LOWER_LEN * 0.7, 0.008), muscleMat, 0.02, -LOWER_LEN * 0.4, 0.02);
 
     const hand = new THREE.Group();
     hand.position.set(0, -LOWER_LEN, 0);
     forearmPivot.add(hand);
-    addMesh(hand, new THREE.SphereGeometry(0.055, 6, 6), skinMat, 0, 0, 0);
-    // blood-soaked knuckles
-    addMesh(hand, new THREE.SphereGeometry(0.02, 5, 5), wetBloodMat, 0.02, -0.01, 0.03, false);
+    addMesh(hand, new THREE.BoxGeometry(0.03, 0.05, 0.02), skinMat, 0, -0.02, 0); // narrow palm
+    // long clawed fingers, splayed
+    [-0.02, -0.007, 0.007, 0.02].forEach((fx, i) => {
+      addClaw(hand, { x: fx, y: -0.06 - i * 0.005, z: 0.01, len: 0.075, rot: Math.PI });
+    });
+    addClaw(hand, { x: -0.026, y: -0.03, z: 0.01, len: 0.05, rot: Math.PI * 0.75, rotZ: 0.4 }); // thumb claw
 
     return { shoulder, forearmPivot, hand };
   }
@@ -312,73 +302,65 @@ export function createChudailModel() {
   const leftArm = buildArm("left");
   const rightArm = buildArm("right");
 
-  // ---------- weapon: a heavy, notched, blood-caked khanda-style sword, socketed to the right hand ----------
+  // ---------- "weapon": a jagged bone blade erupting from the right forearm
+  // itself, not held — it grows out through torn flesh partway down the
+  // forearm, so the attack reads as a natural claw-strike, not a swordsman ----------
   const weaponSocket = new THREE.Group();
-  rightArm.hand.add(weaponSocket);
-  weaponSocket.rotation.x = Math.PI / 2.3;
+  rightArm.forearmPivot.add(weaponSocket);
+  weaponSocket.position.set(0.03, -0.16, 0.01);
+  weaponSocket.rotation.z = -0.15;
 
-  // grip — wrapped, dark, stained where the hand grips it
-  addMesh(weaponSocket, new THREE.CylinderGeometry(0.026, 0.026, 0.17, 6), hiltMat, 0, 0.085, 0); // grip
-  addMesh(weaponSocket, new THREE.CylinderGeometry(0.03, 0.03, 0.03, 6), wetBloodMat, 0, 0.02, 0); // blood-caked base of the grip
-  // crossguard — wider, with small spikes at each end
-  addMesh(weaponSocket, new THREE.BoxGeometry(0.2, 0.024, 0.034), guardMat, 0, 0.175, 0);
-  addMesh(weaponSocket, new THREE.ConeGeometry(0.018, 0.05, 5), guardMat, 0.1, 0.175, 0).rotation.z = -Math.PI / 2;
-  addMesh(weaponSocket, new THREE.ConeGeometry(0.018, 0.05, 5), guardMat, -0.1, 0.175, 0).rotation.z = Math.PI / 2;
-  addMesh(weaponSocket, new THREE.SphereGeometry(0.026, 6, 6), guardMat, 0, 0.0, 0); // pommel
+  // torn flesh ring where the bone punches through the skin
+  addMesh(weaponSocket, new THREE.TorusGeometry(0.025, 0.008, 5, 8), muscleMat, 0, 0, 0).rotation.x = Math.PI / 2;
+  addMesh(weaponSocket, new THREE.CylinderGeometry(0.02, 0.024, 0.02, 6), woundMat, 0, 0, 0);
 
-  // blade — tapered via two stacked boxes, wider/longer and darker than before
-  addMesh(weaponSocket, new THREE.BoxGeometry(0.065, 0.46, 0.014), bladeMat, 0, 0.42, 0);
-  addMesh(weaponSocket, new THREE.BoxGeometry(0.038, 0.19, 0.011), bladeMat, 0, 0.72, 0);
-  // dark fuller (blood groove) running down the center of the blade
-  addMesh(weaponSocket, new THREE.BoxGeometry(0.012, 0.55, 0.004), driedBloodMat, 0, 0.4, 0.006);
+  // the blade itself — irregular bone, tapering and slightly twisted, NOT a
+  // clean smith-made shape
+  addMesh(weaponSocket, new THREE.ConeGeometry(0.032, 0.22, 5), boneMat, 0, 0.13, 0);
+  addMesh(weaponSocket, new THREE.ConeGeometry(0.018, 0.16, 5), boneMat, 0.01, 0.3, 0.005).rotation.z = 0.06;
+  // jagged secondary spurs branching off the main blade
+  addMesh(weaponSocket, new THREE.ConeGeometry(0.012, 0.08, 4), boneMat, 0.025, 0.16, 0).rotation.z = -0.5;
+  addMesh(weaponSocket, new THREE.ConeGeometry(0.01, 0.06, 4), boneMat, -0.02, 0.22, 0).rotation.z = 0.6;
 
-  // serrated teeth along one edge, for a much nastier silhouette
-  const toothCount = 7;
-  for (let i = 0; i < toothCount; i++) {
-    const ty = 0.24 + i * 0.065;
-    const tooth = addMesh(weaponSocket, new THREE.ConeGeometry(0.014, 0.03, 3), bladeMat, 0.034, ty, 0);
-    tooth.rotation.z = -Math.PI / 2;
-    tooth.rotation.y = Math.PI / 6;
-  }
-
-  // notches/nicks along the other edge for wear
-  addMesh(weaponSocket, new THREE.BoxGeometry(0.014, 0.022, 0.016), bladeMat, -0.024, 0.5, 0);
-  addMesh(weaponSocket, new THREE.BoxGeometry(0.014, 0.022, 0.016), bladeMat, -0.024, 0.66, 0);
-  addMesh(weaponSocket, new THREE.BoxGeometry(0.012, 0.018, 0.014), bladeMat, -0.02, 0.8, 0);
-
-  // blood dripping down the blade and off the tip
-  addBloodDrip(weaponSocket, { x: 0.012, y: 0.55, z: 0.01, len: 0.16, width: 0.014, mat: wetBloodMat, rot: 0.04 });
-  addBloodDrip(weaponSocket, { x: -0.01, y: 0.32, z: 0.01, len: 0.1, width: 0.012, mat: driedBloodMat, rot: -0.03 });
-  addMesh(weaponSocket, new THREE.SphereGeometry(0.012, 5, 5), wetBloodMat, 0.008, 0.9, 0.005, false); // pooling drop at the tip
+  // blood where it pierces the arm, and dripping down the blade
+  addBloodDrip(weaponSocket, { x: -0.02, y: -0.02, z: 0.015, len: 0.09, width: 0.016, mat: wetBloodMat });
+  addBloodDrip(weaponSocket, { x: 0.015, y: 0.1, z: 0.01, len: 0.12, width: 0.012, mat: driedBloodMat, rot: 0.05 });
 
   // ============================================================
-  // LEGS — sturdy, thick, armored greaves over torn cloth, bare/sandaled
-  // feet. Noticeably heavier stance than before (per request).
+  // LEGS — digitigrade, backward-bending, like a broken marionette. Thin,
+  // starved, ending in clawed toes instead of a flat human foot.
   // ============================================================
   function buildLeg(side) {
     const sign = side === "left" ? -1 : 1;
     const upperLeg = new THREE.Group();
-    upperLeg.position.set(sign * 0.13, 0, 0);
+    upperLeg.position.set(sign * 0.09, 0, 0);
     hips.add(upperLeg);
 
-    const UPPER_LEN = 0.4;
-    addMesh(upperLeg, new THREE.CylinderGeometry(0.085, 0.075, UPPER_LEN, 6), clothMat, 0, -UPPER_LEN / 2, 0);
-    // dried blood smeared down the thigh
-    addBloodDrip(upperLeg, { x: sign * 0.03, y: -UPPER_LEN * 0.6, z: 0.06, len: 0.16, width: 0.02, mat: driedBloodMat });
+    const UPPER_LEN = 0.34;
+    addMesh(upperLeg, new THREE.CylinderGeometry(0.045, 0.032, UPPER_LEN, 6), skinMat, 0, -UPPER_LEN / 2, 0);
+    addBloodDrip(upperLeg, { x: sign * 0.015, y: -UPPER_LEN * 0.6, z: 0.03, len: 0.12, width: 0.014, mat: driedBloodMat });
 
     const lowerLeg = new THREE.Group();
     lowerLeg.position.set(0, -UPPER_LEN, 0);
+    // knee bends FORWARD (digitigrade / reversed), the core "wrongness" of the legs
+    lowerLeg.rotation.x = -0.55;
     upperLeg.add(lowerLeg);
 
-    const LOWER_LEN = 0.38;
-    addMesh(lowerLeg, new THREE.CylinderGeometry(0.065, 0.055, LOWER_LEN, 6), skinMat, 0, -LOWER_LEN / 2, 0);
-    // greave plate over the shin — bulked up to match the thicker leg
-    addMesh(lowerLeg, new THREE.BoxGeometry(0.095, 0.2, 0.065), armorMat, 0, -LOWER_LEN + 0.14, 0.03);
-    addMesh(lowerLeg, new THREE.BoxGeometry(0.08, 0.045, 0.16), skinMat, 0, -LOWER_LEN - 0.015, 0.03); // bare foot
-    // blood-crusted footprint smear across the top of the foot
-    addMesh(lowerLeg, new THREE.BoxGeometry(0.06, 0.01, 0.1), driedBloodMat, 0, -LOWER_LEN + 0.005, 0.03, false);
+    const LOWER_LEN = 0.3;
+    addMesh(lowerLeg, new THREE.CylinderGeometry(0.026, 0.03, LOWER_LEN, 6), skinMat, 0, -LOWER_LEN / 2, 0);
+    // sharp visible ankle/heel bone jutting backward
+    addMesh(lowerLeg, new THREE.ConeGeometry(0.018, 0.05, 4), boneMat, 0, -LOWER_LEN + 0.02, -0.03).rotation.x = -1.4;
 
-    return { upperLeg, lowerLeg };
+    const foot = new THREE.Group();
+    foot.position.set(0, -LOWER_LEN, 0);
+    foot.rotation.x = 1.1; // foot angles forward off the reversed ankle
+    lowerLeg.add(foot);
+    addMesh(foot, new THREE.BoxGeometry(0.035, 0.03, 0.05), skinMat, 0, 0, 0.02);
+    [-0.012, 0, 0.012].forEach((fx) => {
+      addClaw(foot, { x: fx, y: -0.01, z: 0.06, len: 0.05, rot: Math.PI * 0.55 });
+    });
+
+    return { upperLeg, lowerLeg: foot };
   }
 
   const leftLeg = buildLeg("left");
@@ -387,8 +369,8 @@ export function createChudailModel() {
   const parts = {
     hips,
     torso,
-    hair: neckPivot, // repurposed sway pivot — see file header note
-    head: stump,     // repurposed as the neck-wound stump — see file header note
+    hair: neckPivot, // repurposed sway pivot — base of the long bent neck
+    head: stump,     // repurposed as the neck-wound stump
     leftEye,
     rightEye,
     eyeLight,
