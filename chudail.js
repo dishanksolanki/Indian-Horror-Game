@@ -1,5 +1,13 @@
 // chudail.js — procedural model for the haveli's stalking presence.
 //
+// v9: multi-headed, multi-armed. The single small neck-wound became a
+// big, deformed main skull with a hinged jaw and three off-kilter eye
+// sockets, and two extra smaller heads now sprout from the torso on their
+// own bent stalks. A second, smaller arm pair also bursts from lower on
+// the ribs. Pair this with the matching animation additions in
+// chudailenemy.js (parts.extraHeads / parts.extraArms / parts.jawPivot),
+// or the new heads/arms will just hang there stiffly, which undercuts it.
+//
 // v8: same "Stripped One" silhouette as v7, but the whole material set was
 // pushed down toward near-black on purpose — see the materials block below
 // for why. Pair this with the erratic stalk/lunge behavior added to
@@ -226,68 +234,136 @@ export function createChudailModel() {
 
   // ============================================================
   // NECK — long, unnaturally bent, made of two extra segments instead of
-  // sitting flush on the shoulders. Ends thrown back and up in the same
-  // wound/stump as before (kept faceless on purpose).
+  // sitting flush on the shoulders. Ends in a big, deformed HEAD (see
+  // below) instead of the bare wound from earlier versions. Two more,
+  // smaller heads also sprout from the torso on their own stalks.
   // ============================================================
   const neckPivot = new THREE.Group(); // maps to parts.hair (sway pivot) — base of the neck
   neckPivot.position.set(0, TORSO_H, 0);
   neckPivot.rotation.x = -0.5; // arches backward immediately, unnatural
   torso.add(neckPivot);
 
-  const NECK_SEG = 0.16;
-  addMesh(neckPivot, new THREE.CylinderGeometry(0.045, 0.055, NECK_SEG, 6), skinMat, 0, NECK_SEG / 2, 0);
+  const NECK_SEG = 0.18;
+  addMesh(neckPivot, new THREE.CylinderGeometry(0.06, 0.07, NECK_SEG, 6), skinMat, 0, NECK_SEG / 2, 0);
 
   const neckMid = new THREE.Group();
   neckMid.position.set(0, NECK_SEG, 0);
   neckMid.rotation.x = 0.35; // bends back the other way — a visibly broken angle
   neckPivot.add(neckMid);
-  addMesh(neckMid, new THREE.CylinderGeometry(0.038, 0.045, NECK_SEG, 6), skinMat, 0, NECK_SEG / 2, 0);
+  addMesh(neckMid, new THREE.CylinderGeometry(0.05, 0.058, NECK_SEG, 6), skinMat, 0, NECK_SEG / 2, 0);
   // a knob of exposed vertebra at the bend, where skin has split
-  addMesh(neckMid, new THREE.SphereGeometry(0.022, 6, 6), boneMat, 0, 0.01, 0.02);
+  addMesh(neckMid, new THREE.SphereGeometry(0.028, 6, 6), boneMat, 0, 0.01, 0.02);
 
-  const stump = new THREE.Group(); // maps to parts.head — the wound itself
+  // ============================================================
+  // HEAD — big, deformed, jagged skull with a hinged, gaping jaw full of
+  // uneven teeth and three asymmetric eye sockets instead of a normal
+  // two-eyed face. Scaled up substantially so it dominates the silhouette
+  // and reads clearly even against the near-black body.
+  // ============================================================
+  const stump = new THREE.Group(); // maps to parts.head — the big skull
   stump.position.set(0, NECK_SEG, 0);
   neckMid.add(stump);
 
-  const jaggedOffsets = [
-    { x: -0.04, y: 0.02, z: -0.02, s: 0.075, r: 0.3 },
-    { x: 0.035, y: 0.025, z: 0.015, s: 0.08, r: -0.2 },
-    { x: 0, y: 0.05, z: -0.01, s: 0.06, r: 0.1 },
+  const skullChunks = [
+    { x: 0, y: 0.1, z: 0, sx: 0.28, sy: 0.24, sz: 0.26, r: 0 },
+    { x: -0.06, y: 0.15, z: -0.02, sx: 0.11, sy: 0.09, sz: 0.11, r: 0.35 },
+    { x: 0.07, y: 0.16, z: 0.01, sx: 0.1, sy: 0.08, sz: 0.1, r: -0.28 },
   ];
-  jaggedOffsets.forEach((o) => {
-    const chunk = addMesh(stump, new THREE.BoxGeometry(o.s, o.s * 0.6, o.s), skinMat, o.x, o.y, o.z);
-    chunk.rotation.set(o.r, o.r * 0.5, o.r * 0.3);
+  skullChunks.forEach((o) => {
+    const chunk = addMesh(stump, new THREE.BoxGeometry(o.sx, o.sy, o.sz), skinMat, o.x, o.y, o.z);
+    chunk.rotation.set(o.r * 0.4, o.r, o.r * 0.2);
   });
-  addMesh(stump, new THREE.CylinderGeometry(0.06, 0.065, 0.075, 8), woundMat, 0, 0.035, 0);
-  const rim = addMesh(stump, new THREE.TorusGeometry(0.062, 0.011, 5, 10), driedBloodMat, 0, 0.065, 0);
+
+  // hinged jaw — hangs from the base of the skull and can drop wide open
+  // (used during pursue/attack for a gaping, screaming look)
+  const jawPivot = new THREE.Group();
+  jawPivot.position.set(0, 0.045, 0.07);
+  stump.add(jawPivot);
+  addMesh(jawPivot, new THREE.BoxGeometry(0.17, 0.05, 0.14), skinMat, 0, -0.02, 0);
+  for (let i = 0; i < 7; i++) {
+    const tx = -0.065 + i * 0.021;
+    const tlen = 0.022 + ((i * 53) % 4) * 0.006;
+    addMesh(jawPivot, new THREE.ConeGeometry(0.009, tlen, 4), boneMat, tx, 0.01, 0.065).rotation.x = Math.PI;
+  }
+  for (let i = 0; i < 8; i++) {
+    const tx = -0.07 + i * 0.019;
+    const tlen = 0.02 + ((i * 41) % 4) * 0.006;
+    addMesh(stump, new THREE.ConeGeometry(0.008, tlen, 4), boneMat, tx, 0.038, 0.11);
+  }
+
+  // torn wound-cavity behind the jaw hinge — the skull is ripped, not clean
+  addMesh(stump, new THREE.CylinderGeometry(0.055, 0.06, 0.065, 8), woundMat, 0.1, 0.09, -0.06);
+  const rim = addMesh(stump, new THREE.TorusGeometry(0.055, 0.011, 5, 10), driedBloodMat, 0.1, 0.09, -0.06);
   rim.rotation.x = Math.PI / 2;
-  addMesh(stump, new THREE.CylinderGeometry(0.015, 0.018, 0.045, 6), boneMat, 0, 0.08, 0);
+  addMesh(stump, new THREE.CylinderGeometry(0.015, 0.019, 0.055, 6), boneMat, 0.1, 0.12, -0.06);
 
-  addBloodDrip(stump, { x: -0.05, y: -0.02, z: 0.02, len: 0.12, width: 0.02, rot: -0.2, mat: wetBloodMat });
-  addBloodDrip(stump, { x: 0.045, y: -0.02, z: 0.015, len: 0.09, width: 0.016, rot: 0.15, mat: driedBloodMat });
+  addBloodDrip(stump, { x: -0.02, y: 0.02, z: 0.11, len: 0.15, width: 0.022, rot: -0.15, mat: wetBloodMat });
+  addBloodDrip(stump, { x: 0.07, y: 0.06, z: 0.11, len: 0.1, width: 0.017, rot: 0.1, mat: driedBloodMat });
 
-  const leftEye = addMesh(stump, new THREE.SphereGeometry(0.012, 6, 6), eyeMaterial, -0.02, 0.03, 0.035, false);
-  const rightEye = addMesh(stump, new THREE.SphereGeometry(0.012, 6, 6), eyeMaterial, 0.02, 0.03, 0.035, false);
-  const eyeLight = new THREE.PointLight(0xbfe0d8, 0.16, 1.0, 2.2); // small, cold, doesn't light much beyond the wound itself
-  eyeLight.position.set(0, 0.035, 0.025);
+  // three asymmetric eye sockets rather than a normal pair — different
+  // heights/sizes/spacing so it never quite resolves into a "face"
+  const leftEye = addMesh(stump, new THREE.SphereGeometry(0.017, 6, 6), eyeMaterial, -0.075, 0.14, 0.1, false);
+  const rightEye = addMesh(stump, new THREE.SphereGeometry(0.014, 6, 6), eyeMaterial, 0.06, 0.11, 0.11, false);
+  addMesh(stump, new THREE.SphereGeometry(0.011, 6, 6), eyeMaterial, 0.01, 0.18, 0.1, false); // third eye, shares the same pulsing material
+  const eyeLight = new THREE.PointLight(0xbfe0d8, 0.2, 1.2, 2.2);
+  eyeLight.position.set(0, 0.11, 0.09);
   stump.add(eyeLight);
+
+  // ---------- secondary heads — smaller, hydra-style, sprouting from the
+  // torso on their own thin bent stalks. Purely additional horror; not
+  // used for sight/attack logic, just there to be wrong. ----------
+  function buildSmallHead(parent, { x, y, z, rotY = 0, rotZ = 0, scale = 0.5 }) {
+    const stalk = new THREE.Group();
+    stalk.position.set(x, y, z);
+    stalk.rotation.set(0.4, rotY, rotZ);
+    parent.add(stalk);
+    addMesh(stalk, new THREE.CylinderGeometry(0.024, 0.032, 0.13, 6), skinMat, 0, 0.065, 0);
+
+    const small = new THREE.Group();
+    small.position.set(0, 0.13, 0);
+    small.scale.setScalar(scale);
+    stalk.add(small);
+    addMesh(small, new THREE.BoxGeometry(0.17, 0.15, 0.16), skinMat, 0, 0.06, 0);
+
+    const smallJaw = new THREE.Group();
+    smallJaw.position.set(0, 0.02, 0.05);
+    small.add(smallJaw);
+    addMesh(smallJaw, new THREE.BoxGeometry(0.1, 0.03, 0.08), skinMat, 0, -0.015, 0);
+    for (let i = 0; i < 5; i++) {
+      addMesh(smallJaw, new THREE.ConeGeometry(0.006, 0.014, 4), boneMat, -0.03 + i * 0.015, 0.006, 0.03).rotation.x = Math.PI;
+    }
+
+    const smallEye = addMesh(small, new THREE.SphereGeometry(0.012, 6, 6), eyeMaterial, 0, 0.09, 0.075, false);
+    const light = new THREE.PointLight(0xbfe0d8, 0.12, 0.8, 2.2);
+    light.position.set(0, 0.09, 0.065);
+    small.add(light);
+
+    return { stalk, head: small, jawPivot: smallJaw, eye: smallEye, light };
+  }
+
+  const extraHeads = [
+    buildSmallHead(torso, { x: -0.19, y: TORSO_H * 0.75, z: -0.02, rotY: -1.1, rotZ: 0.3, scale: 0.5 }),
+    buildSmallHead(torso, { x: 0.16, y: TORSO_H * 0.35, z: -0.07, rotY: 2.0, rotZ: -0.5, scale: 0.42 }),
+  ];
 
   // ============================================================
   // ARMS — too long. Upper+lower arm combined length hangs well past the
   // knee at rest, thin but corded with visible tendon, ending in long
   // clawed fingers instead of a hand.
   // ============================================================
-  function buildArm(side) {
+  // `scale`/`yOffset`/`zOffset` let this same builder produce the smaller
+  // extra arm pair below without duplicating the whole function.
+  function buildArm(side, { yOffset = 0, zOffset = 0, scale = 1 } = {}) {
     const sign = side === "left" ? -1 : 1;
     const shoulder = new THREE.Group();
-    shoulder.position.set(sign * 0.19, TORSO_H - 0.02, 0);
+    shoulder.position.set(sign * (0.19 + (1 - scale) * 0.04), TORSO_H - 0.02 + yOffset, zOffset);
     torso.add(shoulder);
     // jutting shoulder bone, no armor plate this time — bare and starved
-    addMesh(shoulder, new THREE.ConeGeometry(0.025, 0.07, 5), boneMat, sign * 0.03, 0.03, 0);
+    addMesh(shoulder, new THREE.ConeGeometry(0.025 * scale, 0.07 * scale, 5), boneMat, sign * 0.03 * scale, 0.03 * scale, 0);
 
-    const UPPER_LEN = 0.4; // long
-    addMesh(shoulder, new THREE.CylinderGeometry(0.035, 0.028, UPPER_LEN, 6), skinMat, 0, -UPPER_LEN / 2, 0);
-    addBloodDrip(shoulder, { x: sign * 0.02, y: -UPPER_LEN * 0.5, z: 0.035, len: 0.14, width: 0.014, mat: driedBloodMat });
+    const UPPER_LEN = 0.4 * scale; // long
+    addMesh(shoulder, new THREE.CylinderGeometry(0.035 * scale, 0.028 * scale, UPPER_LEN, 6), skinMat, 0, -UPPER_LEN / 2, 0);
+    addBloodDrip(shoulder, { x: sign * 0.02, y: -UPPER_LEN * 0.5, z: 0.035 * scale, len: 0.14 * scale, width: 0.014 * scale, mat: driedBloodMat });
 
     const forearmPivot = new THREE.Group();
     forearmPivot.position.set(0, -UPPER_LEN, 0);
@@ -295,26 +371,35 @@ export function createChudailModel() {
     forearmPivot.rotation.z = sign * -0.08;
     shoulder.add(forearmPivot);
 
-    const LOWER_LEN = 0.38; // also long
-    addMesh(forearmPivot, new THREE.CylinderGeometry(0.028, 0.022, LOWER_LEN, 6), skinMat, 0, -LOWER_LEN / 2, 0);
+    const LOWER_LEN = 0.38 * scale; // also long
+    addMesh(forearmPivot, new THREE.CylinderGeometry(0.028 * scale, 0.022 * scale, LOWER_LEN, 6), skinMat, 0, -LOWER_LEN / 2, 0);
     // exposed tendon strip along the forearm
-    addMesh(forearmPivot, new THREE.BoxGeometry(0.012, LOWER_LEN * 0.7, 0.008), muscleMat, 0.02, -LOWER_LEN * 0.4, 0.02);
+    addMesh(forearmPivot, new THREE.BoxGeometry(0.012 * scale, LOWER_LEN * 0.7, 0.008 * scale), muscleMat, 0.02 * scale, -LOWER_LEN * 0.4, 0.02 * scale);
 
     const hand = new THREE.Group();
     hand.position.set(0, -LOWER_LEN, 0);
     forearmPivot.add(hand);
-    addMesh(hand, new THREE.BoxGeometry(0.03, 0.05, 0.02), skinMat, 0, -0.02, 0); // narrow palm
+    addMesh(hand, new THREE.BoxGeometry(0.03 * scale, 0.05 * scale, 0.02 * scale), skinMat, 0, -0.02 * scale, 0); // narrow palm
     // long clawed fingers, splayed
     [-0.02, -0.007, 0.007, 0.02].forEach((fx, i) => {
-      addClaw(hand, { x: fx, y: -0.06 - i * 0.005, z: 0.01, len: 0.075, rot: Math.PI });
+      addClaw(hand, { x: fx * scale, y: -0.06 * scale - i * 0.005, z: 0.01 * scale, len: 0.075 * scale, rot: Math.PI });
     });
-    addClaw(hand, { x: -0.026, y: -0.03, z: 0.01, len: 0.05, rot: Math.PI * 0.75, rotZ: 0.4 }); // thumb claw
+    addClaw(hand, { x: -0.026 * scale, y: -0.03 * scale, z: 0.01 * scale, len: 0.05 * scale, rot: Math.PI * 0.75, rotZ: 0.4 }); // thumb claw
 
     return { shoulder, forearmPivot, hand };
   }
 
   const leftArm = buildArm("left");
   const rightArm = buildArm("right");
+
+  // extra arm pair — smaller, bursting from lower on the torso/ribs.
+  // Purely additional horror on top of the primary arms; chudailenemy.js
+  // twitches these independently via parts.extraArms so they don't just
+  // hang there stiffly.
+  const extraArms = [
+    buildArm("left", { yOffset: -0.24, zOffset: 0.04, scale: 0.68 }),
+    buildArm("right", { yOffset: -0.24, zOffset: 0.04, scale: 0.68 }),
+  ];
 
   // ---------- "weapon": a jagged bone blade erupting from the right forearm
   // itself, not held — it grows out through torn flesh partway down the
@@ -384,7 +469,9 @@ export function createChudailModel() {
     hips,
     torso,
     hair: neckPivot, // repurposed sway pivot — base of the long bent neck
-    head: stump,     // repurposed as the neck-wound stump
+    head: stump,     // the big main skull
+    jawPivot,        // main head's hinged jaw
+    extraHeads,       // array of { stalk, head, jawPivot, eye, light } — secondary heads
     leftEye,
     rightEye,
     eyeLight,
@@ -397,6 +484,7 @@ export function createChudailModel() {
     rightUpperArm: rightArm.shoulder,
     rightForearm: rightArm.forearmPivot,
     rightHand: rightArm.hand,
+    extraArms, // array of { shoulder, forearmPivot, hand } — secondary arm pair
     weaponSocket,
     leftUpperLeg: leftLeg.upperLeg,
     leftLowerLeg: leftLeg.lowerLeg,
