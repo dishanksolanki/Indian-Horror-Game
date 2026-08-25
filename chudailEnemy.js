@@ -1,31 +1,38 @@
-// chudailEnemy.js — behavior controller for a Chudail enemy instance.
+// chudailenemy.js — behavior controller for the haveli's stalking presence.
 //
 // Wraps the procedural model from chudail.js with a small state machine:
 //   IDLE -> WALK (patrol) -> [sees player] -> PURSUE -> [in range] -> ATTACK
 //   any of IDLE/WALK -> [hears a thrown item land, via engine.onNoise()] -> INVESTIGATE
 //
-// There's no skinned rig here (see chudail.js) — "animation" means directly
-// rotating the joint pivot Groups exposed on `parts` every frame, the same
-// way the Engine itself fakes headbob by nudging camera.position.y in
-// engine.js's _updateMovement(). Movement/obstacle-avoidance reuses
-// engine.colliders (a public array on Engine — see engine.js) with the same
-// box-intersection approach as Engine._resolveCollision, just with a
-// slightly larger box since this is a full-size monster, not a point.
+// v2 note: the model this drives changed from a sickle-wielding elderly
+// woman to a faceless shadow figure (see chudail.js's header) — the state
+// machine, movement, obstacle avoidance, and attack-hitbox logic below are
+// UNCHANGED, since none of that cared what she looked like. The only
+// additions here are cosmetic: a small optional wisp-sway (if the model
+// exposes parts.wisps) and eye-pulse tuning that suits "faint points of
+// light" better than "glowing red demon eyes". Filename and exported
+// function name (createChudailEnemy) are unchanged on purpose, so nothing
+// importing this needs an import-path change.
+//
+// There's no skinned rig — "animation" means directly rotating the joint
+// pivot Groups exposed on `parts` every frame, the same way the Engine
+// itself fakes headbob by nudging camera.position.y in engine.js's
+// _updateMovement(). Movement/obstacle-avoidance reuses engine.colliders
+// (a public array on Engine — see engine.js) with the same box-intersection
+// approach as Engine._resolveCollision, just with a slightly larger box
+// since this is a full-size monster, not a point.
 //
 // Usage from a room file (see room21.js for the wired-up example):
 //
-//   import { createChudailEnemy } from "./chudailEnemy.js";
-//   const chudail = createChudailEnemy(scene, engine, {
+//   import { createChudailEnemy } from "./chudailenemy.js";
+//   const shadow = createChudailEnemy(scene, engine, {
 //     position: new THREE.Vector3(centerX, 0, centerZ - 1.5),
 //     yaw: Math.PI,
-//     patrolPoints: [
-//       new THREE.Vector3(centerX - 1.5, 0, centerZ + 1.5),
-//       new THREE.Vector3(centerX + 1.5, 0, centerZ - 1.5),
-//     ],
+//     patrolPoints: [ ... ],
 //     onCatchPlayer: () => window.dispatchEvent(new CustomEvent("game:caught")),
 //   });
 //   // then, inside the room's own update(dt, eng):
-//   chudail.update(dt, eng);
+//   shadow.update(dt, eng);
 
 import * as THREE from "three";
 import { createChudailModel } from "./chudail.js";
@@ -45,12 +52,12 @@ export function createChudailEnemy(scene, engine, {
   sightRange = 7,            // distance (m) at which she can notice the player
   sightFov = Math.PI / 2.4,  // horizontal field of view (radians, full angle) for the sight check
   loseRange = 10,            // distance (m) at which an active chase is abandoned
-  attackRange = 1.3,         // distance (m) at which an attack can connect
-  attackWindup = 0.55,       // seconds of wind-up animation before the hit is checked
+  attackRange = 1.4,         // distance (m) at which an attack can connect (slightly longer than before — her arms are unnaturally long now)
+  attackWindup = 0.5,        // seconds of wind-up animation before the hit is checked
   attackRecover = 0.3,       // seconds after the hit-check before returning to chase/idle
   attackCooldown = 1.4,      // seconds before she can attack again
-  walkSpeed = 1.5,
-  pursueSpeed = 3.4,
+  walkSpeed = 1.6,
+  pursueSpeed = 3.6,
   investigateSpeed = 2.0,
   onCatchPlayer = null,      // fired once, the instant an attack connects
 } = {}) {
@@ -62,7 +69,8 @@ export function createChudailEnemy(scene, engine, {
   let state = ChudailState.IDLE;
   let stateT = 0;          // seconds spent in the current state
   let walkAnimT = 0;       // running phase clock for limb-swing animation
-  let eyeAnimT = 0;        // running phase clock for the eye-glow pulse
+  let eyeAnimT = 0;        // running phase clock for the eye pulse
+  let wispAnimT = 0;       // running phase clock for the wisp sway
   let attackTimer = 0;
   let attackHitChecked = false;
   let cooldownTimer = 0;
@@ -105,7 +113,7 @@ export function createChudailEnemy(scene, engine, {
     const r = 0.4;
     const box = new THREE.Box3(
       new THREE.Vector3(nextPos.x - r, 0, nextPos.z - r),
-      new THREE.Vector3(nextPos.x + r, 1.9, nextPos.z + r)
+      new THREE.Vector3(nextPos.x + r, 2.2, nextPos.z + r) // taller box — this design stands ~2.3m
     );
     for (const c of engine.colliders) {
       if (box.intersectsBox(c)) return true;
@@ -147,53 +155,67 @@ export function createChudailEnemy(scene, engine, {
   // ---------- procedural animation ----------
   function pulseEyes(dt, speed) {
     eyeAnimT += dt * speed;
-    parts.eyeMaterial.emissiveIntensity = 1.6 + Math.sin(eyeAnimT) * 0.6;
-    parts.eyeLight.intensity = 0.4 + Math.max(0, Math.sin(eyeAnimT)) * 0.6;
+    // faint points of light at rest, brightening toward a steady glow when
+    // hunting — kept in the 0.15–0.7 alpha range throughout, never a hard
+    // flash, since a faceless figure's only "tell" should read as subtle
+    parts.eyeMaterial.opacity = 0.35 + Math.sin(eyeAnimT) * 0.2;
+    parts.eyeLight.intensity = 0.08 + Math.max(0, Math.sin(eyeAnimT)) * 0.35;
+  }
+
+  function swayWisps(dt, speed) {
+    if (!parts.wisps || parts.wisps.length === 0) return;
+    wispAnimT += dt * speed;
+    parts.wisps.forEach((wisp, i) => {
+      wisp.rotation.z = Math.sin(wispAnimT + i * 1.3) * 0.15;
+      wisp.material.opacity = 0.35 + Math.sin(wispAnimT * 1.4 + i) * 0.2;
+    });
   }
 
   function animateIdle(dt) {
-    walkAnimT += dt * 0.6;
-    parts.hair.rotation.z = Math.sin(walkAnimT) * 0.04;
-    parts.torso.rotation.z = Math.sin(walkAnimT * 0.7) * 0.02;
-    parts.leftUpperArm.rotation.x = Math.sin(walkAnimT) * 0.05;
-    parts.rightUpperArm.rotation.x = Math.sin(walkAnimT + Math.PI) * 0.05;
-    pulseEyes(dt, 1.6);
+    walkAnimT += dt * 0.5;
+    parts.hair.rotation.z = Math.sin(walkAnimT) * 0.03; // neck-pivot sway (see chudail.js header)
+    parts.torso.rotation.z = Math.sin(walkAnimT * 0.6) * 0.015;
+    parts.leftUpperArm.rotation.x = Math.sin(walkAnimT) * 0.04;
+    parts.rightUpperArm.rotation.x = Math.sin(walkAnimT + Math.PI) * 0.04;
+    pulseEyes(dt, 1.2);
+    swayWisps(dt, 0.8);
   }
 
   function animateWalk(dt, speedScale) {
-    walkAnimT += dt * 5 * speedScale;
+    walkAnimT += dt * 4.5 * speedScale;
     const swing = Math.sin(walkAnimT);
-    parts.leftUpperLeg.rotation.x = swing * 0.5;
-    parts.rightUpperLeg.rotation.x = -swing * 0.5;
-    parts.leftLowerLeg.rotation.x = Math.max(0, -swing) * 0.6;
-    parts.rightLowerLeg.rotation.x = Math.max(0, swing) * 0.6;
-    parts.leftUpperArm.rotation.x = -swing * 0.35;
-    // right arm carries the weapon — keep its swing a bit tighter so the
-    // sickle doesn't windmill wildly while just walking
-    parts.rightUpperArm.rotation.x = swing * 0.2;
-    parts.hair.rotation.z = Math.sin(walkAnimT * 0.5) * 0.08;
-    pulseEyes(dt, speedScale > 1.8 ? 6 : 3);
+    parts.leftUpperLeg.rotation.x = swing * 0.55;
+    parts.rightUpperLeg.rotation.x = -swing * 0.55;
+    parts.leftLowerLeg.rotation.x = Math.max(0, -swing) * 0.55;
+    parts.rightLowerLeg.rotation.x = Math.max(0, swing) * 0.55;
+    parts.leftUpperArm.rotation.x = -swing * 0.3;
+    parts.rightUpperArm.rotation.x = swing * 0.3;
+    parts.hair.rotation.z = Math.sin(walkAnimT * 0.5) * 0.06;
+    pulseEyes(dt, speedScale > 1.8 ? 5 : 2.4);
+    swayWisps(dt, speedScale > 1.8 ? 3 : 1.5);
   }
 
   function animateAttack(dt) {
     const p = Math.min(attackTimer / attackWindup, 1);
-    // wind up (arm drawn back/up) for the first 60% of the windup, then
-    // whip forward through the remaining 40% — the hit is checked right as
-    // the forward swing completes, see checkAttackHit() below.
+    // wind up (long arm drawn back) for the first 60%, then whips forward —
+    // the hit is checked right as the forward swing completes
     const swing = p < 0.6 ? -(p / 0.6) : -(1 - (p - 0.6) / 0.4);
-    parts.rightUpperArm.rotation.x = swing * 1.8;
-    parts.rightForearm.rotation.x = swing * 0.7;
-    pulseEyes(dt, 10);
+    parts.rightUpperArm.rotation.x = swing * 1.6;
+    parts.rightForearm.rotation.x = swing * 0.9;
+    pulseEyes(dt, 8);
+    swayWisps(dt, 5);
   }
 
-  // ---------- weapon hitbox ----------
+  // ---------- attack hitbox ----------
   // Checked once, at the moment the forward swing completes (see the ATTACK
   // case in update()) rather than every frame during the swing, so a single
-  // attack can only ever land a single hit.
+  // attack can only ever land a single hit. Reads the (empty) weaponSocket
+  // Group's world position — she attacks bare-clawed, but the socket still
+  // marks "where the strike lands" the same way a held weapon would.
   function checkAttackHit() {
-    const weaponWorldPos = new THREE.Vector3();
-    parts.weaponSocket.getWorldPosition(weaponWorldPos);
-    return weaponWorldPos.distanceTo(engine.camera.position) < attackRange + 0.5;
+    const strikeWorldPos = new THREE.Vector3();
+    parts.weaponSocket.getWorldPosition(strikeWorldPos);
+    return strikeWorldPos.distanceTo(engine.camera.position) < attackRange + 0.4;
   }
 
   function faceTowardPlayer() {
