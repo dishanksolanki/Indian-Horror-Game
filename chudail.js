@@ -1,63 +1,50 @@
 // chudail.js — procedural model for the haveli's stalking presence.
 //
-// v10: MORE HEADS, ACTIVE BLOOD. Two additions on top of v9:
-//   1. A THIRD secondary head now sprouts low off the left hip/ribs, on
-//      its own bent stalk, angled to look up and back — so from most
-//      approach angles the player only clocks it a beat after the other
-//      two, which is the point. `parts.extraHeads` is now length 3; the
-//      animation loop in chudailenemy.js already iterates the array, so
-//      nothing there needs to change shape, only tuning.
-//   2. Blood is no longer purely static geometry. Every head's jaw corner
-//      and the bone-blade wound now carry a small teardrop mesh pulled
-//      from a new `addDrip()` helper, registered into `parts.drips`. Each
-//      entry is `{ mesh, baseY, phase, speed, range }` — chudailenemy.js
-//      v5 uses this to actually animate a drop stretching, falling, and
-//      resetting, instead of a frozen dribble. Static drips from v7-v9
-//      (addBloodDrip) are kept as-is for the "already dried" look; the new
-//      ones are specifically the WET, currently-forming drops.
+// v11: NAGA REWORK. Big structural pass, four changes:
+//   1. STANDS STRAIGHT — the hard forward hunch is gone. torso.rotation.x
+//      goes from 0.32 down to a barely-there 0.04, and the neck's opposing
+//      bends were softened to match (still visibly wrong, just not
+//      doubled-over anymore). This changes silhouette a lot, so the ribs/
+//      spine/blood-drip placements on the torso were re-checked against
+//      the new upright pose rather than left at their old hunched offsets.
+//   2. ARMS 4x THICKER — buildArm() now takes a `thicknessScale` separate
+//      from its existing length `scale`, so radius and length can be tuned
+//      independently. Main arms use thicknessScale=4; the extra arm pair
+//      stays close to its old proportions (thicknessScale=1.3) so it still
+//      reads as "smaller/secondary" next to the now much heavier main arms.
+//   3. HELD WEAPON — a real gripped weapon (a heavy, crude cleaver, wrapped
+//      grip included) now sits IN the right hand via addHeldWeapon(), on
+//      top of the existing forearm bone-blade. `parts.weaponTip` is the new
+//      attack-hit reference point (the cleaver's tip), replacing
+//      `weaponSocket` for hit-testing in chudailenemy.js — see that file's
+//      matching update.
+//   4. SNAKE LOWER BODY — buildLeg()/the leg pair are gone entirely.
+//      buildTail() replaces both legs with one long, tapering, segmented
+//      naga tail hanging/coiling from the hips. `parts.tailSegments` is a
+//      new array (base -> tip) for chudailenemy.js to animate as a
+//      traveling side-to-side wave (slither) instead of a walk cycle.
+//      `parts.leftUpperLeg` etc. no longer exist — anything in
+//      chudailenemy.js keyed off legs was rewritten to use the tail.
+//   5. HEAD COUNT — back down to exactly 3 heads total (1 main + 2
+//      secondary), undoing the third secondary head added in v10, per
+//      request. `parts.extraHeads` is length 2 again.
 //
-// v9: multi-headed, multi-armed. The single small neck-wound became a
-// big, deformed main skull with a hinged jaw and three off-kilter eye
-// sockets, and two extra smaller heads now sprout from the torso on their
-// own bent stalks. A second, smaller arm pair also bursts from lower on
-// the ribs. Pair this with the matching animation additions in
-// chudailenemy.js (parts.extraHeads / parts.extraArms / parts.jawPivot),
-// or the new heads/arms will just hang there stiffly, which undercuts it.
-//
-// v8: same "Stripped One" silhouette as v7, but the whole material set was
-// pushed down toward near-black on purpose — see the materials block below
-// for why. Pair this with the erratic stalk/lunge behavior added to
-// chudailenemy.js in the same update; the shape barely changed, the point
-// this time is what you CAN'T see and how it moves, not more visible gore.
-//
-// v7: COMPLETE REDESIGN — "THE STRIPPED ONE". Scrapped the armored
-// swordsman look entirely. This is a gaunt, starved, WRONG-jointed
-// humanoid: too-long limbs that hang past the knees, a spine that arches
-// and bulges through torn skin, ribs pushing out through the chest,
-// backward-bending digitigrade legs (like a broken puppet), clawed
-// fingers/toes instead of hands/feet, and a long, unnaturally bent neck
-// that ends in the same faceless wound as before — except now the wound
-// sits HIGHER, thrown back, like the neck snapped and kept growing anyway.
-// Instead of a held sword, a jagged bone blade erupts directly out of the
-// right forearm through torn flesh, dripping where it pierces the skin —
-// this is not a weapon he picked up, it's part of him.
-//
-// The "wrongness" (elongation, reversed joints, exposed anatomy) is the
-// horror here, not gore-for-its-own-sake — gore is layered on top as
-// dark, half-dried blood/ichor, kept desaturated so it reads as texture,
-// not a cartoon splatter.
+// ---- prior history (condensed) ----
+// v10: added a 3rd secondary head + an active wet-blood drip system
+//      (`parts.drips`) driven by chudailenemy.js's animateDrips().
+// v9:  multi-headed/multi-armed — big deformed main skull w/ hinged jaw +
+//      3 eye sockets, 2 secondary heads, a 2nd smaller arm pair.
+// v8:  palette pushed near-black on purpose; paired with erratic
+//      stalk/lunge behavior in chudailenemy.js.
+// v7:  COMPLETE REDESIGN — "THE STRIPPED ONE": gaunt wrong-jointed
+//      humanoid, backward digitigrade legs, bone blade erupting from the
+//      right forearm instead of a held weapon, faceless neck wound.
 //
 // Filename/export name (createChudailModel) kept the same so nothing
 // importing this (chudailenemy.js, room21.js) needs an import-path change.
-// `parts` keeps the SAME key shape as every prior version so the existing
-// state machine / animation code in chudailenemy.js keeps working exactly
-// as before:
-//   - `hair` -> neck-sway pivot (now the base of the long bent neck).
-//   - `head` -> the stump/wound Group at the top of the neck.
-//   - `leftEye`/`rightEye`/`eyeMaterial`/`eyeLight` -> two faint embers
-//     inside the wound, now a sickly pale white-green instead of orange.
-//   - `weaponSocket` -> now the bone blade jutting from the right forearm.
-//   - `drips` (new in v10) -> array of active wet-blood teardrops to animate.
+// `parts` keeps mostly the same key shape used by chudailenemy.js, with
+// the leg keys removed and tail/weapon keys added — see the `parts`
+// object at the bottom for the authoritative current shape.
 
 import * as THREE from "three";
 
@@ -75,7 +62,6 @@ function makeSkinTexture({ base, veinColor, blotchColor, size = 128, veins = 40,
     return s / 233280;
   };
 
-  // dark blotches — bruising, rot
   for (let i = 0; i < blotches; i++) {
     const x = rand() * size, y = rand() * size, r = 2 + rand() * 10;
     ctx.beginPath();
@@ -85,7 +71,6 @@ function makeSkinTexture({ base, veinColor, blotchColor, size = 128, veins = 40,
     ctx.fill();
   }
 
-  // thin branching veins, visible under stretched-taut skin
   ctx.globalAlpha = 0.4;
   for (let i = 0; i < veins; i++) {
     let x = rand() * size, y = rand() * size;
@@ -137,42 +122,73 @@ function makeRagTexture({ base, blotchColor, seed = 1, size = 128, blotches = 45
   return tex;
 }
 
+// v11: scale banding for the tail — dark base with faint lighter belly
+// scutes down the underside, so it doesn't just look like a smooth cone.
+function makeScaleTexture({ base, scaleColor, bellyColor, seed = 7, size = 128, rows = 14 }) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, size, size);
+  let s = seed * 9301 + 49297;
+  const rand = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+  const rowH = size / rows;
+  for (let r = 0; r < rows; r++) {
+    const y = r * rowH;
+    const cols = 6 + Math.floor(rand() * 3);
+    const colW = size / cols;
+    for (let c = 0; c < cols; c++) {
+      const x = c * colW + (r % 2 ? colW / 2 : 0);
+      ctx.beginPath();
+      ctx.fillStyle = scaleColor;
+      ctx.globalAlpha = 0.15 + rand() * 0.2;
+      ctx.ellipse(x % size, y + rowH / 2, colW * 0.4, rowH * 0.45, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 0.5;
+  for (let r = 0; r < rows; r++) {
+    ctx.fillStyle = bellyColor;
+    ctx.fillRect(size * 0.42, r * rowH + 1, size * 0.16, rowH - 2);
+  }
+  ctx.globalAlpha = 1;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
 export function createChudailModel() {
   const group = new THREE.Group();
   group.name = "strippedOne";
 
   // ---------- materials ----------
-  // Pushed the whole palette WAY down — this thing should read as a
-  // near-black shape that swallows light, with almost no legible detail
-  // except where it's wet (blood/wound) or lit from inside (embers). A
-  // low-poly model that's fully lit and clearly visible rarely scares
-  // anyone; a shape you can't quite resolve does. Let the engine's key
-  // light barely catch a rim/edge on him and leave the rest to guesswork.
   const skinTex = makeSkinTexture({
     base: "#141210", veinColor: "rgba(40,4,4,0.5)", blotchColor: "rgba(0,0,0,0.6)",
     seed: 5, veins: 46, blotches: 40,
-  }); // near-black, desiccated skin — veins barely catch light at all
+  });
   const skinMat = new THREE.MeshStandardMaterial({ map: skinTex, roughness: 0.97, metalness: 0 });
 
-  const muscleMat = new THREE.MeshStandardMaterial({ color: 0x1c0503, roughness: 0.85 }); // exposed muscle, almost black, only reads as a color at close range
-  const boneMat = new THREE.MeshStandardMaterial({ color: 0x4a4438, roughness: 0.7 }); // dirty bone, dulled down — no bright "clean" white to break the silhouette
-  const woundMat = new THREE.MeshStandardMaterial({ color: 0x050101, roughness: 0.95 }); // essentially a black hole in the model
+  const muscleMat = new THREE.MeshStandardMaterial({ color: 0x1c0503, roughness: 0.85 });
+  const boneMat = new THREE.MeshStandardMaterial({ color: 0x4a4438, roughness: 0.7 });
+  const woundMat = new THREE.MeshStandardMaterial({ color: 0x050101, roughness: 0.95 });
 
-  // wet blood stays the one glossy, saturated-enough material in the whole
-  // palette on purpose — it's the only thing meant to visibly catch a
-  // highlight and read as "still active" rather than old damage.
   const wetBloodMat = new THREE.MeshStandardMaterial({ color: 0x280603, roughness: 0.12, metalness: 0.08 });
   const driedBloodMat = new THREE.MeshStandardMaterial({ color: 0x0a0201, roughness: 0.97 });
 
   const ragTex = makeRagTexture({ base: "#0f0c0a", blotchColor: "rgba(0,0,0,0.6)", seed: 21 });
   const ragMat = new THREE.MeshStandardMaterial({ map: ragTex, roughness: 0.97, side: THREE.DoubleSide });
 
-  const clawMat = new THREE.MeshStandardMaterial({ color: 0x100e0b, roughness: 0.6 }); // claws vanish into the silhouette until they catch a highlight
+  const clawMat = new THREE.MeshStandardMaterial({ color: 0x100e0b, roughness: 0.6 });
 
-  // the ONLY real light source on the whole body — faint, cold, and small.
-  // Lower opacity than before on purpose: it should be barely-there at a
-  // distance and only unmistakably "eyes" once he's close, which is the
-  // point where it's too late to matter
+  // v11: the tail's own material — near-black scales with a barely-lit belly stripe
+  const scaleTex = makeScaleTexture({ base: "#100d0a", scaleColor: "rgba(0,0,0,0.55)", bellyColor: "rgba(70,55,40,0.35)", seed: 11 });
+  const scaleMat = new THREE.MeshStandardMaterial({ map: scaleTex, roughness: 0.75, metalness: 0.02 });
+
+  // v11: dull, brutal metal for the held weapon — pitted, not polished, so
+  // it doesn't become the brightest thing in the silhouette
+  const weaponMat = new THREE.MeshStandardMaterial({ color: 0x2b2a28, roughness: 0.55, metalness: 0.4 });
+  const gripMat = ragMat;
+
   const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xbfe0d8, transparent: true, opacity: 0.45 });
 
   function addMesh(parent, geo, mat, x = 0, y = 0, z = 0, castShadow = true) {
@@ -190,78 +206,65 @@ export function createChudailModel() {
     return drip;
   }
 
-  // ---------- v10: ACTIVE wet-blood teardrop ----------
-  // A small elongated drop, pivoted at its TOP (so scaling/moving it reads
-  // as "stretching down and falling" rather than growing from the middle).
-  // Registers itself into `drips` so chudailenemy.js can animate it every
-  // frame: stretch -> detach -> reset. `range` is how far it travels
-  // (world-ish local units) before looping, `speed` is its fall rate.
   function addDrip(parent, drips, { x, y, z, width = 0.014, len = 0.05, range = 0.08, speed = 1, phase = 0 }) {
     const pivot = new THREE.Group();
     pivot.position.set(x, y, z);
     parent.add(pivot);
     const drop = addMesh(pivot, new THREE.CapsuleGeometry ? new THREE.CapsuleGeometry(width * 0.5, len, 3, 5) : new THREE.BoxGeometry(width, len, width), wetBloodMat, 0, -len / 2, 0, false);
-    // a tiny bead at the very tip catches a highlight so the "wet" read
-    // survives even at a distance where the capsule itself is unreadable
     const bead = addMesh(pivot, new THREE.SphereGeometry(width * 0.55, 5, 5), wetBloodMat, 0, -len, 0, false);
     const entry = { pivot, drop, bead, baseY: y, phase, speed, range, len };
     drips.push(entry);
     return entry;
   }
 
-  // bent claw: a few tapered segments angling inward, for hands/feet
-  function addClaw(parent, { x, y, z, len = 0.07, rot = 0, rotZ = 0 }) {
-    const claw = addMesh(parent, new THREE.ConeGeometry(0.012, len, 4), clawMat, x, y, z);
+  function addClaw(parent, { x, y, z, len = 0.07, rot = 0, rotZ = 0, radius = 0.012 }) {
+    const claw = addMesh(parent, new THREE.ConeGeometry(radius, len, 4), clawMat, x, y, z);
     claw.rotation.x = rot;
     claw.rotation.z = rotZ;
     return claw;
   }
 
-  const drips = []; // v10: every active wet-blood drop across the whole body, flat list for easy animation
+  const drips = [];
 
   // ============================================================
-  // HIPS (root) — narrow, starved pelvis, hip bones jutting visibly.
+  // HIPS (root) — now the join between torso and tail rather than
+  // between torso and legs. Kept as the anchor point so nothing above it
+  // (torso/arms/heads) needed repositioning.
   // ============================================================
   const HIP_Y = 1.0;
   const hips = new THREE.Group();
   hips.position.set(0, HIP_Y, 0);
   group.add(hips);
   addMesh(hips, new THREE.BoxGeometry(0.3, 0.16, 0.2), skinMat, 0, 0, 0);
-  addMesh(hips, new THREE.BoxGeometry(0.08, 0.1, 0.06), ragMat, 0, -0.1, 0); // scrap of ragged cloth, not real coverage
-  // jutting hip bone points
+  addMesh(hips, new THREE.BoxGeometry(0.08, 0.1, 0.06), ragMat, 0, -0.1, 0);
   addMesh(hips, new THREE.ConeGeometry(0.02, 0.06, 4), boneMat, -0.13, 0.03, 0.06).rotation.z = 0.6;
   addMesh(hips, new THREE.ConeGeometry(0.02, 0.06, 4), boneMat, 0.13, 0.03, 0.06).rotation.z = -0.6;
 
   // ============================================================
-  // TORSO — concave, starved, ribs pushing out through torn skin, spine
-  // bulging up the back. Hunched hard forward — a broken-looking posture,
-  // not an upright "warrior" stance.
+  // TORSO — v11: stands upright. Hunch reduced from 0.32 rad to 0.04 rad,
+  // just enough residual lean to still feel unnatural without doubling
+  // the character over.
   // ============================================================
   const TORSO_H = 0.58;
   const torso = new THREE.Group();
   torso.position.set(0, 0.08, 0);
-  torso.rotation.x = 0.32; // hard hunch
+  torso.rotation.x = 0.04; // v11: was 0.32 — now stands straight
   hips.add(torso);
 
-  // concave chest — narrower at the bottom, slightly wider/hollow at the ribs
   addMesh(torso, new THREE.BoxGeometry(0.34, TORSO_H, 0.18), skinMat, 0, TORSO_H / 2, -0.01);
 
-  // ribs bulging through torn skin, three arcs down the side
   [0.62, 0.46, 0.3].forEach((t, i) => {
     const rib = addMesh(torso, new THREE.TorusGeometry(0.1, 0.012, 5, 8, Math.PI * 0.9), boneMat, 0, TORSO_H * t, 0.05);
     rib.rotation.y = Math.PI / 2;
     rib.rotation.z = Math.PI * 0.05;
-    // torn skin flap around the rib
     addMesh(torso, new THREE.PlaneGeometry(0.14, 0.05), muscleMat, 0, TORSO_H * t, 0.09).rotation.x = 0.3;
   });
 
-  // spine bulging up the back, a row of raised vertebra bumps
   for (let i = 0; i < 6; i++) {
     const t = 0.12 + i * 0.14;
     addMesh(torso, new THREE.SphereGeometry(0.02 - i * 0.001, 5, 5), boneMat, 0, TORSO_H * t, -0.1);
   }
 
-  // ragged loincloth scraps, hanging unevenly
   const tornOffsets = [-0.1, 0.02, 0.12];
   tornOffsets.forEach((ox, i) => {
     const len = 0.22 + ((i * 37) % 5) * 0.04;
@@ -269,21 +272,17 @@ export function createChudailModel() {
     strip.rotation.z = (i - 1) * 0.08;
   });
 
-  // blood/ichor running down the chest from the neck (static, dried streaks)
   addBloodDrip(torso, { x: -0.02, y: TORSO_H * 0.85, z: 0.1, len: 0.3, width: 0.026, mat: wetBloodMat });
   addBloodDrip(torso, { x: 0.06, y: TORSO_H * 0.7, z: 0.1, len: 0.18, width: 0.018, mat: driedBloodMat });
-  // v10: one ACTIVE drop tracking down from the neck wound onto the chest
   addDrip(torso, drips, { x: 0.02, y: TORSO_H * 0.92, z: 0.1, len: 0.06, width: 0.016, range: 0.16, speed: 0.55, phase: 0.4 });
 
   // ============================================================
-  // NECK — long, unnaturally bent, made of two extra segments instead of
-  // sitting flush on the shoulders. Ends in a big, deformed HEAD (see
-  // below) instead of the bare wound from earlier versions. Three more,
-  // smaller heads also sprout elsewhere on their own stalks.
+  // NECK — softened to match the upright torso: still visibly a broken
+  // double-bend, just not thrown as far back as the hunched version.
   // ============================================================
-  const neckPivot = new THREE.Group(); // maps to parts.hair (sway pivot) — base of the neck
+  const neckPivot = new THREE.Group(); // maps to parts.hair (sway pivot)
   neckPivot.position.set(0, TORSO_H, 0);
-  neckPivot.rotation.x = -0.5; // arches backward immediately, unnatural
+  neckPivot.rotation.x = -0.22; // v11: was -0.5
   torso.add(neckPivot);
 
   const NECK_SEG = 0.18;
@@ -291,19 +290,15 @@ export function createChudailModel() {
 
   const neckMid = new THREE.Group();
   neckMid.position.set(0, NECK_SEG, 0);
-  neckMid.rotation.x = 0.35; // bends back the other way — a visibly broken angle
+  neckMid.rotation.x = 0.18; // v11: was 0.35
   neckPivot.add(neckMid);
   addMesh(neckMid, new THREE.CylinderGeometry(0.05, 0.058, NECK_SEG, 6), skinMat, 0, NECK_SEG / 2, 0);
-  // a knob of exposed vertebra at the bend, where skin has split
   addMesh(neckMid, new THREE.SphereGeometry(0.028, 6, 6), boneMat, 0, 0.01, 0.02);
 
   // ============================================================
-  // HEAD — big, deformed, jagged skull with a hinged, gaping jaw full of
-  // uneven teeth and three asymmetric eye sockets instead of a normal
-  // two-eyed face. Scaled up substantially so it dominates the silhouette
-  // and reads clearly even against the near-black body.
+  // HEAD — the big main skull, unchanged from v10.
   // ============================================================
-  const stump = new THREE.Group(); // maps to parts.head — the big skull
+  const stump = new THREE.Group();
   stump.position.set(0, NECK_SEG, 0);
   neckMid.add(stump);
 
@@ -317,8 +312,6 @@ export function createChudailModel() {
     chunk.rotation.set(o.r * 0.4, o.r, o.r * 0.2);
   });
 
-  // hinged jaw — hangs from the base of the skull and can drop wide open
-  // (used during pursue/attack for a gaping, screaming look)
   const jawPivot = new THREE.Group();
   jawPivot.position.set(0, 0.045, 0.07);
   stump.add(jawPivot);
@@ -334,7 +327,6 @@ export function createChudailModel() {
     addMesh(stump, new THREE.ConeGeometry(0.008, tlen, 4), boneMat, tx, 0.038, 0.11);
   }
 
-  // torn wound-cavity behind the jaw hinge — the skull is ripped, not clean
   addMesh(stump, new THREE.CylinderGeometry(0.055, 0.06, 0.065, 8), woundMat, 0.1, 0.09, -0.06);
   const rim = addMesh(stump, new THREE.TorusGeometry(0.055, 0.011, 5, 10), driedBloodMat, 0.1, 0.09, -0.06);
   rim.rotation.x = Math.PI / 2;
@@ -342,25 +334,19 @@ export function createChudailModel() {
 
   addBloodDrip(stump, { x: -0.02, y: 0.02, z: 0.11, len: 0.15, width: 0.022, rot: -0.15, mat: wetBloodMat });
   addBloodDrip(stump, { x: 0.07, y: 0.06, z: 0.11, len: 0.1, width: 0.017, rot: 0.1, mat: driedBloodMat });
-  // v10: active drops from both corners of the main jaw — the two spots a
-  // gaping mouth actually drips from
   addDrip(stump, drips, { x: -0.075, y: -0.01, z: 0.13, len: 0.05, width: 0.015, range: 0.1, speed: 0.9, phase: 0 });
   addDrip(stump, drips, { x: 0.07, y: -0.005, z: 0.135, len: 0.045, width: 0.013, range: 0.09, speed: 1.1, phase: 1.7 });
-  // and one weeping from the ripped skull-wound itself
   addDrip(stump, drips, { x: 0.1, y: 0.06, z: -0.03, len: 0.04, width: 0.012, range: 0.07, speed: 0.7, phase: 2.6 });
 
-  // three asymmetric eye sockets rather than a normal pair — different
-  // heights/sizes/spacing so it never quite resolves into a "face"
   const leftEye = addMesh(stump, new THREE.SphereGeometry(0.017, 6, 6), eyeMaterial, -0.075, 0.14, 0.1, false);
   const rightEye = addMesh(stump, new THREE.SphereGeometry(0.014, 6, 6), eyeMaterial, 0.06, 0.11, 0.11, false);
-  addMesh(stump, new THREE.SphereGeometry(0.011, 6, 6), eyeMaterial, 0.01, 0.18, 0.1, false); // third eye, shares the same pulsing material
+  addMesh(stump, new THREE.SphereGeometry(0.011, 6, 6), eyeMaterial, 0.01, 0.18, 0.1, false);
   const eyeLight = new THREE.PointLight(0xbfe0d8, 0.2, 1.2, 2.2);
   eyeLight.position.set(0, 0.11, 0.09);
   stump.add(eyeLight);
 
-  // ---------- secondary heads — smaller, hydra-style, sprouting from the
-  // body on their own thin bent stalks. Purely additional horror; not
-  // used for sight/attack logic, just there to be wrong. ----------
+  // ---------- secondary heads — v11: exactly TWO, so total head count is
+  // 3 (main + 2). Both sprout from the torso, same as v9. ----------
   function buildSmallHead(parent, { x, y, z, rotY = 0, rotZ = 0, scale = 0.5, dripPhase = 0 }) {
     const stalk = new THREE.Group();
     stalk.position.set(x, y, z);
@@ -387,8 +373,6 @@ export function createChudailModel() {
     light.position.set(0, 0.09, 0.065);
     small.add(light);
 
-    // v10: a wet drop off the corner of each small mouth too, so the extra
-    // heads read as alive/leaking rather than decorative growths
     const drip = addDrip(smallJaw, drips, { x: 0.04, y: -0.02, z: 0.06, len: 0.03, width: 0.01, range: 0.06, speed: 1.2, phase: dripPhase });
 
     return { stalk, head: small, jawPivot: smallJaw, eye: smallEye, light, drip };
@@ -397,140 +381,160 @@ export function createChudailModel() {
   const extraHeads = [
     buildSmallHead(torso, { x: -0.19, y: TORSO_H * 0.75, z: -0.02, rotY: -1.1, rotZ: 0.3, scale: 0.5, dripPhase: 0.8 }),
     buildSmallHead(torso, { x: 0.16, y: TORSO_H * 0.35, z: -0.07, rotY: 2.0, rotZ: -0.5, scale: 0.42, dripPhase: 2.1 }),
-    // v10: third small head — low off the opposite hip, tucked so it's
-    // easy to miss on approach and only registers once it's close
-    buildSmallHead(hips, { x: -0.16, y: 0.06, z: -0.04, rotY: -2.4, rotZ: 0.65, scale: 0.36, dripPhase: 3.4 }),
   ];
 
   // ============================================================
-  // ARMS — too long. Upper+lower arm combined length hangs well past the
-  // knee at rest, thin but corded with visible tendon, ending in long
-  // clawed fingers instead of a hand.
+  // ARMS — v11: `thicknessScale` now drives radius independently of
+  // `scale` (which still drives length/position). Main arms come out at
+  // 4x their old girth; the extra pair uses a smaller thickness bump so
+  // it still reads as secondary next to the now much heavier main arms.
   // ============================================================
-  // `scale`/`yOffset`/`zOffset` let this same builder produce the smaller
-  // extra arm pair below without duplicating the whole function.
-  function buildArm(side, { yOffset = 0, zOffset = 0, scale = 1 } = {}) {
+  function buildArm(side, { yOffset = 0, zOffset = 0, scale = 1, thicknessScale = 1 } = {}) {
     const sign = side === "left" ? -1 : 1;
     const shoulder = new THREE.Group();
     shoulder.position.set(sign * (0.19 + (1 - scale) * 0.04), TORSO_H - 0.02 + yOffset, zOffset);
     torso.add(shoulder);
-    // jutting shoulder bone, no armor plate this time — bare and starved
-    addMesh(shoulder, new THREE.ConeGeometry(0.025 * scale, 0.07 * scale, 5), boneMat, sign * 0.03 * scale, 0.03 * scale, 0);
+    addMesh(shoulder, new THREE.ConeGeometry(0.025 * scale * thicknessScale, 0.07 * scale, 5), boneMat, sign * 0.03 * scale, 0.03 * scale, 0);
 
-    const UPPER_LEN = 0.4 * scale; // long
-    addMesh(shoulder, new THREE.CylinderGeometry(0.035 * scale, 0.028 * scale, UPPER_LEN, 6), skinMat, 0, -UPPER_LEN / 2, 0);
-    addBloodDrip(shoulder, { x: sign * 0.02, y: -UPPER_LEN * 0.5, z: 0.035 * scale, len: 0.14 * scale, width: 0.014 * scale, mat: driedBloodMat });
+    const UPPER_LEN = 0.4 * scale; // length untouched by thicknessScale
+    addMesh(shoulder, new THREE.CylinderGeometry(0.035 * scale * thicknessScale, 0.028 * scale * thicknessScale, UPPER_LEN, 8), skinMat, 0, -UPPER_LEN / 2, 0);
+    addBloodDrip(shoulder, { x: sign * 0.02 * thicknessScale, y: -UPPER_LEN * 0.5, z: 0.035 * scale * thicknessScale, len: 0.14 * scale, width: 0.014 * scale, mat: driedBloodMat });
 
     const forearmPivot = new THREE.Group();
     forearmPivot.position.set(0, -UPPER_LEN, 0);
-    // slight permanent inward bend — the joint doesn't sit straight
     forearmPivot.rotation.z = sign * -0.08;
     shoulder.add(forearmPivot);
 
-    const LOWER_LEN = 0.38 * scale; // also long
-    addMesh(forearmPivot, new THREE.CylinderGeometry(0.028 * scale, 0.022 * scale, LOWER_LEN, 6), skinMat, 0, -LOWER_LEN / 2, 0);
-    // exposed tendon strip along the forearm
-    addMesh(forearmPivot, new THREE.BoxGeometry(0.012 * scale, LOWER_LEN * 0.7, 0.008 * scale), muscleMat, 0.02 * scale, -LOWER_LEN * 0.4, 0.02 * scale);
+    const LOWER_LEN = 0.38 * scale;
+    addMesh(forearmPivot, new THREE.CylinderGeometry(0.028 * scale * thicknessScale, 0.022 * scale * thicknessScale, LOWER_LEN, 8), skinMat, 0, -LOWER_LEN / 2, 0);
+    const tendonCount = thicknessScale > 2 ? 3 : 1;
+    for (let i = 0; i < tendonCount; i++) {
+      const ta = (i / tendonCount) * Math.PI * 2;
+      const tr = 0.03 * scale * thicknessScale;
+      addMesh(
+        forearmPivot,
+        new THREE.BoxGeometry(0.012 * scale * thicknessScale, LOWER_LEN * 0.7, 0.008 * scale * thicknessScale),
+        muscleMat,
+        Math.cos(ta) * tr, -LOWER_LEN * 0.4, Math.sin(ta) * tr
+      );
+    }
 
     const hand = new THREE.Group();
     hand.position.set(0, -LOWER_LEN, 0);
     forearmPivot.add(hand);
-    addMesh(hand, new THREE.BoxGeometry(0.03 * scale, 0.05 * scale, 0.02 * scale), skinMat, 0, -0.02 * scale, 0); // narrow palm
-    // long clawed fingers, splayed
+    addMesh(hand, new THREE.BoxGeometry(0.03 * scale * thicknessScale, 0.05 * scale * thicknessScale, 0.02 * scale * thicknessScale), skinMat, 0, -0.02 * scale, 0);
     [-0.02, -0.007, 0.007, 0.02].forEach((fx, i) => {
-      addClaw(hand, { x: fx * scale, y: -0.06 * scale - i * 0.005, z: 0.01 * scale, len: 0.075 * scale, rot: Math.PI });
+      addClaw(hand, { x: fx * scale * thicknessScale, y: -0.06 * scale - i * 0.005, z: 0.01 * scale, len: 0.075 * scale, rot: Math.PI, radius: 0.012 * Math.min(thicknessScale, 2) });
     });
-    addClaw(hand, { x: -0.026 * scale, y: -0.03 * scale, z: 0.01 * scale, len: 0.05 * scale, rot: Math.PI * 0.75, rotZ: 0.4 }); // thumb claw
+    addClaw(hand, { x: -0.026 * scale * thicknessScale, y: -0.03 * scale, z: 0.01 * scale, len: 0.05 * scale, rot: Math.PI * 0.75, rotZ: 0.4, radius: 0.012 * Math.min(thicknessScale, 2) });
 
     return { shoulder, forearmPivot, hand };
   }
 
-  const leftArm = buildArm("left");
-  const rightArm = buildArm("right");
+  const leftArm = buildArm("left", { thicknessScale: 4 });
+  const rightArm = buildArm("right", { thicknessScale: 4 });
 
-  // extra arm pair — smaller, bursting from lower on the torso/ribs.
-  // Purely additional horror on top of the primary arms; chudailenemy.js
-  // twitches these independently via parts.extraArms so they don't just
-  // hang there stiffly.
   const extraArms = [
-    buildArm("left", { yOffset: -0.24, zOffset: 0.04, scale: 0.68 }),
-    buildArm("right", { yOffset: -0.24, zOffset: 0.04, scale: 0.68 }),
+    buildArm("left", { yOffset: -0.24, zOffset: 0.04, scale: 0.68, thicknessScale: 1.3 }),
+    buildArm("right", { yOffset: -0.24, zOffset: 0.04, scale: 0.68, thicknessScale: 1.3 }),
   ];
 
-  // ---------- "weapon": a jagged bone blade erupting from the right forearm
-  // itself, not held — it grows out through torn flesh partway down the
-  // forearm, so the attack reads as a natural claw-strike, not a swordsman ----------
+  // ---------- forearm bone-blade (kept from v7-v10) — still erupts
+  // through the flesh on its own, independent of the new held weapon ----------
   const weaponSocket = new THREE.Group();
   rightArm.forearmPivot.add(weaponSocket);
-  weaponSocket.position.set(0.03, -0.16, 0.01);
+  weaponSocket.position.set(0.05, -0.16, 0.02);
   weaponSocket.rotation.z = -0.15;
 
-  // torn flesh ring where the bone punches through the skin
-  addMesh(weaponSocket, new THREE.TorusGeometry(0.025, 0.008, 5, 8), muscleMat, 0, 0, 0).rotation.x = Math.PI / 2;
-  addMesh(weaponSocket, new THREE.CylinderGeometry(0.02, 0.024, 0.02, 6), woundMat, 0, 0, 0);
+  addMesh(weaponSocket, new THREE.TorusGeometry(0.035, 0.01, 5, 8), muscleMat, 0, 0, 0).rotation.x = Math.PI / 2;
+  addMesh(weaponSocket, new THREE.CylinderGeometry(0.028, 0.032, 0.02, 6), woundMat, 0, 0, 0);
+  addMesh(weaponSocket, new THREE.ConeGeometry(0.045, 0.24, 5), boneMat, 0, 0.14, 0);
+  addMesh(weaponSocket, new THREE.ConeGeometry(0.024, 0.17, 5), boneMat, 0.012, 0.32, 0.006).rotation.z = 0.06;
+  addMesh(weaponSocket, new THREE.ConeGeometry(0.016, 0.09, 4), boneMat, 0.03, 0.17, 0).rotation.z = -0.5;
+  addMesh(weaponSocket, new THREE.ConeGeometry(0.013, 0.07, 4), boneMat, -0.025, 0.24, 0).rotation.z = 0.6;
 
-  // the blade itself — irregular bone, tapering and slightly twisted, NOT a
-  // clean smith-made shape
-  addMesh(weaponSocket, new THREE.ConeGeometry(0.032, 0.22, 5), boneMat, 0, 0.13, 0);
-  addMesh(weaponSocket, new THREE.ConeGeometry(0.018, 0.16, 5), boneMat, 0.01, 0.3, 0.005).rotation.z = 0.06;
-  // jagged secondary spurs branching off the main blade
-  addMesh(weaponSocket, new THREE.ConeGeometry(0.012, 0.08, 4), boneMat, 0.025, 0.16, 0).rotation.z = -0.5;
-  addMesh(weaponSocket, new THREE.ConeGeometry(0.01, 0.06, 4), boneMat, -0.02, 0.22, 0).rotation.z = 0.6;
+  addBloodDrip(weaponSocket, { x: -0.025, y: -0.02, z: 0.02, len: 0.1, width: 0.02, mat: wetBloodMat });
+  addBloodDrip(weaponSocket, { x: 0.018, y: 0.11, z: 0.012, len: 0.13, width: 0.015, mat: driedBloodMat, rot: 0.05 });
+  addDrip(weaponSocket, drips, { x: -0.02, y: -0.006, z: 0.028, len: 0.05, width: 0.017, range: 0.11, speed: 0.6, phase: 1.2 });
 
-  // blood where it pierces the arm, and dripping down the blade (static)
-  addBloodDrip(weaponSocket, { x: -0.02, y: -0.02, z: 0.015, len: 0.09, width: 0.016, mat: wetBloodMat });
-  addBloodDrip(weaponSocket, { x: 0.015, y: 0.1, z: 0.01, len: 0.12, width: 0.012, mat: driedBloodMat, rot: 0.05 });
-  // v10: active drop welling up where the bone punches through the skin —
-  // this one should read as fresh even when the character stands still
-  addDrip(weaponSocket, drips, { x: -0.015, y: -0.005, z: 0.022, len: 0.045, width: 0.014, range: 0.11, speed: 0.6, phase: 1.2 });
+  // ---------- v11: HELD WEAPON — a heavy, crude cleaver gripped in the
+  // right hand, on top of the forearm blade rather than instead of it.
+  // Deliberately brutal/asymmetric (uneven notches, off-axis taper) so it
+  // reads as scavenged/improvised, not forged. ----------
+  const heldWeapon = new THREE.Group();
+  rightArm.hand.add(heldWeapon);
+  heldWeapon.position.set(0.01, -0.05, 0.02);
+  heldWeapon.rotation.set(0.15, 0, -0.1);
+
+  addMesh(heldWeapon, new THREE.CylinderGeometry(0.02, 0.022, 0.14, 6), gripMat, 0, -0.02, 0);
+  for (let i = 0; i < 5; i++) {
+    addMesh(heldWeapon, new THREE.TorusGeometry(0.021, 0.004, 4, 8), ragMat, 0, -0.08 + i * 0.028, 0).rotation.x = Math.PI / 2;
+  }
+  addMesh(heldWeapon, new THREE.BoxGeometry(0.09, 0.018, 0.03), weaponMat, 0, 0.05, 0);
+
+  const bladeGroup = new THREE.Group();
+  bladeGroup.position.set(0, 0.06, 0);
+  heldWeapon.add(bladeGroup);
+  addMesh(bladeGroup, new THREE.BoxGeometry(0.1, 0.32, 0.014), weaponMat, 0.01, 0.16, 0);
+  addMesh(bladeGroup, new THREE.ConeGeometry(0.075, 0.14, 3), weaponMat, 0.02, 0.36, 0).rotation.z = -0.25;
+  [0.08, 0.16, 0.24].forEach((t, i) => {
+    addMesh(bladeGroup, new THREE.SphereGeometry(0.015 + (i % 2) * 0.006, 5, 5), weaponMat, 0.055, t * 1.1, 0);
+  });
+  addBloodDrip(bladeGroup, { x: 0.03, y: 0.2, z: 0.01, len: 0.16, width: 0.02, mat: driedBloodMat, rot: -0.05 });
+  addDrip(bladeGroup, drips, { x: 0.045, y: 0.34, z: 0.008, len: 0.04, width: 0.012, range: 0.09, speed: 0.8, phase: 2.0 });
+
+  const weaponTip = new THREE.Group();
+  weaponTip.position.set(0.02, 0.44, 0);
+  bladeGroup.add(weaponTip);
 
   // ============================================================
-  // LEGS — digitigrade, backward-bending, like a broken marionette. Thin,
-  // starved, ending in clawed toes instead of a flat human foot.
+  // TAIL — v11: replaces both legs entirely. A long, tapering, segmented
+  // naga tail hanging from the hips, resting in a loose coil at idle.
+  // Each segment is its own pivot Group so chudailenemy.js can drive a
+  // traveling side-to-side wave through `parts.tailSegments` for a slither
+  // instead of a walk cycle.
   // ============================================================
-  function buildLeg(side) {
-    const sign = side === "left" ? -1 : 1;
-    const upperLeg = new THREE.Group();
-    upperLeg.position.set(sign * 0.09, 0, 0);
-    hips.add(upperLeg);
+  const TAIL_SEGMENTS = 9;
+  const tailSegments = [];
+  let tailParent = hips;
+  let segLen = 0.26;
+  let segRadius = 0.09;
+  const restCurve = [0.05, 0.08, 0.1, 0.12, 0.14, 0.15, 0.14, 0.1, 0.04];
 
-    const UPPER_LEN = 0.34;
-    addMesh(upperLeg, new THREE.CylinderGeometry(0.045, 0.032, UPPER_LEN, 6), skinMat, 0, -UPPER_LEN / 2, 0);
-    addBloodDrip(upperLeg, { x: sign * 0.015, y: -UPPER_LEN * 0.6, z: 0.03, len: 0.12, width: 0.014, mat: driedBloodMat });
+  for (let i = 0; i < TAIL_SEGMENTS; i++) {
+    const seg = new THREE.Group();
+    seg.position.set(0, i === 0 ? -0.05 : -segLen, 0);
+    seg.rotation.x = Math.PI * 0.02;
+    seg.rotation.z = restCurve[i] * (i % 2 === 0 ? 1 : 0.6);
+    tailParent.add(seg);
 
-    const lowerLeg = new THREE.Group();
-    lowerLeg.position.set(0, -UPPER_LEN, 0);
-    // knee bends FORWARD (digitigrade / reversed), the core "wrongness" of the legs
-    lowerLeg.rotation.x = -0.55;
-    upperLeg.add(lowerLeg);
+    const nextRadius = segRadius * 0.82;
+    addMesh(seg, new THREE.CylinderGeometry(segRadius, nextRadius, segLen, 8), scaleMat, 0, -segLen / 2, 0);
+    addMesh(seg, new THREE.ConeGeometry(segRadius * 0.22, segRadius * 0.5, 4), boneMat, 0, -segLen * 0.2, -segRadius * 0.7).rotation.x = -0.3;
 
-    const LOWER_LEN = 0.3;
-    addMesh(lowerLeg, new THREE.CylinderGeometry(0.026, 0.03, LOWER_LEN, 6), skinMat, 0, -LOWER_LEN / 2, 0);
-    // sharp visible ankle/heel bone jutting backward
-    addMesh(lowerLeg, new THREE.ConeGeometry(0.018, 0.05, 4), boneMat, 0, -LOWER_LEN + 0.02, -0.03).rotation.x = -1.4;
+    if (i < 3) {
+      addBloodDrip(seg, { x: segRadius * 0.5, y: -segLen * 0.3, z: segRadius * 0.5, len: segLen * 0.5, width: 0.02, mat: driedBloodMat, rot: 0.3 });
+    }
 
-    const foot = new THREE.Group();
-    foot.position.set(0, -LOWER_LEN, 0);
-    foot.rotation.x = 1.1; // foot angles forward off the reversed ankle
-    lowerLeg.add(foot);
-    addMesh(foot, new THREE.BoxGeometry(0.035, 0.03, 0.05), skinMat, 0, 0, 0.02);
-    [-0.012, 0, 0.012].forEach((fx) => {
-      addClaw(foot, { x: fx, y: -0.01, z: 0.06, len: 0.05, rot: Math.PI * 0.55 });
-    });
-
-    return { upperLeg, lowerLeg: foot };
+    tailSegments.push(seg);
+    tailParent = seg;
+    segLen *= 0.92;
+    segRadius = nextRadius;
   }
 
-  const leftLeg = buildLeg("left");
-  const rightLeg = buildLeg("right");
+  const tailTip = tailParent;
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    addMesh(tailTip, new THREE.ConeGeometry(0.012, 0.09, 4), boneMat, Math.cos(a) * 0.02, -segLen - i * 0.01, Math.sin(a) * 0.02).rotation.x = Math.PI * 0.55;
+  }
 
   const parts = {
     hips,
     torso,
-    hair: neckPivot, // repurposed sway pivot — base of the long bent neck
-    head: stump,     // the big main skull
-    jawPivot,        // main head's hinged jaw
-    extraHeads,       // array of { stalk, head, jawPivot, eye, light, drip } — now 3 secondary heads
+    hair: neckPivot,
+    head: stump,
+    jawPivot,
+    extraHeads, // v11: length 2 (3 heads total with the main head)
     leftEye,
     rightEye,
     eyeLight,
@@ -543,13 +547,12 @@ export function createChudailModel() {
     rightUpperArm: rightArm.shoulder,
     rightForearm: rightArm.forearmPivot,
     rightHand: rightArm.hand,
-    extraArms, // array of { shoulder, forearmPivot, hand } — secondary arm pair
-    weaponSocket,
-    drips, // v10: flat array of every active wet-blood drop, for chudailenemy.js to animate
-    leftUpperLeg: leftLeg.upperLeg,
-    leftLowerLeg: leftLeg.lowerLeg,
-    rightUpperLeg: rightLeg.upperLeg,
-    rightLowerLeg: rightLeg.lowerLeg,
+    extraArms,
+    weaponSocket,   // forearm bone-blade (kept)
+    heldWeapon,     // v11: the gripped cleaver
+    weaponTip,      // v11: use this for attack-hit testing now
+    drips,
+    tailSegments,   // v11: base -> tip, replaces leftUpperLeg/rightUpperLeg/etc.
   };
 
   return { group, parts };
