@@ -1,5 +1,11 @@
 // chudail.js — procedural model for the haveli's stalking presence.
 //
+// v8: same "Stripped One" silhouette as v7, but the whole material set was
+// pushed down toward near-black on purpose — see the materials block below
+// for why. Pair this with the erratic stalk/lunge behavior added to
+// chudailenemy.js in the same update; the shape barely changed, the point
+// this time is what you CAN'T see and how it moves, not more visible gore.
+//
 // v7: COMPLETE REDESIGN — "THE STRIPPED ONE". Scrapped the armored
 // swordsman look entirely. This is a gaunt, starved, WRONG-jointed
 // humanoid: too-long limbs that hang past the knees, a spine that arches
@@ -111,27 +117,35 @@ export function createChudailModel() {
   group.name = "strippedOne";
 
   // ---------- materials ----------
+  // Pushed the whole palette WAY down — this thing should read as a
+  // near-black shape that swallows light, with almost no legible detail
+  // except where it's wet (blood/wound) or lit from inside (embers). A
+  // low-poly model that's fully lit and clearly visible rarely scares
+  // anyone; a shape you can't quite resolve does. Let the engine's key
+  // light barely catch a rim/edge on him and leave the rest to guesswork.
   const skinTex = makeSkinTexture({
-    base: "#8a8577", veinColor: "rgba(35,10,10,0.55)", blotchColor: "rgba(15,10,8,0.5)",
+    base: "#141210", veinColor: "rgba(40,4,4,0.5)", blotchColor: "rgba(0,0,0,0.6)",
     seed: 5, veins: 46, blotches: 40,
-  }); // sickly, stretched-taut pale skin, thin visible veins
-  const skinMat = new THREE.MeshStandardMaterial({ map: skinTex, roughness: 0.92 });
+  }); // near-black, desiccated skin — veins barely catch light at all
+  const skinMat = new THREE.MeshStandardMaterial({ map: skinTex, roughness: 0.97, metalness: 0 });
 
-  const muscleMat = new THREE.MeshStandardMaterial({ color: 0x4a1512, roughness: 0.75 }); // exposed muscle/tendon under torn skin
-  const boneMat = new THREE.MeshStandardMaterial({ color: 0xcfc39f, roughness: 0.55 }); // yellowed, exposed bone
-  const woundMat = new THREE.MeshStandardMaterial({ color: 0x160504, roughness: 0.9 });
+  const muscleMat = new THREE.MeshStandardMaterial({ color: 0x1c0503, roughness: 0.85 }); // exposed muscle, almost black, only reads as a color at close range
+  const boneMat = new THREE.MeshStandardMaterial({ color: 0x4a4438, roughness: 0.7 }); // dirty bone, dulled down — no bright "clean" white to break the silhouette
+  const woundMat = new THREE.MeshStandardMaterial({ color: 0x050101, roughness: 0.95 }); // essentially a black hole in the model
 
-  const wetBloodMat = new THREE.MeshStandardMaterial({ color: 0x330706, roughness: 0.2, metalness: 0.04 });
-  const driedBloodMat = new THREE.MeshStandardMaterial({ color: 0x150302, roughness: 0.95 });
+  const wetBloodMat = new THREE.MeshStandardMaterial({ color: 0x1a0403, roughness: 0.15, metalness: 0.05 }); // still glossy — the ONE thing allowed to catch a highlight
+  const driedBloodMat = new THREE.MeshStandardMaterial({ color: 0x0a0201, roughness: 0.97 });
 
-  const ragTex = makeRagTexture({ base: "#2a211c", blotchColor: "rgba(8,5,4,0.55)", seed: 21 });
-  const ragMat = new THREE.MeshStandardMaterial({ map: ragTex, roughness: 0.95, side: THREE.DoubleSide });
+  const ragTex = makeRagTexture({ base: "#0f0c0a", blotchColor: "rgba(0,0,0,0.6)", seed: 21 });
+  const ragMat = new THREE.MeshStandardMaterial({ map: ragTex, roughness: 0.97, side: THREE.DoubleSide });
 
-  const clawMat = new THREE.MeshStandardMaterial({ color: 0x2c2620, roughness: 0.5 }); // blackened nails/claws
+  const clawMat = new THREE.MeshStandardMaterial({ color: 0x100e0b, roughness: 0.6 }); // claws vanish into the silhouette until they catch a highlight
 
-  // sickly, faint white-green embers deep in the wound — not "demon red",
-  // meant to feel cold and wrong rather than aggressive
-  const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xcdeadd, transparent: true, opacity: 0.6 });
+  // the ONLY real light source on the whole body — faint, cold, and small.
+  // Lower opacity than before on purpose: it should be barely-there at a
+  // distance and only unmistakably "eyes" once he's close, which is the
+  // point where it's too late to matter
+  const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xbfe0d8, transparent: true, opacity: 0.45 });
 
   function addMesh(parent, geo, mat, x = 0, y = 0, z = 0, castShadow = true) {
     const mesh = new THREE.Mesh(geo, mat);
@@ -254,7 +268,7 @@ export function createChudailModel() {
 
   const leftEye = addMesh(stump, new THREE.SphereGeometry(0.012, 6, 6), eyeMaterial, -0.02, 0.03, 0.035, false);
   const rightEye = addMesh(stump, new THREE.SphereGeometry(0.012, 6, 6), eyeMaterial, 0.02, 0.03, 0.035, false);
-  const eyeLight = new THREE.PointLight(0xcdeadd, 0.25, 1.2, 2);
+  const eyeLight = new THREE.PointLight(0xbfe0d8, 0.16, 1.0, 2.2); // small, cold, doesn't light much beyond the wound itself
   eyeLight.position.set(0, 0.035, 0.025);
   stump.add(eyeLight);
 
