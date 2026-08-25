@@ -1,11 +1,19 @@
 // chudail.js — procedural model for the haveli's stalking presence.
 //
-// v12: TAIL SCALE-UP. The v11 naga tail read as too thin/short next to the
-// now-massive arms. Per-segment radius is up 5x (0.09 -> 0.45, within the
-// requested 4-6x range) and per-segment length is up 4x (0.26 -> 1.04),
-// with the tip barb cluster scaled to match so it doesn't look like a
-// tiny accessory stuck on a huge tail. Segment count (9) and taper ratio
-// are unchanged — the whole tail just got proportionally bigger.
+// v13: TAIL DIRECTION FIX. The tail was resting in a loose coil around the
+// body (restCurve[] alternating side-to-side per segment) — that's gone.
+// A new `tailRoot` group is the tail's single fixed attachment point at
+// the hips, rotated once (rotation.x = -1.9) to send the whole chain
+// trailing backward and low instead of hanging straight down. Every
+// segment after that only adds a small, ONE-DIRECTION progressive droop
+// plus a tiny fixed left/right offset for texture — nothing alternates or
+// reverses, so the tail never curls back toward the body. With segment
+// count/length/thickness unchanged from v12, the far tip now sits well
+// behind and below the torso instead of looping near it.
+//
+// v12: TAIL SCALE-UP. Per-segment radius up 5x (0.09 -> 0.45, within the
+// requested 4-6x range) and per-segment length up 4x (0.26 -> 1.04), tip
+// barb cluster scaled to match.
 //
 // v11: NAGA REWORK. Big structural pass, four changes:
 //   1. STANDS STRAIGHT — the hard forward hunch is gone. torso.rotation.x
@@ -495,30 +503,47 @@ export function createChudailModel() {
   bladeGroup.add(weaponTip);
 
   // ============================================================
-  // TAIL — v11: replaces both legs entirely. A long, tapering, segmented
-  // naga tail hanging from the hips, resting in a loose coil at idle.
-  // Each segment is its own pivot Group so chudailenemy.js can drive a
-  // traveling side-to-side wave through `parts.tailSegments` for a slither
-  // instead of a walk cycle.
+  // TAIL — v11: replaces both legs entirely. v13: no longer coils around
+  // the body. One end is fixed at the hips; the rest of it extends straight
+  // out in a single direction (backward and trailing low) so the far end
+  // sits a real distance away from the torso instead of curling back
+  // toward it. Each segment is its own pivot Group so chudailenemy.js can
+  // drive a traveling side-to-side wave through `parts.tailSegments` for a
+  // slither instead of a walk cycle.
   // ============================================================
   // v12: thickness up ~5x (within the requested 4-6x) and length up 4x
-  // from the v11 baseline (0.09 radius / 0.26 length per segment), per
-  // request. Everything else about the tail (taper ratio, dorsal ridge,
-  // barb cluster, blood placement) is proportional to these two numbers
-  // already, so bumping them scales the whole tail up cleanly rather than
-  // needing separate tuning per segment.
+  // from the v11 baseline (0.09 radius / 0.26 length per segment).
+  // Everything about the tail (taper ratio, dorsal ridge, barb cluster,
+  // blood placement) is proportional to these two numbers already, so
+  // bumping them scales the whole tail up cleanly.
   const TAIL_SEGMENTS = 9;
   const tailSegments = [];
-  let tailParent = hips;
-  let segLen = 0.26 * 4;      // v12: was 0.26 — 4x length
-  let segRadius = 0.09 * 5;   // v12: was 0.09 — 5x thickness
-  const restCurve = [0.05, 0.08, 0.1, 0.12, 0.14, 0.15, 0.14, 0.1, 0.04];
+
+  // v13: tailRoot fixes the ONE attachment point at the hips and sets the
+  // tail's overall direction of travel — rotated off the hanging-straight-
+  // down default so the tail runs backward and low instead of coiling
+  // under the body. Segments below only add small, non-repeating droop/
+  // sway on top of this, so the tail reads as one long limb pointing away
+  // from the body, not a loop that comes back toward it.
+  const tailRoot = new THREE.Group();
+  tailRoot.position.set(0, -0.05, 0);
+  tailRoot.rotation.x = -1.9; // swings the tail from "hanging down" to "trailing backward and low"
+  hips.add(tailRoot);
+
+  let tailParent = tailRoot;
+  let segLen = 0.26 * 4;      // v12: 4x length
+  let segRadius = 0.09 * 5;   // v12: 5x thickness
 
   for (let i = 0; i < TAIL_SEGMENTS; i++) {
     const seg = new THREE.Group();
-    seg.position.set(0, i === 0 ? -0.05 : -segLen, 0);
-    seg.rotation.x = Math.PI * 0.02;
-    seg.rotation.z = restCurve[i] * (i % 2 === 0 ? 1 : 0.6);
+    seg.position.set(0, -segLen, 0);
+    // gentle, ONE-DIRECTION progressive droop (not an alternating coil) so
+    // the far end settles toward the ground the further out it gets, and
+    // a tiny fixed asymmetry per segment so it doesn't look perfectly
+    // straight/robotic — neither of these reverses direction partway
+    // through, so the tail never curls back on itself
+    seg.rotation.x = 0.035 + i * 0.02;
+    seg.rotation.z = (i % 2 === 0 ? 1 : -1) * 0.015;
     tailParent.add(seg);
 
     const nextRadius = segRadius * 0.82;
@@ -569,7 +594,8 @@ export function createChudailModel() {
     heldWeapon,     // v11: the gripped cleaver
     weaponTip,      // v11: use this for attack-hit testing now
     drips,
-    tailSegments,   // v11: base -> tip, replaces leftUpperLeg/rightUpperLeg/etc.
+    tailRoot,       // v13: the tail's single fixed attachment point at the hips
+    tailSegments,   // base -> tip, replaces leftUpperLeg/rightUpperLeg/etc.
   };
 
   return { group, parts };
