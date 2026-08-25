@@ -1,5 +1,19 @@
 // chudailenemy.js — behavior controller for the haveli's stalking presence.
 //
+// v5 note: chudail.js v10 added a third secondary head (now 3 total on
+// parts.extraHeads — the pulseEyes()/animateExtras() loops already iterate
+// the array so that part needed no changes) and a `parts.drips` array of
+// active wet-blood teardrops scattered across both jaws, the skull wound,
+// the three small heads, and the bone-blade wound. This update adds
+// animateDrips(), called every frame in every state, which actually makes
+// those drops fall: each one stretches downward, keeps a bead at the tip
+// for a highlight, then resets to its start position on a loop with a
+// per-drop phase offset so they don't all fall in lockstep. Fall speed and
+// stretch amount scale up with how "active" the current state is (idle vs.
+// pursuing/attacking), same pattern as pulseEyes()'s speed parameter.
+// Nothing else changes shape here — state machine, movement/collision,
+// and attack hitbox timing are unchanged from v4.
+//
 // v4 note: chudail.js v9 added a big main head (with a hinged jaw and
 // extra eye sockets), two smaller secondary heads on the torso, and a
 // second smaller arm pair. This update adds the matching animation so
@@ -87,6 +101,7 @@ export function createChudailEnemy(scene, engine, {
   let stateT = 0;          // seconds spent in the current state
   let walkAnimT = 0;       // running phase clock for limb-swing animation
   let eyeAnimT = 0;        // running phase clock for the eye pulse
+  let dripAnimT = 0;       // v10/v5: running phase clock for the blood-drip fall cycle
   let attackTimer = 0;
   let attackHitChecked = false;
   let cooldownTimer = 0;
@@ -192,10 +207,40 @@ export function createChudailEnemy(scene, engine, {
     }
   }
 
+  // v10/v5: animates every registered wet-blood drop (parts.drips) so the
+  // whole body reads as actively bleeding rather than statically stained.
+  // Each drop's pivot is anchored at its origin point on the body; we drive
+  // a local fall offset + a stretch on the drop mesh + a fade on the bead
+  // as it "detaches", then loop back to 0 using each drop's own phase so
+  // they don't all fall in unison. `intensity` (0-1ish) scales fall speed
+  // and stretch amount — barely-there at idle, more visibly active once
+  // she's hunting, matching the same escalation pulseEyes() already does.
+  function animateDrips(dt, intensity) {
+    if (!parts.drips) return;
+    dripAnimT += dt;
+    parts.drips.forEach((d) => {
+      const cycle = 1.4 / Math.max(0.2, d.speed * (0.5 + intensity)); // seconds per fall cycle
+      const t = ((dripAnimT * d.speed * (0.5 + intensity) + d.phase) % cycle) / cycle; // 0..1
+      const fall = t * d.range;
+      d.pivot.position.y = d.baseY - fall;
+      // stretch the drop a little as it falls, like surface tension
+      // dragging it out, then snap back at the reset point
+      const stretch = 1 + Math.sin(t * Math.PI) * 0.5 * (0.4 + intensity);
+      d.drop.scale.y = stretch;
+      d.bead.position.y = -d.len * stretch;
+      // fade the bead out right before reset so the loop isn't visible as
+      // a hard pop, then fade back in at the start of the next cycle
+      const fadeIn = Math.min(1, t * 6);
+      const fadeOut = Math.min(1, (1 - t) * 6);
+      d.bead.visible = fadeIn > 0.05 && fadeOut > 0.05;
+    });
+  }
+
   // Independent twitch/sway for the extra heads and extra arm pair, so
   // they read as restless and slightly out of the body's control rather
   // than just hanging there. `restless` pushes the amplitude/jaw-gape up
-  // for pursue/attack vs. a much subtler idle fidget.
+  // for pursue/attack vs. a much subtler idle fidget. Runs over
+  // parts.extraHeads (now 3 entries as of chudail.js v10) unchanged.
   function animateExtras(dt, restless) {
     if (parts.extraArms) {
       parts.extraArms.forEach((arm, i) => {
@@ -231,6 +276,7 @@ export function createChudailEnemy(scene, engine, {
     pulseEyes(dt, 0.9);
     animateExtras(dt, false);
     animateMainJaw(0.05 + Math.max(0, Math.sin(walkAnimT * 1.7)) * 0.08, dt);
+    animateDrips(dt, 0.05);
   }
 
   function animateWalk(dt, speedScale) {
@@ -246,6 +292,7 @@ export function createChudailEnemy(scene, engine, {
     pulseEyes(dt, 1.6);
     animateExtras(dt, false);
     animateMainJaw(0.12 + Math.max(0, Math.sin(walkAnimT * 2)) * 0.1, dt);
+    animateDrips(dt, 0.25);
   }
 
   // Pursuit gait — deliberately broken-looking. Each limb runs at a
@@ -279,6 +326,7 @@ export function createChudailEnemy(scene, engine, {
     pulseEyes(dt, speedScale > 1.6 ? 4.5 : 2.6);
     animateExtras(dt, true);
     animateMainJaw(0.35 + Math.max(0, Math.sin(walkAnimT * 2.4)) * 0.15, dt);
+    animateDrips(dt, speedScale > 1.6 ? 0.9 : 0.6);
   }
 
   function animateAttack(dt) {
@@ -289,16 +337,19 @@ export function createChudailEnemy(scene, engine, {
     pulseEyes(dt, 7);
     animateExtras(dt, true);
     animateMainJaw(0.7, dt); // full gape at the moment of the strike
+    animateDrips(dt, 1);
   }
 
   // Frozen "stalking" pose — the body stays completely still (that's the
   // point), but the extra heads keep a slow independent twitch and the
   // eye pulse keeps a slow, deliberate breathing-like rhythm, so it reads
-  // as "watching" rather than "paused".
+  // as "watching" rather than "paused". The blood keeps dripping even
+  // when everything else locks up — nothing about her is actually calm.
   function animateFrozen(dt) {
     pulseEyes(dt, 0.7);
     animateExtras(dt, false);
     animateMainJaw(0.15, dt);
+    animateDrips(dt, 0.4);
   }
 
   // ---------- attack hitbox ----------
