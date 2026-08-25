@@ -1,5 +1,12 @@
 // chudail.js — procedural model for the haveli's stalking presence.
 //
+// v12: TAIL SCALE-UP. The v11 naga tail read as too thin/short next to the
+// now-massive arms. Per-segment radius is up 5x (0.09 -> 0.45, within the
+// requested 4-6x range) and per-segment length is up 4x (0.26 -> 1.04),
+// with the tip barb cluster scaled to match so it doesn't look like a
+// tiny accessory stuck on a huge tail. Segment count (9) and taper ratio
+// are unchanged — the whole tail just got proportionally bigger.
+//
 // v11: NAGA REWORK. Big structural pass, four changes:
 //   1. STANDS STRAIGHT — the hard forward hunch is gone. torso.rotation.x
 //      goes from 0.32 down to a barely-there 0.04, and the neck's opposing
@@ -494,11 +501,17 @@ export function createChudailModel() {
   // traveling side-to-side wave through `parts.tailSegments` for a slither
   // instead of a walk cycle.
   // ============================================================
+  // v12: thickness up ~5x (within the requested 4-6x) and length up 4x
+  // from the v11 baseline (0.09 radius / 0.26 length per segment), per
+  // request. Everything else about the tail (taper ratio, dorsal ridge,
+  // barb cluster, blood placement) is proportional to these two numbers
+  // already, so bumping them scales the whole tail up cleanly rather than
+  // needing separate tuning per segment.
   const TAIL_SEGMENTS = 9;
   const tailSegments = [];
   let tailParent = hips;
-  let segLen = 0.26;
-  let segRadius = 0.09;
+  let segLen = 0.26 * 4;      // v12: was 0.26 — 4x length
+  let segRadius = 0.09 * 5;   // v12: was 0.09 — 5x thickness
   const restCurve = [0.05, 0.08, 0.1, 0.12, 0.14, 0.15, 0.14, 0.1, 0.04];
 
   for (let i = 0; i < TAIL_SEGMENTS; i++) {
@@ -522,10 +535,14 @@ export function createChudailModel() {
     segRadius = nextRadius;
   }
 
+  // v12: barb cluster scaled up to match the now much thicker tip segment
+  // (segRadius/segLen here are already the post-taper values at the tip)
   const tailTip = tailParent;
+  const tipBarbLen = 0.09 * 4;
+  const tipBarbSpread = segRadius * 0.9;
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * Math.PI * 2;
-    addMesh(tailTip, new THREE.ConeGeometry(0.012, 0.09, 4), boneMat, Math.cos(a) * 0.02, -segLen - i * 0.01, Math.sin(a) * 0.02).rotation.x = Math.PI * 0.55;
+    addMesh(tailTip, new THREE.ConeGeometry(0.012 * 4, tipBarbLen, 4), boneMat, Math.cos(a) * tipBarbSpread, -segLen - i * 0.01, Math.sin(a) * tipBarbSpread).rotation.x = Math.PI * 0.55;
   }
 
   const parts = {
