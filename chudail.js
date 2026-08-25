@@ -1,5 +1,21 @@
 // chudail.js — procedural model for the haveli's stalking presence.
 //
+// v10: MORE HEADS, ACTIVE BLOOD. Two additions on top of v9:
+//   1. A THIRD secondary head now sprouts low off the left hip/ribs, on
+//      its own bent stalk, angled to look up and back — so from most
+//      approach angles the player only clocks it a beat after the other
+//      two, which is the point. `parts.extraHeads` is now length 3; the
+//      animation loop in chudailenemy.js already iterates the array, so
+//      nothing there needs to change shape, only tuning.
+//   2. Blood is no longer purely static geometry. Every head's jaw corner
+//      and the bone-blade wound now carry a small teardrop mesh pulled
+//      from a new `addDrip()` helper, registered into `parts.drips`. Each
+//      entry is `{ mesh, baseY, phase, speed, range }` — chudailenemy.js
+//      v5 uses this to actually animate a drop stretching, falling, and
+//      resetting, instead of a frozen dribble. Static drips from v7-v9
+//      (addBloodDrip) are kept as-is for the "already dried" look; the new
+//      ones are specifically the WET, currently-forming drops.
+//
 // v9: multi-headed, multi-armed. The single small neck-wound became a
 // big, deformed main skull with a hinged jaw and three off-kilter eye
 // sockets, and two extra smaller heads now sprout from the torso on their
@@ -41,6 +57,7 @@
 //   - `leftEye`/`rightEye`/`eyeMaterial`/`eyeLight` -> two faint embers
 //     inside the wound, now a sickly pale white-green instead of orange.
 //   - `weaponSocket` -> now the bone blade jutting from the right forearm.
+//   - `drips` (new in v10) -> array of active wet-blood teardrops to animate.
 
 import * as THREE from "three";
 
@@ -141,7 +158,10 @@ export function createChudailModel() {
   const boneMat = new THREE.MeshStandardMaterial({ color: 0x4a4438, roughness: 0.7 }); // dirty bone, dulled down — no bright "clean" white to break the silhouette
   const woundMat = new THREE.MeshStandardMaterial({ color: 0x050101, roughness: 0.95 }); // essentially a black hole in the model
 
-  const wetBloodMat = new THREE.MeshStandardMaterial({ color: 0x1a0403, roughness: 0.15, metalness: 0.05 }); // still glossy — the ONE thing allowed to catch a highlight
+  // wet blood stays the one glossy, saturated-enough material in the whole
+  // palette on purpose — it's the only thing meant to visibly catch a
+  // highlight and read as "still active" rather than old damage.
+  const wetBloodMat = new THREE.MeshStandardMaterial({ color: 0x280603, roughness: 0.12, metalness: 0.08 });
   const driedBloodMat = new THREE.MeshStandardMaterial({ color: 0x0a0201, roughness: 0.97 });
 
   const ragTex = makeRagTexture({ base: "#0f0c0a", blotchColor: "rgba(0,0,0,0.6)", seed: 21 });
@@ -170,13 +190,34 @@ export function createChudailModel() {
     return drip;
   }
 
-  // a bent claw: a few tapered segments angling inward, for hands/feet
+  // ---------- v10: ACTIVE wet-blood teardrop ----------
+  // A small elongated drop, pivoted at its TOP (so scaling/moving it reads
+  // as "stretching down and falling" rather than growing from the middle).
+  // Registers itself into `drips` so chudailenemy.js can animate it every
+  // frame: stretch -> detach -> reset. `range` is how far it travels
+  // (world-ish local units) before looping, `speed` is its fall rate.
+  function addDrip(parent, drips, { x, y, z, width = 0.014, len = 0.05, range = 0.08, speed = 1, phase = 0 }) {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, y, z);
+    parent.add(pivot);
+    const drop = addMesh(pivot, new THREE.CapsuleGeometry ? new THREE.CapsuleGeometry(width * 0.5, len, 3, 5) : new THREE.BoxGeometry(width, len, width), wetBloodMat, 0, -len / 2, 0, false);
+    // a tiny bead at the very tip catches a highlight so the "wet" read
+    // survives even at a distance where the capsule itself is unreadable
+    const bead = addMesh(pivot, new THREE.SphereGeometry(width * 0.55, 5, 5), wetBloodMat, 0, -len, 0, false);
+    const entry = { pivot, drop, bead, baseY: y, phase, speed, range, len };
+    drips.push(entry);
+    return entry;
+  }
+
+  // bent claw: a few tapered segments angling inward, for hands/feet
   function addClaw(parent, { x, y, z, len = 0.07, rot = 0, rotZ = 0 }) {
     const claw = addMesh(parent, new THREE.ConeGeometry(0.012, len, 4), clawMat, x, y, z);
     claw.rotation.x = rot;
     claw.rotation.z = rotZ;
     return claw;
   }
+
+  const drips = []; // v10: every active wet-blood drop across the whole body, flat list for easy animation
 
   // ============================================================
   // HIPS (root) — narrow, starved pelvis, hip bones jutting visibly.
@@ -228,15 +269,17 @@ export function createChudailModel() {
     strip.rotation.z = (i - 1) * 0.08;
   });
 
-  // blood/ichor running down the chest from the neck
+  // blood/ichor running down the chest from the neck (static, dried streaks)
   addBloodDrip(torso, { x: -0.02, y: TORSO_H * 0.85, z: 0.1, len: 0.3, width: 0.026, mat: wetBloodMat });
   addBloodDrip(torso, { x: 0.06, y: TORSO_H * 0.7, z: 0.1, len: 0.18, width: 0.018, mat: driedBloodMat });
+  // v10: one ACTIVE drop tracking down from the neck wound onto the chest
+  addDrip(torso, drips, { x: 0.02, y: TORSO_H * 0.92, z: 0.1, len: 0.06, width: 0.016, range: 0.16, speed: 0.55, phase: 0.4 });
 
   // ============================================================
   // NECK — long, unnaturally bent, made of two extra segments instead of
   // sitting flush on the shoulders. Ends in a big, deformed HEAD (see
-  // below) instead of the bare wound from earlier versions. Two more,
-  // smaller heads also sprout from the torso on their own stalks.
+  // below) instead of the bare wound from earlier versions. Three more,
+  // smaller heads also sprout elsewhere on their own stalks.
   // ============================================================
   const neckPivot = new THREE.Group(); // maps to parts.hair (sway pivot) — base of the neck
   neckPivot.position.set(0, TORSO_H, 0);
@@ -299,6 +342,12 @@ export function createChudailModel() {
 
   addBloodDrip(stump, { x: -0.02, y: 0.02, z: 0.11, len: 0.15, width: 0.022, rot: -0.15, mat: wetBloodMat });
   addBloodDrip(stump, { x: 0.07, y: 0.06, z: 0.11, len: 0.1, width: 0.017, rot: 0.1, mat: driedBloodMat });
+  // v10: active drops from both corners of the main jaw — the two spots a
+  // gaping mouth actually drips from
+  addDrip(stump, drips, { x: -0.075, y: -0.01, z: 0.13, len: 0.05, width: 0.015, range: 0.1, speed: 0.9, phase: 0 });
+  addDrip(stump, drips, { x: 0.07, y: -0.005, z: 0.135, len: 0.045, width: 0.013, range: 0.09, speed: 1.1, phase: 1.7 });
+  // and one weeping from the ripped skull-wound itself
+  addDrip(stump, drips, { x: 0.1, y: 0.06, z: -0.03, len: 0.04, width: 0.012, range: 0.07, speed: 0.7, phase: 2.6 });
 
   // three asymmetric eye sockets rather than a normal pair — different
   // heights/sizes/spacing so it never quite resolves into a "face"
@@ -310,9 +359,9 @@ export function createChudailModel() {
   stump.add(eyeLight);
 
   // ---------- secondary heads — smaller, hydra-style, sprouting from the
-  // torso on their own thin bent stalks. Purely additional horror; not
+  // body on their own thin bent stalks. Purely additional horror; not
   // used for sight/attack logic, just there to be wrong. ----------
-  function buildSmallHead(parent, { x, y, z, rotY = 0, rotZ = 0, scale = 0.5 }) {
+  function buildSmallHead(parent, { x, y, z, rotY = 0, rotZ = 0, scale = 0.5, dripPhase = 0 }) {
     const stalk = new THREE.Group();
     stalk.position.set(x, y, z);
     stalk.rotation.set(0.4, rotY, rotZ);
@@ -338,12 +387,19 @@ export function createChudailModel() {
     light.position.set(0, 0.09, 0.065);
     small.add(light);
 
-    return { stalk, head: small, jawPivot: smallJaw, eye: smallEye, light };
+    // v10: a wet drop off the corner of each small mouth too, so the extra
+    // heads read as alive/leaking rather than decorative growths
+    const drip = addDrip(smallJaw, drips, { x: 0.04, y: -0.02, z: 0.06, len: 0.03, width: 0.01, range: 0.06, speed: 1.2, phase: dripPhase });
+
+    return { stalk, head: small, jawPivot: smallJaw, eye: smallEye, light, drip };
   }
 
   const extraHeads = [
-    buildSmallHead(torso, { x: -0.19, y: TORSO_H * 0.75, z: -0.02, rotY: -1.1, rotZ: 0.3, scale: 0.5 }),
-    buildSmallHead(torso, { x: 0.16, y: TORSO_H * 0.35, z: -0.07, rotY: 2.0, rotZ: -0.5, scale: 0.42 }),
+    buildSmallHead(torso, { x: -0.19, y: TORSO_H * 0.75, z: -0.02, rotY: -1.1, rotZ: 0.3, scale: 0.5, dripPhase: 0.8 }),
+    buildSmallHead(torso, { x: 0.16, y: TORSO_H * 0.35, z: -0.07, rotY: 2.0, rotZ: -0.5, scale: 0.42, dripPhase: 2.1 }),
+    // v10: third small head — low off the opposite hip, tucked so it's
+    // easy to miss on approach and only registers once it's close
+    buildSmallHead(hips, { x: -0.16, y: 0.06, z: -0.04, rotY: -2.4, rotZ: 0.65, scale: 0.36, dripPhase: 3.4 }),
   ];
 
   // ============================================================
@@ -421,9 +477,12 @@ export function createChudailModel() {
   addMesh(weaponSocket, new THREE.ConeGeometry(0.012, 0.08, 4), boneMat, 0.025, 0.16, 0).rotation.z = -0.5;
   addMesh(weaponSocket, new THREE.ConeGeometry(0.01, 0.06, 4), boneMat, -0.02, 0.22, 0).rotation.z = 0.6;
 
-  // blood where it pierces the arm, and dripping down the blade
+  // blood where it pierces the arm, and dripping down the blade (static)
   addBloodDrip(weaponSocket, { x: -0.02, y: -0.02, z: 0.015, len: 0.09, width: 0.016, mat: wetBloodMat });
   addBloodDrip(weaponSocket, { x: 0.015, y: 0.1, z: 0.01, len: 0.12, width: 0.012, mat: driedBloodMat, rot: 0.05 });
+  // v10: active drop welling up where the bone punches through the skin —
+  // this one should read as fresh even when the character stands still
+  addDrip(weaponSocket, drips, { x: -0.015, y: -0.005, z: 0.022, len: 0.045, width: 0.014, range: 0.11, speed: 0.6, phase: 1.2 });
 
   // ============================================================
   // LEGS — digitigrade, backward-bending, like a broken marionette. Thin,
@@ -471,7 +530,7 @@ export function createChudailModel() {
     hair: neckPivot, // repurposed sway pivot — base of the long bent neck
     head: stump,     // the big main skull
     jawPivot,        // main head's hinged jaw
-    extraHeads,       // array of { stalk, head, jawPivot, eye, light } — secondary heads
+    extraHeads,       // array of { stalk, head, jawPivot, eye, light, drip } — now 3 secondary heads
     leftEye,
     rightEye,
     eyeLight,
@@ -486,6 +545,7 @@ export function createChudailModel() {
     rightHand: rightArm.hand,
     extraArms, // array of { shoulder, forearmPivot, hand } — secondary arm pair
     weaponSocket,
+    drips, // v10: flat array of every active wet-blood drop, for chudailenemy.js to animate
     leftUpperLeg: leftLeg.upperLeg,
     leftLowerLeg: leftLeg.lowerLeg,
     rightUpperLeg: rightLeg.upperLeg,
