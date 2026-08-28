@@ -107,10 +107,19 @@ export function createVrishchikModel() {
   const ichorMat = new THREE.MeshStandardMaterial({ color: 0x1a0306, roughness: 0.35, metalness: 0.05 });
   const clawMat = new THREE.MeshStandardMaterial({ color: 0x0c0a10, roughness: 0.4, metalness: 0.35 });
 
-  // the only saturated color on the whole model — self-lit so it still
-  // reads in near-total darkness
+  // acid-green — used for veins/stinger, self-lit so it still reads in
+  // near-total darkness
   const glowMat = new THREE.MeshBasicMaterial({ color: 0x8fff5a, transparent: true, opacity: 0.85 });
   const glowDimMat = new THREE.MeshBasicMaterial({ color: 0x6fdf46, transparent: true, opacity: 0.35 });
+
+  // bright red — reserved for the eyes only, so the face reads as the
+  // one hot, alert point on an otherwise dark/toxic-green model
+  const eyeGlowMat = new THREE.MeshBasicMaterial({ color: 0xff1a1a, transparent: true, opacity: 0.95 });
+
+  // pale, bone-like — teeth need to read as physically sharp objects
+  // rather than glowing, so this is a normal lit material, not self-lit
+  const toothMat = new THREE.MeshStandardMaterial({ color: 0xcfc6b0, roughness: 0.45, metalness: 0.05 });
+  const mouthCavityMat = new THREE.MeshStandardMaterial({ color: 0x0a0002, roughness: 0.9, metalness: 0 });
 
   function addMesh(parent, geo, mat, x = 0, y = 0, z = 0, castShadow = true) {
     const mesh = new THREE.Mesh(geo, mat);
@@ -321,32 +330,69 @@ export function createVrishchikModel() {
   addMesh(head, new THREE.ConeGeometry(0.08, 0.24, 6), chitinMat, 0, 0.06, -0.06).rotation.x = Math.PI * 0.55;
   addMesh(head, new THREE.BoxGeometry(0.1, 0.08, 0.14), chitinDarkMat, 0, 0.02, 0.02);
 
-  // eye cluster — small glowing pods, irregular placement rather than a
-  // symmetrical pair, so it doesn't read as a "face"
+  // eye cluster — 6 small glowing pods, irregular placement rather than
+  // a symmetrical pair, so it doesn't read as a normal "face" despite
+  // now being the brightest, most alert-looking part of the model
   const eyeCluster = [];
   const eyeSpecs = [
-    { x: -0.045, y: 0.04, z: 0.09, r: 0.012 },
-    { x: -0.02, y: 0.055, z: 0.1, r: 0.009 },
-    { x: 0.03, y: 0.045, z: 0.095, r: 0.011 },
-    { x: 0.05, y: 0.02, z: 0.08, r: 0.008 },
-    { x: 0.0, y: 0.06, z: 0.075, r: 0.007 },
+    { x: -0.055, y: 0.045, z: 0.085, r: 0.013 },
+    { x: -0.03, y: 0.06, z: 0.1, r: 0.01 },
+    { x: -0.005, y: 0.065, z: 0.09, r: 0.008 },
+    { x: 0.025, y: 0.055, z: 0.095, r: 0.012 },
+    { x: 0.05, y: 0.035, z: 0.08, r: 0.009 },
+    { x: 0.06, y: 0.01, z: 0.06, r: 0.008 },
   ];
   eyeSpecs.forEach((e) => {
-    const pod = addMesh(head, new THREE.SphereGeometry(e.r, 6, 6), glowMat, e.x, e.y, e.z, false);
+    const pod = addMesh(head, new THREE.SphereGeometry(e.r, 8, 8), eyeGlowMat, e.x, e.y, e.z, false);
     eyeCluster.push(pod);
   });
-  const eyeLight = new THREE.PointLight(0x8fff5a, 0.15, 1, 2.4);
+  const eyeLight = new THREE.PointLight(0xff1a1a, 0.2, 1, 2.4);
   eyeLight.position.set(0, 0.045, 0.09);
   head.add(eyeLight);
 
-  // hinged mandibles
+  // ============================================================
+  // MOUTH — a dark cavity set into the lower front of the head with a
+  // hinged lower jaw (jawPivot) so it can be driven open/closed by the
+  // controller, ringed with sharp, oversized teeth on both the fixed
+  // upper edge and the moving lower jaw. jawPivot's resting rotation is
+  // offset (see below) so the mouth reads as permanently open rather
+  // than closed by default — the controller only widens it further when
+  // hunting/attacking.
+  // ============================================================
+  const mouthCavity = addMesh(head, new THREE.BoxGeometry(0.09, 0.055, 0.05), mouthCavityMat, 0, -0.015, 0.1);
+
+  function addTooth(parent, { x, y, z, len = 0.04, width = 0.014, rotX = Math.PI }) {
+    const tooth = addMesh(parent, new THREE.ConeGeometry(width, len, 5), toothMat, x, y, z);
+    tooth.rotation.x = rotX;
+    return tooth;
+  }
+
+  // fixed upper row — hangs down from the head, doesn't move with the jaw
+  const upperTeeth = [];
+  const upperToothXs = [-0.036, -0.021, -0.007, 0.007, 0.021, 0.036];
+  upperToothXs.forEach((x, i) => {
+    const len = i === 0 || i === upperToothXs.length - 1 ? 0.032 : 0.045; // longer fangs in the middle
+    upperTeeth.push(addTooth(head, { x, y: 0.0, z: 0.115, len, width: 0.011, rotX: Math.PI }));
+  });
+
+  // hinged mandibles — kept as the outer "pincer-like" jaw structure
+  // flanking the mouth
   const jawPivot = new THREE.Group();
-  jawPivot.position.set(0, 0, 0.09);
+  jawPivot.position.set(0, -0.015, 0.09);
+  jawPivot.rotation.x = -0.22; // resting position: mouth already open
   head.add(jawPivot);
   [-1, 1].forEach((sign) => {
-    const mandible = addMesh(jawPivot, new THREE.ConeGeometry(0.014, 0.09, 4), clawMat, sign * 0.02, -0.01, 0.03);
+    const mandible = addMesh(jawPivot, new THREE.ConeGeometry(0.014, 0.09, 4), clawMat, sign * 0.045, -0.005, 0.03);
     mandible.rotation.x = Math.PI * 0.6;
     mandible.rotation.z = sign * 0.3;
+  });
+
+  // lower row of teeth, riding on jawPivot so it opens/closes with it
+  const lowerTeeth = [];
+  const lowerToothXs = [-0.032, -0.018, -0.005, 0.005, 0.018, 0.032];
+  lowerToothXs.forEach((x, i) => {
+    const len = i === 0 || i === lowerToothXs.length - 1 ? 0.028 : 0.04;
+    lowerTeeth.push(addTooth(jawPivot, { x, y: 0.008, z: 0.075, len, width: 0.01, rotX: 0 }));
   });
 
   // ---------- apply overall size scale ----------
@@ -363,6 +409,9 @@ export function createVrishchikModel() {
     head,
     neck,
     jawPivot,
+    mouthCavity,
+    upperTeeth,
+    lowerTeeth,
     eyeCluster,
     eyeLight,
     leftShoulder: leftArm.shoulder,
