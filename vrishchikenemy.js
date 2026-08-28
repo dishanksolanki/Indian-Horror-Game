@@ -1,54 +1,9 @@
 // vrishchikenemy.js — behavior controller for VRISHCHIK.
-//
-// Three things make this different from both prior villains:
-//
-// 1. HEXAPOD GAIT, NOT A HUMANOID WALK/CRAWL. vrishchik.js's six legs
-//    (parts.legs) are grouped into a standard insect tripod pattern —
-//    legs {front-left, mid-right, back-left} swing together while
-//    {front-right, mid-left, back-right} stay planted, then they swap.
-//    animateGait() drives femur/tibia rotation per-leg from that pattern
-//    instead of any tail/limb-sway approach used before.
-//
-// 2. THE AREA ACTUALLY GETS DARKER AS IT CLOSES IN. This is a real
-//    lighting effect, not just an animation flourish: every frame,
-//    darkenWorld() eases `engine.renderer.toneMappingExposure` down from
-//    its normal baseline toward a much dimmer floor as Vrishchik's
-//    distance to the player shrinks below `darkenRadius`, and eases it
-//    back up as it retreats or the room resets. This happens any time
-//    it's physically close, independent of whether the player can see
-//    or has noticed it — the dread cue reads even with your back turned.
-//    The player's own flashlight is untouched (it still cuts through the
-//    murk), which is the point: everything BUT what you're directly
-//    lighting gets harder to make out.
-//
-// 3. PROXIMITY GROWL + DIRECTIONAL FOOTSTEPS. A low, looping growl fades
-//    in as it closes the distance, using the exact same distance/radius
-//    shape as darkenWorld() (see updateProximitySound()) so the audio
-//    and visual dread cues track together — the room gets darker AND
-//    louder at the same rate. It also creeps up in pitch while actively
-//    hunting (PURSUE/ATTACK) for extra tension. The growl is
-//    DELIBERATELY non-positional (a plain THREE.Audio pinned to the
-//    camera) — see the comment above growlSound below — so proximity is
-//    felt but doesn't reveal direction.
-//
-//    Footsteps are the opposite on purpose: THREE.PositionalAudio
-//    attached to `group` itself, so the Web Audio panner node's real
-//    stereo/distance falloff tracks Vrishchik's actual position as it
-//    moves. That's what lets the player tell WHICH DIRECTION it's
-//    coming from and try to move away from it, even off-screen or
-//    behind a wall. Footstep hits are synced to the tripod gait's own
-//    phase (see triggerFootstepsFromGait()) so they land exactly on the
-//    visual footfall rather than firing on an arbitrary timer, and only
-//    play while it's actually moving (WALK/INVESTIGATE/PURSUE/ATTACK's
-//    brace-shuffle) — never during IDLE, so silence still means "not
-//    moving right now."
-//
-// State machine (same shape as the last two, for consistency):
-//   IDLE -> WALK (patrol) -> [aware of player] -> PURSUE -> [in range] -> ATTACK
-//   any of IDLE/WALK -> [hears a thrown item land] -> INVESTIGATE
 
 import * as THREE from "three";
 import { createVrishchikModel } from "./vrishchik.js";
+import { soundManager } from "./soundManager.js";
+import { setupAudioUnlock } from "./soundSynth.js";
 
 export const VrishchikState = Object.freeze({
   IDLE: "idle",
@@ -58,12 +13,8 @@ export const VrishchikState = Object.freeze({
   ATTACK: "attack",
 });
 
-// Standard hexapod tripod grouping: opposite corners + the middle leg on
-// the near side move together. legs[] order from vrishchik.js is
-// [FL, FR, ML, MR, BL, BR] (row-major: front pair, mid pair, back pair,
-// left then right within each pair) — indices below reflect that.
-const TRIPOD_A = [0, 3, 4]; // front-left, mid-right, back-left
-const TRIPOD_B = [1, 2, 5]; // front-right, mid-left, back-right
+const TRIPOD_A = [0, 3, 4];
+const TRIPOD_B = [1, 2, 5];
 
 export function createVrishchikEnemy(scene, engine, {
   position = new THREE.Vector3(),
@@ -71,25 +22,25 @@ export function createVrishchikEnemy(scene, engine, {
   patrolPoints = null,
   sightRange = 9,
   sightFov = Math.PI / 2.3,
-  loseRange = 26,           // bumped up now that it roams the whole map — a room-scale loseRange would make it give up the instant the player ducked through a doorway
-  attackRange = 1.7,       // longer than the last two — the tail strikes at range
+  loseRange = 26,
+  attackRange = 1.7,
   attackWindup = 0.45,
   attackRecover = 0.3,
   attackCooldown = 1.5,
   walkSpeed = 1.8,
   pursueSpeed = 3.6,
   investigateSpeed = 2.2,
-  darkenRadius = 7,         // distance (m) at which the exposure dimming starts kicking in
-  darkenFloor = 0.35,       // toneMappingExposure multiplier at zero distance (0 = pitch black, 1 = no effect)
-  darkenEase = 3.5,         // how quickly exposure eases toward its target each frame
-  flashlightFlickerChance = 0.06, // rough odds per second of a brief flashlight dip when very close + hunting
-  growlUrl = "./sounds/vrishchik_growl.mp3", // looping proximity growl — see updateProximitySound()
-  growlMaxVolume = 0.9,      // volume once the player is right on top of it
-  growlEase = 4,             // how quickly volume eases toward its target each frame
-  footstepUrl = "./sounds/vrishchik_footstep.mp3", // directional footstep hit — see triggerFootstepsFromGait()
-  footstepRefDistance = 2.5, // distance (m) at which footstep volume starts falling off
-  footstepRolloffFactor = 1.6, // how sharply footstep volume falls off with distance
-  footstepMaxDistance = 40,    // beyond this, footsteps are inaudible regardless of volume setting
+  darkenRadius = 7,
+  darkenFloor = 0.35,
+  darkenEase = 3.5,
+  flashlightFlickerChance = 0.06,
+  growlUrl = "./sounds/vrishchik_growl.mp3",
+  growlMaxVolume = 0.9,
+  growlEase = 4,
+  footstepUrl = "./sounds/vrishchik_footstep.mp3",
+  footstepRefDistance = 2.5,
+  footstepRolloffFactor = 1.6,
+  footstepMaxDistance = 40,
   onCatchPlayer = null,
 } = {}) {
   const { group, parts } = createVrishchikModel();
@@ -97,15 +48,13 @@ export function createVrishchikEnemy(scene, engine, {
   group.rotation.y = yaw;
   scene.add(group);
 
-  // Baseline exposure captured at construction time so darkenWorld() has
-  // a known "normal" to ease back up to, whatever the room set it to.
-  const baseExposure = engine.renderer.toneMappingExposure;
+  const baseExposure = engine.renderer ? engine.renderer.toneMappingExposure : 1.0;
   let currentExposureTarget = baseExposure;
 
   let state = VrishchikState.IDLE;
   let stateT = 0;
-  let gaitT = 0;         // running phase clock for the tripod gait
-  let animT = 0;         // running phase clock for tail/claw/mandible sway
+  let gaitT = 0;
+  let animT = 0;
   let attackTimer = 0;
   let attackHitChecked = false;
   let cooldownTimer = 0;
@@ -117,18 +66,20 @@ export function createVrishchikEnemy(scene, engine, {
   const _facing = new THREE.Vector3();
   const _dir = new THREE.Vector3();
 
-  const unsubscribeNoise = engine.onNoise(({ position: noisePos }) => {
+  const unsubscribeNoise = (engine.onNoise) ? engine.onNoise(({ position: noisePos }) => {
     if (state === VrishchikState.PURSUE || state === VrishchikState.ATTACK) return;
     investigateTarget = noisePos.clone();
     state = VrishchikState.INVESTIGATE;
     stateT = 0;
-  });
+  }) : () => {};
 
   function distanceToPlayer() {
+    if (!engine.camera) return 999;
     return group.position.distanceTo(engine.camera.position);
   }
 
   function canSeePlayer() {
+    if (!engine.camera) return false;
     if (distanceToPlayer() > sightRange) return false;
     _toPlayer.copy(engine.camera.position).sub(group.position);
     _toPlayer.y = 0;
@@ -139,6 +90,7 @@ export function createVrishchikEnemy(scene, engine, {
   }
 
   function blocked(nextPos) {
+    if (!engine.colliders) return false;
     const r = 0.4;
     const box = new THREE.Box3(
       new THREE.Vector3(nextPos.x - r, 0, nextPos.z - r),
@@ -176,38 +128,18 @@ export function createVrishchikEnemy(scene, engine, {
     return patrolPoints[patrolIndex % patrolPoints.length];
   }
 
-  /**
-   * Replace the patrol route at runtime. room21.js (where Vrishchik is
-   * spawned) only knows about its own room at construction time, so it
-   * seeds patrolPoints with a small two-point beat inside room21 just so
-   * there's always *something* to patrol. To have it roam the whole
-   * haveli, main.js calls this once every room/corridor has been built,
-   * handing it a long point-to-point route across many rooms (see
-   * main.js for how that route is assembled). Resets patrolIndex so it
-   * starts the new route from its beginning rather than an out-of-range
-   * index into the old (possibly shorter) list.
-   * @param {THREE.Vector3[]} points
-   */
   function setPatrolPoints(points) {
     patrolPoints = points;
     patrolIndex = 0;
   }
 
-  // ---------- world-darkening effect ----------
-  // Eases engine.renderer.toneMappingExposure toward a target derived
-  // from distance-to-player, every frame, regardless of state — this is
-  // deliberately not gated on "is hunting" so the effect reads as an
-  // ambient property of Vrishchik being nearby, not a hunt-mode tell.
   function darkenWorld(dt) {
+    if (!engine.renderer) return;
     const dist = distanceToPlayer();
-    const t = Math.max(0, Math.min(1, 1 - dist / darkenRadius)); // 0 far, 1 on top of it
-    // ease t itself slightly so brief distance jitter doesn't flicker exposure
+    const t = Math.max(0, Math.min(1, 1 - dist / darkenRadius));
     currentExposureTarget = baseExposure * (1 - t * (1 - darkenFloor));
     engine.renderer.toneMappingExposure += (currentExposureTarget - engine.renderer.toneMappingExposure) * Math.min(1, dt * darkenEase);
 
-    // occasional flashlight dip when it's right on top of the player and
-    // actively hunting — reads as it briefly choking the light rather
-    // than a bulb flicker
     if (engine.flashlightOn && (state === VrishchikState.PURSUE || state === VrishchikState.ATTACK) && dist < darkenRadius * 0.5) {
       flickerTimer -= dt;
       if (flickerTimer <= 0 && Math.random() < flashlightFlickerChance) {
@@ -218,98 +150,55 @@ export function createVrishchikEnemy(scene, engine, {
   }
 
   function _flashlightDip() {
+    if (!engine.flashlight) return;
     const normalIntensity = engine.flashlight.intensity;
     engine.flashlight.intensity = normalIntensity * 0.15;
     setTimeout(() => {
-      if (engine.flashlightOn) engine.flashlight.intensity = normalIntensity;
+      if (engine.flashlightOn && engine.flashlight) engine.flashlight.intensity = normalIntensity;
     }, 90 + Math.random() * 120);
   }
 
   function restoreWorldLighting() {
-    engine.renderer.toneMappingExposure = baseExposure;
+    if (engine.renderer) engine.renderer.toneMappingExposure = baseExposure;
   }
 
-  // ---------- shared audio listener ----------
-  // Needs an AudioListener on the camera. If a room spawns more than one
-  // Vrishchik (or the camera otherwise never got one), this adds a
-  // single shared listener the first time it's needed rather than
-  // stacking a duplicate on every enemy instance. Both the growl and the
-  // footstep sound below reuse this same listener + loader.
-  let audioListener = engine.camera.children.find((c) => c instanceof THREE.AudioListener);
-  if (!audioListener) {
-    audioListener = new THREE.AudioListener();
-    engine.camera.add(audioListener);
-  }
-  const audioLoader = new THREE.AudioLoader();
+  const audioListener = soundManager.getListener(engine.camera);
 
-  // ---------- proximity growl ----------
-  // A low, looping growl whose volume is driven manually from raw
-  // distance-to-player, using the exact same falloff radius as
-  // darkenWorld() so sound and lighting read as one combined "it's
-  // close" cue rather than two effects that drift out of sync.
-  //
-  // Deliberately NOT using THREE.PositionalAudio's built-in distance
-  // model — that attenuates based on the panner node's own rolloff
-  // curve, which would need separate tuning to match darkenRadius, and
-  // its stereo panning would make the growl "point at" the model even
-  // when the player can't see it, undercutting the same "closes in
-  // regardless of facing" quality darkenWorld() is going for. A plain
-  // THREE.Audio with volume eased frame-by-frame gives full control and
-  // keeps the two effects locked to the same curve. (Directionality is
-  // handled separately by the footstep sound below instead.)
+  // Proximity Growl
   const growlSound = new THREE.Audio(audioListener);
   let growlLoaded = false;
-  audioLoader.load(
-    growlUrl,
-    (buffer) => {
-      growlSound.setBuffer(buffer);
-      growlSound.setLoop(true);
-      growlSound.setVolume(0);
-      growlSound.play();
-      growlLoaded = true;
-    },
-    undefined,
-    (err) => {
-      // Missing/failed audio shouldn't break the enemy — just no growl.
-      console.warn(
-        `[vrishchikenemy.js] failed to load growl sound from "${growlUrl}" — ` +
-        `confirm the file exists at that path relative to index.html:`,
-        err
-      );
-    }
-  );
+
+  soundManager.loadBuffer(audioListener, growlUrl, "growl", (buffer) => {
+    growlSound.setBuffer(buffer);
+    growlSound.setLoop(true);
+    growlSound.setVolume(0);
+    try { growlSound.play(); } catch (e) {}
+    growlLoaded = true;
+  });
 
   function updateProximitySound(dt) {
     if (!growlLoaded) return;
+    setupAudioUnlock(audioListener.context);
 
     const dist = distanceToPlayer();
-    const t = Math.max(0, Math.min(1, 1 - dist / darkenRadius)); // same shape as darkenWorld()
-    const targetVolume = t * t * growlMaxVolume; // eased curve — stays near-silent until genuinely close
-    const nextVolume = growlSound.getVolume() + (targetVolume - growlSound.getVolume()) * Math.min(1, dt * growlEase);
+    const t = Math.max(0, Math.min(1, 1 - dist / darkenRadius));
+    const targetVolume = t * t * growlMaxVolume;
+    const currentVol = growlSound.getVolume();
+    const nextVolume = currentVol + (targetVolume - currentVol) * Math.min(1, dt * growlEase);
     growlSound.setVolume(nextVolume);
 
-    // pitch creeps up slightly while actively hunting, for extra tension
+    if (nextVolume > 0.01 && !growlSound.isPlaying && audioListener.context.state === "running") {
+      try { growlSound.play(); } catch (e) {}
+    }
+
     const targetRate = (state === VrishchikState.PURSUE || state === VrishchikState.ATTACK) ? 1.15 : 1.0;
-    if (growlSound.source) {
+    if (growlSound.source && growlSound.source.playbackRate) {
       const currentRate = growlSound.source.playbackRate.value;
       growlSound.source.playbackRate.value = currentRate + (targetRate - currentRate) * Math.min(1, dt * 2);
     }
   }
 
-  // ---------- directional footsteps ----------
-  // THREE.PositionalAudio parented to `group` itself (not the camera),
-  // so the Web Audio panner node's real stereo image + distance falloff
-  // tracks Vrishchik's actual world position as it moves. This is what
-  // lets the player tell which direction it's coming from — the growl
-  // above tells you "it's close", footsteps tell you "it's over there" —
-  // and try to move away, even when it's out of sight or behind a wall.
-  //
-  // Each footstep is a single one-shot hit rather than a loop, fired
-  // exactly when the tripod gait's phase flips (one leg-group planting
-  // down) — see triggerFootstepsFromGait(). Playback rate is jittered
-  // slightly per-hit so a repeated single sample doesn't sound robotic,
-  // and nudged up with speedScale so pursuing feels more frantic than
-  // patrolling.
+  // Directional Footsteps
   const footstepSound = new THREE.PositionalAudio(audioListener);
   footstepSound.setRefDistance(footstepRefDistance);
   footstepSound.setRolloffFactor(footstepRolloffFactor);
@@ -319,39 +208,23 @@ export function createVrishchikEnemy(scene, engine, {
 
   let footstepBuffer = null;
   let footstepLoaded = false;
-  audioLoader.load(
-    footstepUrl,
-    (buffer) => {
-      footstepBuffer = buffer;
-      footstepLoaded = true;
-    },
-    undefined,
-    (err) => {
-      // Missing/failed audio shouldn't break the enemy — just no
-      // directional footstep cue (the growl still works on its own).
-      console.warn(
-        `[vrishchikenemy.js] failed to load footstep sound from "${footstepUrl}" — ` +
-        `confirm the file exists at that path relative to index.html:`,
-        err
-      );
-    }
-  );
+
+  soundManager.loadBuffer(audioListener, footstepUrl, "footstep", (buffer) => {
+    footstepBuffer = buffer;
+    footstepLoaded = true;
+  });
 
   function playFootstepHit(speedScale) {
-    if (!footstepLoaded) return;
-    // stop+replay rather than letting overlapping hits stack, so a fast
-    // gait doesn't turn into a mush of overlapping copies of the same clip
+    if (!footstepLoaded || !footstepBuffer) return;
+    setupAudioUnlock(audioListener.context);
+
     if (footstepSound.isPlaying) footstepSound.stop();
     footstepSound.setBuffer(footstepBuffer);
     footstepSound.setPlaybackRate(0.85 + speedScale * 0.15 + Math.random() * 0.06);
     footstepSound.setVolume(Math.min(0.55 + speedScale * 0.2, 1));
-    footstepSound.play();
+    try { footstepSound.play(); } catch (e) {}
   }
 
-  // sin(gaitT) sign flip == one tripod group (3 legs) planting down —
-  // fires one footstep "beat" per flip, so hits land on the actual
-  // visual footfall instead of an arbitrary timer that could drift out
-  // of sync with the leg animation.
   let lastFootPhaseSign = 1;
   function triggerFootstepsFromGait(speedScale) {
     const sign = Math.sin(gaitT) >= 0 ? 1 : -1;
@@ -361,20 +234,6 @@ export function createVrishchikEnemy(scene, engine, {
     }
   }
 
-  // ---------- procedural animation ----------
-
-  // Tripod gait: each leg's swing phase comes from whichever tripod group
-  // it's in (A/B, opposite phase). During swing, the femur lifts and the
-  // tibia extends forward; during stance, the leg drags back under the
-  // body at ground contact to "push" — a simplified but readable insect
-  // walk rather than true IK foot-planting.
-  //
-  // Also the single place footsteps are triggered from (see
-  // triggerFootstepsFromGait() above) — every caller of animateGait()
-  // already passes the right speedScale for its state (WALK/INVESTIGATE/
-  // PURSUE/ATTACK's brace-shuffle), so hooking in here means footsteps
-  // automatically match however fast it's currently moving, with no
-  // separate bookkeeping needed per-state.
   function animateGait(dt, speedScale) {
     gaitT += dt * 5 * speedScale;
     triggerFootstepsFromGait(speedScale);
@@ -384,13 +243,10 @@ export function createVrishchikEnemy(scene, engine, {
       const lift = Math.max(0, Math.sin(phase));
       leg.femur.rotation.x = Math.sin(phase) * 0.35;
       leg.tibia.rotation.x = -lift * 0.5;
-      leg.coxa.rotation.z = Math.sin(phase * 0.5) * 0.05 * leg.side;
+      if (leg.coxa) leg.coxa.rotation.z = Math.sin(phase * 0.5) * 0.05 * leg.side;
     });
   }
 
-  // Idle stance sway — deliberately does NOT call animateGait() / the
-  // footstep trigger, so standing still stays silent. Silence is itself
-  // a cue: if you can't hear footsteps, it isn't moving right now.
   function idleLegSway(dt) {
     gaitT += dt * 0.6;
     parts.legs.forEach((leg, i) => {
@@ -400,8 +256,6 @@ export function createVrishchikEnemy(scene, engine, {
     });
   }
 
-  // Idle/patrol tail sway — slow, low amplitude, poised rather than
-  // striking.
   function animateTailIdle(dt) {
     animT += dt * 0.5;
     parts.tailSegments.forEach((seg, i) => {
@@ -409,8 +263,6 @@ export function createVrishchikEnemy(scene, engine, {
     });
   }
 
-  // Hunting tail — wider, faster sway, coiling tighter as if loading the
-  // strike.
   function animateTailHunt(dt, speedScale) {
     animT += dt * 1.6 * speedScale;
     parts.tailSegments.forEach((seg, i) => {
@@ -422,49 +274,51 @@ export function createVrishchikEnemy(scene, engine, {
     const t = animT * (agitated ? 2.2 : 0.7);
     const spread = agitated ? 0.35 : 0.1;
     [parts.leftClawUpper, parts.leftClawLower, parts.rightClawUpper, parts.rightClawLower].forEach((c, i) => {
-      const dir = i % 2 === 0 ? 1 : -1;
-      c.rotation.x = Math.sin(t + i) * spread * dir * 0.3;
+      if (c) {
+        const dir = i % 2 === 0 ? 1 : -1;
+        c.rotation.x = Math.sin(t + i) * spread * dir * 0.3;
+      }
     });
-    parts.leftForearm.rotation.x = 0.5 + Math.sin(t * 0.8) * 0.1;
-    parts.rightForearm.rotation.x = 0.5 + Math.sin(t * 0.8 + 1) * 0.1;
+    if (parts.leftForearm) parts.leftForearm.rotation.x = 0.5 + Math.sin(t * 0.8) * 0.1;
+    if (parts.rightForearm) parts.rightForearm.rotation.x = 0.5 + Math.sin(t * 0.8 + 1) * 0.1;
   }
 
   function pulseEyes(dt, speed, intensity) {
-    parts.eyeLight.intensity = 0.08 + Math.max(0, Math.sin(animT * speed)) * intensity;
+    if (parts.eyeLight) parts.eyeLight.intensity = 0.08 + Math.max(0, Math.sin(animT * speed)) * intensity;
     const op = 0.5 + Math.max(0, Math.sin(animT * speed)) * 0.35 * intensity;
-    parts.eyeCluster.forEach((e) => { e.material.opacity = op; });
+    if (parts.eyeCluster) {
+      parts.eyeCluster.forEach((e) => { e.material.opacity = op; });
+    }
   }
 
   function animateMandibles(target, dt) {
-    parts.jawPivot.rotation.x += (target - parts.jawPivot.rotation.x) * Math.min(1, dt * 6);
+    if (parts.jawPivot) {
+      parts.jawPivot.rotation.x += (target - parts.jawPivot.rotation.x) * Math.min(1, dt * 6);
+    }
   }
 
-  // The strike: the tail whips forward over the body toward the player.
-  // Rather than animating every segment independently here, it drives a
-  // shared "strike progress" curve across the chain — early segments lead,
-  // later ones lag slightly — so the whole tail reads as one committed
-  // lunge rather than each joint moving on its own.
   function animateAttack(dt) {
     const p = Math.min(attackTimer / attackWindup, 1);
     const strike = p < 0.5 ? -(p / 0.5) : -(1 - (p - 0.5) / 0.5);
     parts.tailSegments.forEach((seg, i) => {
       const lag = Math.max(0, 1 - i * 0.12);
-      seg.rotation.x += strike * 0.5 * lag * dt * 12; // relative nudge toward the strike, eased by dt
+      seg.rotation.x += strike * 0.5 * lag * dt * 12;
     });
     animateClaws(dt, true);
-    animateMandibles(-0.95, dt); // jaw snaps wide open for the bite
+    animateMandibles(-0.95, dt);
     pulseEyes(dt, 8, 1);
-    animateGait(dt, 0.3); // small ground-brace shuffle during the strike
+    animateGait(dt, 0.3);
   }
 
-  // ---------- attack hitbox ----------
   function checkAttackHit() {
+    if (!parts.stingerTip || !engine.camera) return false;
     const strikeWorldPos = new THREE.Vector3();
     parts.stingerTip.getWorldPosition(strikeWorldPos);
     return strikeWorldPos.distanceTo(engine.camera.position) < attackRange + 0.5;
   }
 
   function faceTowardPlayer() {
+    if (!engine.camera) return;
     _dir.copy(engine.camera.position).sub(group.position);
     _dir.y = 0;
     if (_dir.lengthSq() > 1e-6) {
@@ -476,6 +330,15 @@ export function createVrishchikEnemy(scene, engine, {
   function enterPursue() {
     state = VrishchikState.PURSUE;
     stateT = 0;
+  }
+
+  function setState(newState) {
+    state = newState;
+    stateT = 0;
+  }
+
+  function getState() {
+    return state;
   }
 
   function update(dt, eng) {
@@ -493,9 +356,9 @@ export function createVrishchikEnemy(scene, engine, {
         animateTailIdle(dt);
         animateClaws(dt, false);
         pulseEyes(dt, 0.8, 0.3);
-        animateMandibles(-0.22, dt); // resting jaw pose — mouth stays open, just not wide
+        animateMandibles(-0.22, dt);
         if (seesPlayer) { enterPursue(); break; }
-        if (stateT > 2.5) { state = VrishchikState.WALK; stateT = 0; }
+        if (stateT > 2.5 && patrolPoints && patrolPoints.length > 0) { state = VrishchikState.WALK; stateT = 0; }
         break;
       }
 
@@ -536,12 +399,12 @@ export function createVrishchikEnemy(scene, engine, {
           break;
         }
 
-        moveToward(engine.camera.position, pursueSpeed, dt);
+        if (engine.camera) moveToward(engine.camera.position, pursueSpeed, dt);
         animateGait(dt, 1.8);
         animateTailHunt(dt, 1.4);
         animateClaws(dt, true);
         pulseEyes(dt, 3, 0.8);
-        animateMandibles(-0.45, dt); // jaw widens further while it's actively hunting
+        animateMandibles(-0.45, dt);
         break;
       }
 
@@ -578,6 +441,8 @@ export function createVrishchikEnemy(scene, engine, {
     update,
     dispose,
     setPatrolPoints,
+    setState,
+    getState,
     get state() { return state; },
   };
 }
