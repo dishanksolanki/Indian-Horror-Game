@@ -71,25 +71,25 @@ export function createVrishchikEnemy(scene, engine, {
   patrolPoints = null,
   sightRange = 9,
   sightFov = Math.PI / 2.3,
-  loseRange = 26, // bumped up now that it roams the whole map — a room-scale loseRange would make it give up the instant the player ducked through a doorway
-  attackRange = 1.7, // longer than the last two — the tail strikes at range
+  loseRange = 26,           // bumped up now that it roams the whole map — a room-scale loseRange would make it give up the instant the player ducked through a doorway
+  attackRange = 1.7,       // longer than the last two — the tail strikes at range
   attackWindup = 0.45,
   attackRecover = 0.3,
   attackCooldown = 1.5,
   walkSpeed = 1.8,
   pursueSpeed = 3.6,
   investigateSpeed = 2.2,
-  darkenRadius = 7, // distance (m) at which the exposure dimming starts kicking in
-  darkenFloor = 0.35, // toneMappingExposure multiplier at zero distance (0 = pitch black, 1 = no effect)
-  darkenEase = 3.5, // how quickly exposure eases toward its target each frame
+  darkenRadius = 7,         // distance (m) at which the exposure dimming starts kicking in
+  darkenFloor = 0.35,       // toneMappingExposure multiplier at zero distance (0 = pitch black, 1 = no effect)
+  darkenEase = 3.5,         // how quickly exposure eases toward its target each frame
   flashlightFlickerChance = 0.06, // rough odds per second of a brief flashlight dip when very close + hunting
   growlUrl = "./sounds/vrishchik_growl.mp3", // looping proximity growl — see updateProximitySound()
-  growlMaxVolume = 0.9, // volume once the player is right on top of it
-  growlEase = 4, // how quickly volume eases toward its target each frame
+  growlMaxVolume = 0.9,      // volume once the player is right on top of it
+  growlEase = 4,             // how quickly volume eases toward its target each frame
   footstepUrl = "./sounds/vrishchik_footstep.mp3", // directional footstep hit — see triggerFootstepsFromGait()
   footstepRefDistance = 2.5, // distance (m) at which footstep volume starts falling off
   footstepRolloffFactor = 1.6, // how sharply footstep volume falls off with distance
-  footstepMaxDistance = 40, // beyond this, footsteps are inaudible regardless of volume setting
+  footstepMaxDistance = 40,    // beyond this, footsteps are inaudible regardless of volume setting
   onCatchPlayer = null,
 } = {}) {
   const { group, parts } = createVrishchikModel();
@@ -104,8 +104,8 @@ export function createVrishchikEnemy(scene, engine, {
 
   let state = VrishchikState.IDLE;
   let stateT = 0;
-  let gaitT = 0; // running phase clock for the tripod gait
-  let animT = 0; // running phase clock for tail/claw/mandible sway
+  let gaitT = 0;         // running phase clock for the tripod gait
+  let animT = 0;         // running phase clock for tail/claw/mandible sway
   let attackTimer = 0;
   let attackHitChecked = false;
   let cooldownTimer = 0;
@@ -281,6 +281,7 @@ export function createVrishchikEnemy(scene, engine, {
 
   function updateProximitySound(dt) {
     if (!growlLoaded) return;
+
     const dist = distanceToPlayer();
     const t = Math.max(0, Math.min(1, 1 - dist / darkenRadius)); // same shape as darkenWorld()
     const targetVolume = t * t * growlMaxVolume; // eased curve — stays near-silent until genuinely close
@@ -361,6 +362,7 @@ export function createVrishchikEnemy(scene, engine, {
   }
 
   // ---------- procedural animation ----------
+
   // Tripod gait: each leg's swing phase comes from whichever tripod group
   // it's in (A/B, opposite phase). During swing, the femur lifts and the
   // tibia extends forward; during stance, the leg drags back under the
@@ -496,6 +498,7 @@ export function createVrishchikEnemy(scene, engine, {
         if (stateT > 2.5) { state = VrishchikState.WALK; stateT = 0; }
         break;
       }
+
       case VrishchikState.WALK: {
         const target = nextPatrolTarget();
         if (!target) { state = VrishchikState.IDLE; stateT = 0; break; }
@@ -508,6 +511,7 @@ export function createVrishchikEnemy(scene, engine, {
         if (seesPlayer) { enterPursue(); }
         break;
       }
+
       case VrishchikState.INVESTIGATE: {
         if (!investigateTarget) { state = VrishchikState.IDLE; stateT = 0; break; }
         const remaining = moveToward(investigateTarget, investigateSpeed, dt);
@@ -519,9 +523,11 @@ export function createVrishchikEnemy(scene, engine, {
         if (seesPlayer) { enterPursue(); }
         break;
       }
+
       case VrishchikState.PURSUE: {
         const dist = distanceToPlayer();
         if (!seesPlayer && dist > loseRange) { state = VrishchikState.IDLE; stateT = 0; break; }
+
         if (dist < attackRange && cooldownTimer <= 0) {
           state = VrishchikState.ATTACK;
           stateT = 0;
@@ -529,6 +535,7 @@ export function createVrishchikEnemy(scene, engine, {
           attackHitChecked = false;
           break;
         }
+
         moveToward(engine.camera.position, pursueSpeed, dt);
         animateGait(dt, 1.8);
         animateTailHunt(dt, 1.4);
@@ -537,6 +544,7 @@ export function createVrishchikEnemy(scene, engine, {
         animateMandibles(-0.45, dt); // jaw widens further while it's actively hunting
         break;
       }
+
       case VrishchikState.ATTACK: {
         attackTimer += dt;
         animateAttack(dt);
