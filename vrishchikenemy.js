@@ -1,6 +1,6 @@
 // vrishchikenemy.js — behavior controller for VRISHCHIK.
 //
-// Two things make this different from both prior villains:
+// Three things make this different from both prior villains:
 //
 // 1. HEXAPOD GAIT, NOT A HUMANOID WALK/CRAWL. vrishchik.js's six legs
 //    (parts.legs) are grouped into a standard insect tripod pattern —
@@ -20,6 +20,14 @@
 //    The player's own flashlight is untouched (it still cuts through the
 //    murk), which is the point: everything BUT what you're directly
 //    lighting gets harder to make out.
+//
+// 3. PROXIMITY GROWL. A low, looping growl fades in as it closes the
+//    distance, using the exact same distance/radius shape as
+//    darkenWorld() (see updateProximitySound()) so the audio and visual
+//    dread cues track together — the room gets darker AND louder at the
+//    same rate. It also creeps up in pitch while actively hunting
+//    (PURSUE/ATTACK) for extra tension. Like the darkening effect, this
+//    is driven by raw distance, not by whether the player can see it.
 //
 // State machine (same shape as the last two, for consistency):
 //   IDLE -> WALK (patrol) -> [aware of player] -> PURSUE -> [in range] -> ATTACK
@@ -61,6 +69,9 @@ export function createVrishchikEnemy(scene, engine, {
   darkenFloor = 0.35,       // toneMappingExposure multiplier at zero distance (0 = pitch black, 1 = no effect)
   darkenEase = 3.5,         // how quickly exposure eases toward its target each frame
   flashlightFlickerChance = 0.06, // rough odds per second of a brief flashlight dip when very close + hunting
+  growlUrl = "./sounds/vrishchik_growl.mp3", // looping proximity growl — see updateProximitySound()
+  growlMaxVolume = 0.9,      // volume once the player is right on top of it
+  growlEase = 4,             // how quickly volume eases toward its target each frame
   onCatchPlayer = null,
 } = {}) {
   const { group, parts } = createVrishchikModel();
@@ -183,6 +194,71 @@ export function createVrishchikEnemy(scene, engine, {
     engine.renderer.toneMappingExposure = baseExposure;
   }
 
+  // ---------- proximity growl ----------
+  // A low, looping growl whose volume is driven manually from raw
+  // distance-to-player, using the exact same falloff radius as
+  // darkenWorld() so sound and lighting read as one combined "it's
+  // close" cue rather than two effects that drift out of sync.
+  //
+  // Deliberately NOT using THREE.PositionalAudio's built-in distance
+  // model — that attenuates based on the panner node's own rolloff
+  // curve, which would need separate tuning to match darkenRadius, and
+  // its stereo panning would make the growl "point at" the model even
+  // when the player can't see it, undercutting the same "closes in
+  // regardless of facing" quality darkenWorld() is going for. A plain
+  // THREE.Audio with volume eased frame-by-frame gives full control and
+  // keeps the two effects locked to the same curve.
+  //
+  // Needs an AudioListener on the camera. If a room spawns more than one
+  // Vrishchik (or the camera otherwise never got one), this adds a
+  // single shared listener the first time it's needed rather than
+  // stacking a duplicate on every enemy instance.
+  let audioListener = engine.camera.children.find((c) => c instanceof THREE.AudioListener);
+  if (!audioListener) {
+    audioListener = new THREE.AudioListener();
+    engine.camera.add(audioListener);
+  }
+
+  const growlSound = new THREE.Audio(audioListener);
+  let growlLoaded = false;
+  const audioLoader = new THREE.AudioLoader();
+  audioLoader.load(
+    growlUrl,
+    (buffer) => {
+      growlSound.setBuffer(buffer);
+      growlSound.setLoop(true);
+      growlSound.setVolume(0);
+      growlSound.play();
+      growlLoaded = true;
+    },
+    undefined,
+    (err) => {
+      // Missing/failed audio shouldn't break the enemy — just no growl.
+      console.warn(
+        `[vrishchikenemy.js] failed to load growl sound from "${growlUrl}" — ` +
+        `confirm the file exists at that path relative to index.html:`,
+        err
+      );
+    }
+  );
+
+  function updateProximitySound(dt) {
+    if (!growlLoaded) return;
+
+    const dist = distanceToPlayer();
+    const t = Math.max(0, Math.min(1, 1 - dist / darkenRadius)); // same shape as darkenWorld()
+    const targetVolume = t * t * growlMaxVolume; // eased curve — stays near-silent until genuinely close
+    const nextVolume = growlSound.getVolume() + (targetVolume - growlSound.getVolume()) * Math.min(1, dt * growlEase);
+    growlSound.setVolume(nextVolume);
+
+    // pitch creeps up slightly while actively hunting, for extra tension
+    const targetRate = (state === VrishchikState.PURSUE || state === VrishchikState.ATTACK) ? 1.15 : 1.0;
+    if (growlSound.source) {
+      const currentRate = growlSound.source.playbackRate.value;
+      growlSound.source.playbackRate.value = currentRate + (targetRate - currentRate) * Math.min(1, dt * 2);
+    }
+  }
+
   // ---------- procedural animation ----------
 
   // Tripod gait: each leg's swing phase comes from whichever tripod group
@@ -294,6 +370,7 @@ export function createVrishchikEnemy(scene, engine, {
     if (cooldownTimer > 0) cooldownTimer -= dt;
 
     darkenWorld(dt);
+    updateProximitySound(dt);
 
     const seesPlayer = canSeePlayer();
 
@@ -377,6 +454,7 @@ export function createVrishchikEnemy(scene, engine, {
   function dispose() {
     unsubscribeNoise();
     restoreWorldLighting();
+    if (growlSound.isPlaying) growlSound.stop();
     scene.remove(group);
   }
 
