@@ -7,6 +7,11 @@
 // warm colors anywhere — every material on this thing is built to be
 // dark and swallow light rather than catch it.
 //
+// SIZE PASS: legs thickened/lengthened and the whole model scaled up
+// (SIZE_SCALE below) so it reads as a genuinely large, looming presence
+// rather than something knee-height — see the leg dimension constants
+// and the group.scale.setScalar() call near the bottom.
+//
 // Palette intent (this is the "make it dark, not cartoonish" pass):
 //   - Base chitin: near-black with a cold purple-black undertone
 //     (#0a0710-ish), rough, almost no specular kick.
@@ -24,7 +29,8 @@
 // Silhouette summary:
 //   - Six segmented insect/arachnid legs (parts.legs, 3 per side) carry a
 //     low thorax — there's no upright "standing" pose at all, it moves
-//     close to the ground.
+//     close to the ground. Legs are now noticeably thick/heavy-looking
+//     (see FEMUR/TIBIA dimensions) rather than spindly.
 //   - A long, segmented tail arcs up and over the back scorpion-style,
 //     ending in a stinger (parts.stingerTip — the attack hit-test point).
 //   - A hunched, semi-fused torso/ribcage rides on the front of the
@@ -37,6 +43,13 @@
 // contract as the previous two villains.
 
 import * as THREE from "three";
+
+// Overall model scale — bumped up so Vrishchik reads as large/looming.
+// Everything below is authored at the original "normal" proportions;
+// this single multiplier is applied to the root group at the very end,
+// so all child-relative math (leg IK-ish chains, tail chain, etc.)
+// stays correct regardless of this value.
+const SIZE_SCALE = 1.55;
 
 // ---------- texture helpers ----------
 // Dark, plated chitin with faint darker cracks — deliberately low-contrast
@@ -139,6 +152,11 @@ export function createVrishchikModel() {
   // controller can drive an alternating tripod gait (legs 0/3/4 vs
   // 1/2/5, the standard hexapod pattern) rather than a walk cycle built
   // for a biped.
+  //
+  // SIZE PASS: femur/tibia are now noticeably thicker and longer, the
+  // coxa joint sphere is bigger, and the attachment point on the thorax
+  // is pushed further out (0.17 -> 0.21) to give a wider, heavier stance
+  // that matches the thicker limbs instead of looking pinched-in.
   // ============================================================
   const LEG_ROWS = [-0.16, 0, 0.16]; // z offsets: front / mid / back pair
   const legs = [];
@@ -146,28 +164,28 @@ export function createVrishchikModel() {
   LEG_ROWS.forEach((zOff, row) => {
     [-1, 1].forEach((sign) => {
       const coxa = new THREE.Group();
-      coxa.position.set(sign * 0.17, 0.02, zOff);
+      coxa.position.set(sign * 0.21, 0.02, zOff);
       coxa.rotation.y = sign > 0 ? -0.3 : Math.PI + 0.3;
       thorax.add(coxa);
-      addMesh(coxa, new THREE.SphereGeometry(0.035, 6, 6), jointMat, 0, 0, 0);
+      addMesh(coxa, new THREE.SphereGeometry(0.055, 8, 8), jointMat, 0, 0, 0);
 
-      const FEMUR_LEN = 0.26;
+      const FEMUR_LEN = 0.42;
       const femur = new THREE.Group();
       femur.rotation.z = -0.9; // splays outward/down from the body
       coxa.add(femur);
-      addMesh(femur, new THREE.CylinderGeometry(0.022, 0.016, FEMUR_LEN, 6), chitinMat, 0, -FEMUR_LEN / 2, 0);
+      addMesh(femur, new THREE.CylinderGeometry(0.038, 0.028, FEMUR_LEN, 7), chitinMat, 0, -FEMUR_LEN / 2, 0);
 
       const tibia = new THREE.Group();
       tibia.position.set(0, -FEMUR_LEN, 0);
       tibia.rotation.z = 1.5; // knee bends back down toward the floor
       femur.add(tibia);
-      const TIBIA_LEN = 0.3;
-      addMesh(tibia, new THREE.CylinderGeometry(0.016, 0.008, TIBIA_LEN, 6), chitinDarkMat, 0, -TIBIA_LEN / 2, 0);
+      const TIBIA_LEN = 0.48;
+      addMesh(tibia, new THREE.CylinderGeometry(0.026, 0.013, TIBIA_LEN, 7), chitinDarkMat, 0, -TIBIA_LEN / 2, 0);
 
       const foot = new THREE.Group();
       foot.position.set(0, -TIBIA_LEN, 0);
       tibia.add(foot);
-      addMesh(foot, new THREE.ConeGeometry(0.012, 0.05, 4), clawMat, 0, -0.025, 0).rotation.x = Math.PI;
+      addMesh(foot, new THREE.ConeGeometry(0.02, 0.08, 5), clawMat, 0, -0.04, 0).rotation.x = Math.PI;
 
       legs.push({ coxa, femur, tibia, foot, row, side: sign });
     });
@@ -330,6 +348,13 @@ export function createVrishchikModel() {
     mandible.rotation.x = Math.PI * 0.6;
     mandible.rotation.z = sign * 0.3;
   });
+
+  // ---------- apply overall size scale ----------
+  // Scaling the root group (rather than re-authoring every dimension
+  // above) keeps every child-relative offset, pivot chain, and the
+  // leg/tail IK-ish math all correct — it just makes the whole thing
+  // bigger uniformly.
+  group.scale.setScalar(SIZE_SCALE);
 
   const parts = {
     thorax,
