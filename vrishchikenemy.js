@@ -57,7 +57,7 @@ export function createVrishchikEnemy(scene, engine, {
   patrolPoints = null,
   sightRange = 9,
   sightFov = Math.PI / 2.3,
-  loseRange = 12,
+  loseRange = 26,           // bumped up now that it roams the whole map — a room-scale loseRange would make it give up the instant the player ducked through a doorway
   attackRange = 1.7,       // longer than the last two — the tail strikes at range
   attackWindup = 0.45,
   attackRecover = 0.3,
@@ -156,6 +156,23 @@ export function createVrishchikEnemy(scene, engine, {
   function nextPatrolTarget() {
     if (!patrolPoints || patrolPoints.length === 0) return null;
     return patrolPoints[patrolIndex % patrolPoints.length];
+  }
+
+  /**
+   * Replace the patrol route at runtime. room21.js (where Vrishchik is
+   * spawned) only knows about its own room at construction time, so it
+   * seeds patrolPoints with a small two-point beat inside room21 just so
+   * there's always *something* to patrol. To have it roam the whole
+   * haveli, main.js calls this once every room/corridor has been built,
+   * handing it a long point-to-point route across many rooms (see
+   * main.js for how that route is assembled). Resets patrolIndex so it
+   * starts the new route from its beginning rather than an out-of-range
+   * index into the old (possibly shorter) list.
+   * @param {THREE.Vector3[]} points
+   */
+  function setPatrolPoints(points) {
+    patrolPoints = points;
+    patrolIndex = 0;
   }
 
   // ---------- world-darkening effect ----------
@@ -463,6 +480,7 @@ export function createVrishchikEnemy(scene, engine, {
     parts,
     update,
     dispose,
+    setPatrolPoints,
     get state() { return state; },
   };
 }
