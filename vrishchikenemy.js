@@ -21,13 +21,27 @@
 //    murk), which is the point: everything BUT what you're directly
 //    lighting gets harder to make out.
 //
-// 3. PROXIMITY GROWL. A low, looping growl fades in as it closes the
-//    distance, using the exact same distance/radius shape as
-//    darkenWorld() (see updateProximitySound()) so the audio and visual
-//    dread cues track together — the room gets darker AND louder at the
-//    same rate. It also creeps up in pitch while actively hunting
-//    (PURSUE/ATTACK) for extra tension. Like the darkening effect, this
-//    is driven by raw distance, not by whether the player can see it.
+// 3. PROXIMITY GROWL + DIRECTIONAL FOOTSTEPS. A low, looping growl fades
+//    in as it closes the distance, using the exact same distance/radius
+//    shape as darkenWorld() (see updateProximitySound()) so the audio
+//    and visual dread cues track together — the room gets darker AND
+//    louder at the same rate. It also creeps up in pitch while actively
+//    hunting (PURSUE/ATTACK) for extra tension. The growl is
+//    DELIBERATELY non-positional (a plain THREE.Audio pinned to the
+//    camera) — see the comment above growlSound below — so proximity is
+//    felt but doesn't reveal direction.
+//
+//    Footsteps are the opposite on purpose: THREE.PositionalAudio
+//    attached to `group` itself, so the Web Audio panner node's real
+//    stereo/distance falloff tracks Vrishchik's actual position as it
+//    moves. That's what lets the player tell WHICH DIRECTION it's
+//    coming from and try to move away from it, even off-screen or
+//    behind a wall. Footstep hits are synced to the tripod gait's own
+//    phase (see triggerFootstepsFromGait()) so they land exactly on the
+//    visual footfall rather than firing on an arbitrary timer, and only
+//    play while it's actually moving (WALK/INVESTIGATE/PURSUE/ATTACK's
+//    brace-shuffle) — never during IDLE, so silence still means "not
+//    moving right now."
 //
 // State machine (same shape as the last two, for consistency):
 //   IDLE -> WALK (patrol) -> [aware of player] -> PURSUE -> [in range] -> ATTACK
@@ -72,6 +86,10 @@ export function createVrishchikEnemy(scene, engine, {
   growlUrl = "./sounds/vrishchik_growl.mp3", // looping proximity growl — see updateProximitySound()
   growlMaxVolume = 0.9,      // volume once the player is right on top of it
   growlEase = 4,             // how quickly volume eases toward its target each frame
+  footstepUrl = "./sounds/vrishchik_footstep.mp3", // directional footstep hit — see triggerFootstepsFromGait()
+  footstepRefDistance = 2.5, // distance (m) at which footstep volume starts falling off
+  footstepRolloffFactor = 1.6, // how sharply footstep volume falls off with distance
+  footstepMaxDistance = 40,    // beyond this, footsteps are inaudible regardless of volume setting
   onCatchPlayer = null,
 } = {}) {
   const { group, parts } = createVrishchikModel();
@@ -211,6 +229,19 @@ export function createVrishchikEnemy(scene, engine, {
     engine.renderer.toneMappingExposure = baseExposure;
   }
 
+  // ---------- shared audio listener ----------
+  // Needs an AudioListener on the camera. If a room spawns more than one
+  // Vrishchik (or the camera otherwise never got one), this adds a
+  // single shared listener the first time it's needed rather than
+  // stacking a duplicate on every enemy instance. Both the growl and the
+  // footstep sound below reuse this same listener + loader.
+  let audioListener = engine.camera.children.find((c) => c instanceof THREE.AudioListener);
+  if (!audioListener) {
+    audioListener = new THREE.AudioListener();
+    engine.camera.add(audioListener);
+  }
+  const audioLoader = new THREE.AudioLoader();
+
   // ---------- proximity growl ----------
   // A low, looping growl whose volume is driven manually from raw
   // distance-to-player, using the exact same falloff radius as
@@ -224,21 +255,10 @@ export function createVrishchikEnemy(scene, engine, {
   // when the player can't see it, undercutting the same "closes in
   // regardless of facing" quality darkenWorld() is going for. A plain
   // THREE.Audio with volume eased frame-by-frame gives full control and
-  // keeps the two effects locked to the same curve.
-  //
-  // Needs an AudioListener on the camera. If a room spawns more than one
-  // Vrishchik (or the camera otherwise never got one), this adds a
-  // single shared listener the first time it's needed rather than
-  // stacking a duplicate on every enemy instance.
-  let audioListener = engine.camera.children.find((c) => c instanceof THREE.AudioListener);
-  if (!audioListener) {
-    audioListener = new THREE.AudioListener();
-    engine.camera.add(audioListener);
-  }
-
+  // keeps the two effects locked to the same curve. (Directionality is
+  // handled separately by the footstep sound below instead.)
   const growlSound = new THREE.Audio(audioListener);
   let growlLoaded = false;
-  const audioLoader = new THREE.AudioLoader();
   audioLoader.load(
     growlUrl,
     (buffer) => {
@@ -276,6 +296,71 @@ export function createVrishchikEnemy(scene, engine, {
     }
   }
 
+  // ---------- directional footsteps ----------
+  // THREE.PositionalAudio parented to `group` itself (not the camera),
+  // so the Web Audio panner node's real stereo image + distance falloff
+  // tracks Vrishchik's actual world position as it moves. This is what
+  // lets the player tell which direction it's coming from — the growl
+  // above tells you "it's close", footsteps tell you "it's over there" —
+  // and try to move away, even when it's out of sight or behind a wall.
+  //
+  // Each footstep is a single one-shot hit rather than a loop, fired
+  // exactly when the tripod gait's phase flips (one leg-group planting
+  // down) — see triggerFootstepsFromGait(). Playback rate is jittered
+  // slightly per-hit so a repeated single sample doesn't sound robotic,
+  // and nudged up with speedScale so pursuing feels more frantic than
+  // patrolling.
+  const footstepSound = new THREE.PositionalAudio(audioListener);
+  footstepSound.setRefDistance(footstepRefDistance);
+  footstepSound.setRolloffFactor(footstepRolloffFactor);
+  footstepSound.setDistanceModel("inverse");
+  footstepSound.setMaxDistance(footstepMaxDistance);
+  group.add(footstepSound);
+
+  let footstepBuffer = null;
+  let footstepLoaded = false;
+  audioLoader.load(
+    footstepUrl,
+    (buffer) => {
+      footstepBuffer = buffer;
+      footstepLoaded = true;
+    },
+    undefined,
+    (err) => {
+      // Missing/failed audio shouldn't break the enemy — just no
+      // directional footstep cue (the growl still works on its own).
+      console.warn(
+        `[vrishchikenemy.js] failed to load footstep sound from "${footstepUrl}" — ` +
+        `confirm the file exists at that path relative to index.html:`,
+        err
+      );
+    }
+  );
+
+  function playFootstepHit(speedScale) {
+    if (!footstepLoaded) return;
+    // stop+replay rather than letting overlapping hits stack, so a fast
+    // gait doesn't turn into a mush of overlapping copies of the same clip
+    if (footstepSound.isPlaying) footstepSound.stop();
+    footstepSound.setBuffer(footstepBuffer);
+    footstepSound.setPlaybackRate(0.85 + speedScale * 0.15 + Math.random() * 0.06);
+    footstepSound.setVolume(Math.min(0.55 + speedScale * 0.2, 1));
+    footstepSound.play();
+  }
+
+  // sin(gaitT) sign flip == one tripod group (3 legs) planting down —
+  // fires one footstep "beat" per flip, so hits land on the actual
+  // visual footfall instead of an arbitrary timer that could drift out
+  // of sync with the leg animation.
+  let lastFootPhaseSign = 1;
+  function triggerFootstepsFromGait(speedScale) {
+    const sign = Math.sin(gaitT) >= 0 ? 1 : -1;
+    if (sign !== lastFootPhaseSign) {
+      lastFootPhaseSign = sign;
+      playFootstepHit(speedScale);
+    }
+  }
+
   // ---------- procedural animation ----------
 
   // Tripod gait: each leg's swing phase comes from whichever tripod group
@@ -283,8 +368,16 @@ export function createVrishchikEnemy(scene, engine, {
   // tibia extends forward; during stance, the leg drags back under the
   // body at ground contact to "push" — a simplified but readable insect
   // walk rather than true IK foot-planting.
+  //
+  // Also the single place footsteps are triggered from (see
+  // triggerFootstepsFromGait() above) — every caller of animateGait()
+  // already passes the right speedScale for its state (WALK/INVESTIGATE/
+  // PURSUE/ATTACK's brace-shuffle), so hooking in here means footsteps
+  // automatically match however fast it's currently moving, with no
+  // separate bookkeeping needed per-state.
   function animateGait(dt, speedScale) {
     gaitT += dt * 5 * speedScale;
+    triggerFootstepsFromGait(speedScale);
     parts.legs.forEach((leg, i) => {
       const inGroupA = TRIPOD_A.includes(i);
       const phase = gaitT + (inGroupA ? 0 : Math.PI);
@@ -295,6 +388,9 @@ export function createVrishchikEnemy(scene, engine, {
     });
   }
 
+  // Idle stance sway — deliberately does NOT call animateGait() / the
+  // footstep trigger, so standing still stays silent. Silence is itself
+  // a cue: if you can't hear footsteps, it isn't moving right now.
   function idleLegSway(dt) {
     gaitT += dt * 0.6;
     parts.legs.forEach((leg, i) => {
@@ -472,6 +568,7 @@ export function createVrishchikEnemy(scene, engine, {
     unsubscribeNoise();
     restoreWorldLighting();
     if (growlSound.isPlaying) growlSound.stop();
+    if (footstepSound.isPlaying) footstepSound.stop();
     scene.remove(group);
   }
 
