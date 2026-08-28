@@ -109,14 +109,22 @@ export function createRoom21(scene, engine, doorX, doorZ) {
   addWallBox(eastX, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
   // ---------- VRISHCHIK ----------
-  // Spawned near the room's north wall, patrolling a short two-point beat
-  // between the north and south ends of the room so it isn't just
-  // standing in the doorway the player walks in through. It'll notice
-  // the player by sight/range, or get pulled off patrol by a thrown
-  // item's noise (engine.onNoise — see engine.js and vrishchikenemy.js
-  // for that hook). Its darkenWorld() effect runs continuously in every
-  // state based on raw distance to the player, so the room will dim well
-  // before the player ever spots it.
+  // Spawned near the room's north wall. patrolPoints below is only a
+  // fallback two-point beat inside this room — room21.js has no
+  // visibility into any other room at construction time, and the whole
+  // point is for it to roam the entire haveli, not just sit here.
+  // main.js overwrites this via vrishchik.setPatrolPoints(...) once every
+  // room/corridor has actually been built, handing it a long route across
+  // many rooms (see main.js's buildVrishchikPatrolRoute()). If that call
+  // is ever removed, it silently falls back to just pacing this room, so
+  // this is a non-breaking scaffold rather than a functional requirement
+  // of this file.
+  // It'll notice the player by sight/range, or get pulled off patrol by a
+  // thrown item's noise (engine.onNoise — see engine.js and
+  // vrishchikenemy.js for that hook). Its darkenWorld() effect runs
+  // continuously in every state based on raw distance to the player, so
+  // whichever room it's currently in will dim well before the player ever
+  // spots it.
   const vrishchik = createVrishchikEnemy(scene, engine, {
     position: new THREE.Vector3(centerX, 0, centerZ - ROOM_D / 2 + 1.2),
     yaw: Math.PI, // facing south, into the room
