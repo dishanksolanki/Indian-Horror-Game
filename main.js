@@ -33,6 +33,7 @@
 // bridging their previously dead-end walls (hall2's west doorway to hall3's
 // east doorway),
 // and drives the menu / pause UI.
+import * as THREE from "three";
 import { Engine } from "./engine.js";
 import { createRoom1 } from "./room1.js";
 import {
@@ -299,6 +300,51 @@ const corridor28 = createCorridorDoglegWestNorthWest(
   room24.eastDoorZ,
   room24.eastX
 );
+
+// ---------- Vrishchik's map-wide patrol route ----------
+// room21.js (where Vrishchik actually lives) only has access to its own
+// room at construction time, so it seeds the enemy with a tiny two-point
+// patrol confined to that room just so it isn't standing still. Now that
+// every room above has been built, we can give it a real route: a long
+// chain of room-center-to-room-center waypoints, ordered so every
+// consecutive pair is a room that's *directly* connected by a corridor —
+// this matters because Vrishchik's movement is a straight line toward its
+// current target (with simple wall-sliding, not real pathfinding), so a
+// waypoint pair that isn't directly connected could walk it straight into
+// a wall instead of through the doorway between them.
+//
+// This deliberately routes AROUND the two bent corridors (corridor18's
+// room16<->hall1 bend, and corridor28's room16<->room24 dogleg) rather
+// than adding corner waypoints for them — both hall1 and room24 are also
+// reachable via straight corridors (room9<->hall1 via corridor9, and
+// hall3<->room24 via corridor27), so the route below uses those instead
+// and stays entirely straight-line-safe.
+//
+// The list is built as a single walk that back-tracks out of dead-end
+// branches (e.g. ... room17, room4, ... — go to room17, then straight
+// back to room4 before continuing) rather than trying to find some
+// perfect non-repeating tour, since revisiting a room is harmless for a
+// patrol. It's also constructed as a closed loop — the first and last
+// entries are both room1 — so when patrolIndex wraps back to 0 the "jump"
+// from the last point to the first is a zero-distance no-op instead of a
+// potentially invalid long-distance line.
+//
+// Assumes every room/hall object exposes centerX/centerZ, matching the
+// convention already used by room21.js's own return value.
+function buildVrishchikPatrolRoute() {
+  const stops = [
+    room1,
+    room2, room4, room17, room4, room18, room19, room18, room20, room21,
+    room22, room23, hall3, room24, hall3, hall2, room13, room12, room14,
+    room12, room15, room16, room25, room16, room15, room12, room3,
+    room10, room3, room11, room3, room2, room5, room6, room7, room6,
+    room8, room6, room9, hall1, room9, room6, room5, room2,
+    room1,
+  ];
+  return stops.map((r) => new THREE.Vector3(r.centerX, 0, r.centerZ));
+}
+
+room21.vrishchik.setPatrolPoints(buildVrishchikPatrolRoute());
 
 const menu = document.getElementById("menu");
 const playBtn = document.getElementById("play-btn");
