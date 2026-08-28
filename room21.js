@@ -4,18 +4,26 @@
 // North wall also has a matching doorway gap (exit toward room22 via a corridor).
 // South/west walls remain solid, no window.
 //
-// UPDATED: this room now holds the Chudail — see chudail.js (procedural
-// model) and chudailEnemy.js (state-machine behavior: idle/patrol, sees or
-// hears the player, chases, attacks). She's built from primitives, so no
-// model file is needed. On a landed hit she dispatches a "game:caught"
-// window event the same way the ancient door in room25 dispatches
-// "game:win" — see main.js for that pattern; main.js needs a matching
-// listener added for "game:caught" (jumpscare / restart flow), same shape
-// as the existing "game:win" listener.
+// UPDATED: this room now holds THE SEAMSTRESS — see seamstress.js
+// (procedural model) and seamstressenemy.js (state-machine behavior:
+// idle/patrol, sees or hears the player, chases, attacks). She replaces
+// the old Chudail. Note the import below is "./seamstressenemy.js"
+// (all lowercase) — the previous version of this file imported
+// "./chudailEnemy.js" with a capital E while the actual file on disk was
+// "chudailenemy.js" lowercase, which 404s on any case-sensitive host
+// (Vercel, most Linux servers) even though it can silently work on a
+// case-insensitive local filesystem. Keep every future room's import
+// casing matching the real filename exactly to avoid repeating this.
+//
+// On a landed hit she dispatches a "game:caught" window event the same
+// way the ancient door in room25 dispatches "game:win" — see main.js for
+// that pattern; main.js needs a matching listener added for
+// "game:caught" (jumpscare / restart flow), same shape as the existing
+// "game:win" listener.
 
 import * as THREE from "three";
 import { createWallMaterial, createFloorMaterial } from "./materials.js";
-import { createChudailEnemy } from "./chudailEnemy.js";
+import { createSeamstressEnemy } from "./seamstressenemy.js";
 
 const ROOM_W = 6; // east-west
 const ROOM_D = 6.5; // north-south
@@ -94,13 +102,16 @@ export function createRoom21(scene, engine, doorX, doorZ) {
   addWallBox(eastX, centerZ + (DOOR_GAP / 2 + eastSideLen / 2), t, eastSideLen);
   addWallBox(eastX, centerZ, t, DOOR_GAP, 0.4, ROOM_H - 0.2); // lintel
 
-  // ---------- the Chudail ----------
+  // ---------- THE SEAMSTRESS ----------
   // Spawned near the room's north wall, patrolling a short two-point beat
   // between the north and south ends of the room so she isn't just standing
   // in the doorway the player walks in through. She'll notice the player by
   // sight/range, or get pulled off her patrol by a thrown item's noise
-  // (engine.onNoise — see engine.js and chudailEnemy.js for that hook).
-  const chudail = createChudailEnemy(scene, engine, {
+  // (engine.onNoise — see engine.js and seamstressenemy.js for that hook).
+  // Movement in every non-attack state additionally freezes whenever the
+  // player's camera is looking directly at her — see seamstressenemy.js's
+  // isInPlayerView()/viewFreezeFov/viewFreezeMaxDist for the tunables.
+  const seamstress = createSeamstressEnemy(scene, engine, {
     position: new THREE.Vector3(centerX, 0, centerZ - ROOM_D / 2 + 1.2),
     yaw: Math.PI, // facing south, into the room
     patrolPoints: [
@@ -122,7 +133,7 @@ export function createRoom21(scene, engine, doorX, doorZ) {
 
   // ---------- per-frame update ----------
   function update(dt, eng) {
-    chudail.update(dt, eng);
+    seamstress.update(dt, eng);
   }
 
   // northZ/northDoorX: the doorway sits in the middle of the north wall —
@@ -130,5 +141,5 @@ export function createRoom21(scene, engine, doorX, doorZ) {
   const northZ = centerZ - ROOM_D / 2;
   const northDoorX = centerX;
 
-  return { colliders, update, centerX, centerZ, westX, eastX, northZ, northDoorX, chudail };
+  return { colliders, update, centerX, centerZ, westX, eastX, northZ, northDoorX, seamstress };
 }
