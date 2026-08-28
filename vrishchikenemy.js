@@ -339,7 +339,7 @@ export function createVrishchikEnemy(scene, engine, {
       seg.rotation.x += strike * 0.5 * lag * dt * 12; // relative nudge toward the strike, eased by dt
     });
     animateClaws(dt, true);
-    animateMandibles(0.6, dt);
+    animateMandibles(-0.95, dt); // jaw snaps wide open for the bite
     pulseEyes(dt, 8, 1);
     animateGait(dt, 0.3); // small ground-brace shuffle during the strike
   }
@@ -380,7 +380,7 @@ export function createVrishchikEnemy(scene, engine, {
         animateTailIdle(dt);
         animateClaws(dt, false);
         pulseEyes(dt, 0.8, 0.3);
-        animateMandibles(0, dt);
+        animateMandibles(-0.22, dt); // resting jaw pose — mouth stays open, just not wide
         if (seesPlayer) { enterPursue(); break; }
         if (stateT > 2.5) { state = VrishchikState.WALK; stateT = 0; }
         break;
@@ -428,7 +428,7 @@ export function createVrishchikEnemy(scene, engine, {
         animateTailHunt(dt, 1.4);
         animateClaws(dt, true);
         pulseEyes(dt, 3, 0.8);
-        animateMandibles(0.15, dt);
+        animateMandibles(-0.45, dt); // jaw widens further while it's actively hunting
         break;
       }
 
@@ -442,7 +442,7 @@ export function createVrishchikEnemy(scene, engine, {
           cooldownTimer = attackCooldown;
         }
         if (attackTimer >= attackWindup + attackRecover) {
-          animateMandibles(0, dt);
+          animateMandibles(-0.22, dt);
           state = distanceToPlayer() < loseRange ? VrishchikState.PURSUE : VrishchikState.IDLE;
           stateT = 0;
         }
