@@ -33,6 +33,15 @@
 // bridging their previously dead-end walls (hall2's west doorway to hall3's
 // east doorway),
 // and drives the menu / pause UI.
+//
+// NEW: player death / respawn / lose-game flow. room21.js's Vrishchik
+// dispatches a plain "game:caught" window event (from its onCatchPlayer
+// callback) whenever it lands a hit. main.js listens for that event, fades
+// to black, and either:
+//   - respawns the player back at room1's original spawn point (deaths 1-2), or
+//   - shows a "YOU DIED" lose screen and locks the game (death 3).
+// The lose screen is built dynamically in JS so no index.html changes are
+// required — see createLoseOverlayIfNeeded() below.
 import * as THREE from "three";
 import { Engine } from "./engine.js";
 import { createRoom1 } from "./room1.js";
@@ -353,7 +362,139 @@ const winOverlay = document.getElementById("win-overlay");
 const fade = document.getElementById("fade");
 const playAgainBtn = document.getElementById("play-again-btn");
 
+// ---------- player death / respawn / lose-game state ----------
+// playerDeaths counts how many times Vrishchik has caught the player.
+// On deaths 1 and 2 the player is faded out, teleported back to room1's
+// original spawn point, and faded back in. On death 3, the game ends: a
+// "YOU DIED" overlay is shown and the game stays paused/unlocked until the
+// player restarts (reloads the page).
+//
+// room21.js's Vrishchik dispatches a plain "game:caught" window event from
+// its onCatchPlayer callback whenever it lands a hit — that's the event
+// this file listens for below, mirroring the existing "game:win" pattern
+// room25's door already uses.
+let playerDeaths = 0;
+const MAX_DEATHS = 3;
+let gameOver = false;
+let deathSequenceActive = false; // guards against a second catch firing mid-fade
+
+/**
+ * Builds (once) and returns a "YOU DIED" overlay. Created dynamically in JS
+ * rather than assumed to exist in index.html, so this file works standalone
+ * without requiring any HTML edits. If index.html already defines an element
+ * with id="lose-overlay", that element is reused instead (its own CSS/classes
+ * will apply; we still toggle it via inline display so it works either way).
+ */
+function createLoseOverlayIfNeeded() {
+  let el = document.getElementById("lose-overlay");
+  if (el) return el;
+
+  el = document.createElement("div");
+  el.id = "lose-overlay";
+  el.style.cssText = [
+    "position: fixed",
+    "inset: 0",
+    "display: none",
+    "align-items: center",
+    "justify-content: center",
+    "flex-direction: column",
+    "gap: 22px",
+    "background: rgba(4,2,2,0.94)",
+    "color: #eee",
+    "z-index: 9999",
+    "font-family: Georgia, 'Times New Roman', serif",
+    "text-align: center",
+  ].join(";");
+
+  const title = document.createElement("h1");
+  title.textContent = "YOU DIED";
+  title.style.cssText = "font-size: 3rem; letter-spacing: 0.12em; color: #b02a2a; margin: 0; text-shadow: 0 0 18px rgba(176,42,42,0.6);";
+
+  const subtitle = document.createElement("p");
+  subtitle.textContent = "Vrishchik caught you three times.";
+  subtitle.style.cssText = "font-size: 1.05rem; opacity: 0.75; margin: 0;";
+
+  const restartBtn = document.createElement("button");
+  restartBtn.id = "lose-restart-btn";
+  restartBtn.textContent = "Restart";
+  restartBtn.style.cssText = [
+    "padding: 12px 30px",
+    "font-size: 1rem",
+    "cursor: pointer",
+    "background: #b02a2a",
+    "color: #fff",
+    "border: none",
+    "border-radius: 4px",
+    "letter-spacing: 0.05em",
+  ].join(";");
+  restartBtn.addEventListener("click", () => window.location.reload());
+
+  el.appendChild(title);
+  el.appendChild(subtitle);
+  el.appendChild(restartBtn);
+  document.body.appendChild(el);
+  return el;
+}
+
+const loseOverlay = createLoseOverlayIfNeeded();
+
+function isLoseOverlayShown() {
+  return loseOverlay.style.display === "flex" || loseOverlay.classList.contains("show");
+}
+
+function showLoseOverlay() {
+  loseOverlay.style.display = "flex";
+  loseOverlay.classList.add("show");
+}
+
+/** Teleports the player back to room1's original spawn point/orientation. */
+function respawnPlayerAtRoom1() {
+  engine.setSpawn(room1.spawnPoint, room1.spawnYaw);
+  engine.velocity.set(0, 0, 0);
+  if (engine.hiding) engine.exitHide();
+}
+
+/**
+ * Handles a single "player caught" event: fades to black, then either
+ * respawns the player at room1 (deaths 1-2) or ends the game with a lose
+ * screen (death 3). Fired by room21.js's Vrishchik dispatching
+ * `window.dispatchEvent(new CustomEvent("game:caught"))` from its
+ * onCatchPlayer callback.
+ */
+function handlePlayerCaught() {
+  if (gameOver || deathSequenceActive) return;
+  deathSequenceActive = true;
+
+  playerDeaths += 1;
+  console.log(`[main.js] player caught by Vrishchik — deaths: ${playerDeaths}/${MAX_DEATHS}`);
+
+  engine.pause();
+  fade.classList.add("show");
+
+  setTimeout(() => {
+    if (playerDeaths >= MAX_DEATHS) {
+      gameOver = true;
+      engine.controls.unlock();
+      fade.classList.remove("show");
+      showLoseOverlay();
+      deathSequenceActive = false;
+    } else {
+      respawnPlayerAtRoom1();
+      // brief pause on the black screen at the new spot before fading back
+      // in, so the teleport itself is never visible mid-fade
+      setTimeout(() => {
+        fade.classList.remove("show");
+        engine.resume();
+        deathSequenceActive = false;
+      }, 250);
+    }
+  }, 900);
+}
+
+window.addEventListener("game:caught", handlePlayerCaught);
+
 playBtn.addEventListener("click", () => {
+  if (gameOver) return;
   engine.lock();
 });
 
@@ -363,9 +504,16 @@ engine.controls.addEventListener("lock", () => {
 });
 
 engine.controls.addEventListener("unlock", () => {
-  // don't show the main menu if the note overlay or the win screen is open —
-  // those each have their own flow
-  if (!noteOverlay.classList.contains("show") && !winOverlay.classList.contains("show")) {
+  // don't show the main menu if the note overlay, the win screen, the lose
+  // screen is open, or a death fade is mid-flight — those each have their
+  // own flow
+  if (
+    !noteOverlay.classList.contains("show") &&
+    !winOverlay.classList.contains("show") &&
+    !isLoseOverlayShown() &&
+    !deathSequenceActive &&
+    !gameOver
+  ) {
     menu.style.display = "flex";
   }
   engine.pause();
@@ -373,6 +521,7 @@ engine.controls.addEventListener("unlock", () => {
 
 // ---------- win condition: room25's big door dispatches this when opened ----------
 window.addEventListener("game:win", () => {
+  if (gameOver) return;
   fade.classList.add("show");
   // let the door-opening animation and the fade-to-black play out before
   // cutting to the win screen and releasing the pointer lock
