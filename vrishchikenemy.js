@@ -1,4 +1,16 @@
 // vrishchikenemy.js — behavior controller for VRISHCHIK.
+//
+// NEW: "safe room" / no-entry zone support. Pass `noEntryZones` (an array of
+// THREE.Box3) in the options — e.g. room1's and room7's floor footprints —
+// and Vrishchik will:
+//   1. never physically move into one (blocked() hard-stops at the boundary,
+//      so it reads as hitting an invisible wall right at the doorway),
+//   2. never "see" or chase a player who is standing inside one, and
+//   3. immediately abandon PURSUE (without rolling an attack) the instant
+//      the player crosses into one — this is the important part, since
+//      attackRange is checked independently of movement, so without this a
+//      monster camping just outside a doorway could still land a hit on a
+//      player one step inside supposedly "safe" territory.
 
 import * as THREE from "three";
 import { createVrishchikModel } from "./vrishchik.js";
@@ -42,6 +54,11 @@ export function createVrishchikEnemy(scene, engine, {
   footstepRolloffFactor = 1.6,
   footstepMaxDistance = 40,
   onCatchPlayer = null,
+  // Array of THREE.Box3 the monster may never enter and treats the player
+  // as unreachable inside (e.g. room1 + room7 floor footprints as safe
+  // rooms). Empty by default so existing spawns are unaffected until you
+  // pass zones explicitly.
+  noEntryZones = [],
 } = {}) {
   const { group, parts } = createVrishchikModel();
   group.position.copy(position);
@@ -68,10 +85,27 @@ export function createVrishchikEnemy(scene, engine, {
 
   const unsubscribeNoise = (engine.onNoise) ? engine.onNoise(({ position: noisePos }) => {
     if (state === VrishchikState.PURSUE || state === VrishchikState.ATTACK) return;
+    // Don't investigate noises coming from inside a safe room either —
+    // otherwise a thrown/dropped item there would still lure the monster
+    // up to the doorway.
+    if (pointInSafeZone(noisePos)) return;
     investigateTarget = noisePos.clone();
     state = VrishchikState.INVESTIGATE;
     stateT = 0;
   }) : () => {};
+
+  // ---------- safe-zone helpers ----------
+  function pointInSafeZone(pos) {
+    for (const box of noEntryZones) {
+      if (box.containsPoint(pos)) return true;
+    }
+    return false;
+  }
+
+  function playerInSafeZone() {
+    if (!engine.camera) return false;
+    return pointInSafeZone(engine.camera.position);
+  }
 
   function distanceToPlayer() {
     if (!engine.camera) return 999;
@@ -80,6 +114,7 @@ export function createVrishchikEnemy(scene, engine, {
 
   function canSeePlayer() {
     if (!engine.camera) return false;
+    if (playerInSafeZone()) return false; // can't be spotted once inside a safe room
     if (distanceToPlayer() > sightRange) return false;
     _toPlayer.copy(engine.camera.position).sub(group.position);
     _toPlayer.y = 0;
@@ -90,6 +125,8 @@ export function createVrishchikEnemy(scene, engine, {
   }
 
   function blocked(nextPos) {
+    if (pointInSafeZone(nextPos)) return true; // hard stop at the safe-room boundary
+
     if (!engine.colliders) return false;
     const r = 0.4;
     const box = new THREE.Box3(
@@ -133,8 +170,31 @@ export function createVrishchikEnemy(scene, engine, {
     patrolIndex = 0;
   }
 
+  /**
+   * Replace or extend the monster's no-entry zones at runtime — handy if
+   * rooms are built/positioned after the enemy is spawned, or if a safe
+   * room should only become safe once some puzzle flag is set.
+   * @param {THREE.Box3[]} zones
+   */
+  function setNoEntryZones(zones) {
+    noEntryZones = zones || [];
+  }
+
+  function addNoEntryZone(box3) {
+    noEntryZones.push(box3);
+  }
+
   function darkenWorld(dt) {
     if (!engine.renderer) return;
+
+    // Don't dim/flicker the world for a player who's safely tucked inside
+    // a no-entry zone — let lighting recover toward normal instead.
+    if (playerInSafeZone()) {
+      currentExposureTarget = baseExposure;
+      engine.renderer.toneMappingExposure += (currentExposureTarget - engine.renderer.toneMappingExposure) * Math.min(1, dt * darkenEase);
+      return;
+    }
+
     const dist = distanceToPlayer();
     const t = Math.max(0, Math.min(1, 1 - dist / darkenRadius));
     currentExposureTarget = baseExposure * (1 - t * (1 - darkenFloor));
@@ -180,8 +240,11 @@ export function createVrishchikEnemy(scene, engine, {
     if (!growlLoaded) return;
     setupAudioUnlock(audioListener.context);
 
+    // Fade the growl out (rather than spiking it) once the player is safe,
+    // instead of continuing to ramp with raw proximity through the wall.
+    const inSafeZone = playerInSafeZone();
     const dist = distanceToPlayer();
-    const t = Math.max(0, Math.min(1, 1 - dist / darkenRadius));
+    const t = inSafeZone ? 0 : Math.max(0, Math.min(1, 1 - dist / darkenRadius));
     const targetVolume = t * t * growlMaxVolume;
     const currentVol = growlSound.getVolume();
     const nextVolume = currentVol + (targetVolume - currentVol) * Math.min(1, dt * growlEase);
@@ -312,6 +375,7 @@ export function createVrishchikEnemy(scene, engine, {
 
   function checkAttackHit() {
     if (!parts.stingerTip || !engine.camera) return false;
+    if (playerInSafeZone()) return false; // never let a strike land once the player is safe
     const strikeWorldPos = new THREE.Vector3();
     parts.stingerTip.getWorldPosition(strikeWorldPos);
     return strikeWorldPos.distanceTo(engine.camera.position) < attackRange + 0.5;
@@ -388,6 +452,15 @@ export function createVrishchikEnemy(scene, engine, {
       }
 
       case VrishchikState.PURSUE: {
+        // Player reached a safe room — give up the chase immediately and
+        // never roll into ATTACK, even if standing right at the doorway
+        // and technically within attackRange.
+        if (playerInSafeZone()) {
+          state = VrishchikState.IDLE;
+          stateT = 0;
+          break;
+        }
+
         const dist = distanceToPlayer();
         if (!seesPlayer && dist > loseRange) { state = VrishchikState.IDLE; stateT = 0; break; }
 
@@ -412,6 +485,18 @@ export function createVrishchikEnemy(scene, engine, {
         attackTimer += dt;
         animateAttack(dt);
         faceTowardPlayer();
+
+        // Player slipped into a safe room mid-windup — abort without
+        // registering a hit or advancing the normal recovery flow.
+        if (playerInSafeZone()) {
+          attackHitChecked = true;
+          cooldownTimer = attackCooldown;
+          animateMandibles(-0.22, dt);
+          state = VrishchikState.IDLE;
+          stateT = 0;
+          break;
+        }
+
         if (!attackHitChecked && attackTimer >= attackWindup) {
           attackHitChecked = true;
           if (checkAttackHit() && onCatchPlayer) onCatchPlayer();
@@ -443,6 +528,8 @@ export function createVrishchikEnemy(scene, engine, {
     setPatrolPoints,
     setState,
     getState,
+    setNoEntryZones,
+    addNoEntryZone,
     get state() { return state; },
   };
 }
